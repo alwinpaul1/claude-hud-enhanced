@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import type { ContextHealth } from './types.js';
+import { logger } from './logger.js';
 
 interface TranscriptUsage {
   input_tokens?: number;
@@ -82,8 +83,8 @@ export class TranscriptReader {
               model = entry.message.model;
             }
           }
-        } catch {
-          // Skip malformed lines
+        } catch (err) {
+          logger.warn('TranscriptReader', 'Failed to parse transcript line', { err });
         }
       }
 
@@ -100,7 +101,8 @@ export class TranscriptReader {
       this.lastModified = mtime;
 
       return this.cache;
-    } catch {
+    } catch (err) {
+      logger.debug('TranscriptReader', 'Failed to read transcript', { path: transcriptPath, err });
       return null;
     }
   }

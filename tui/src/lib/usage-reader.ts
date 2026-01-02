@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { logger } from './logger.js';
 
 export interface UsageData {
   sessionPercent: number;
@@ -116,7 +117,8 @@ export class UsageReader {
       }
 
       return null;
-    } catch {
+    } catch (err) {
+      logger.debug('UsageReader', 'Failed to parse usage output', { err });
       return null;
     }
   }

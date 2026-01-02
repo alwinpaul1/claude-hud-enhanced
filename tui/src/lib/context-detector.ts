@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { logger } from './logger.js';
 
 export interface ContextFiles {
   globalClaudeMd: boolean;
@@ -23,8 +24,8 @@ export function detectContextFiles(cwd?: string): ContextFiles {
 
   try {
     result.globalClaudeMd = fs.existsSync(GLOBAL_CLAUDE_MD);
-  } catch {
-    // Ignore errors
+  } catch (err) {
+    logger.debug('ContextDetector', 'Failed to check global CLAUDE.md', { err });
   }
 
   if (!cwd) {
@@ -43,8 +44,8 @@ export function detectContextFiles(cwd?: string): ContextFiles {
         result.projectClaudeMdPath = p;
         break;
       }
-    } catch {
-      // Ignore errors
+    } catch (err) {
+      logger.debug('ContextDetector', 'Failed to check project CLAUDE.md', { path: p, err });
     }
   }
 
@@ -58,8 +59,11 @@ export function detectContextFiles(cwd?: string): ContextFiles {
         result.projectSettingsRules = settings.permissions.allow.length;
       }
     }
-  } catch {
-    // Ignore errors
+  } catch (err) {
+    logger.debug('ContextDetector', 'Failed to read project settings', {
+      path: projectSettingsPath,
+      err,
+    });
   }
 
   return result;

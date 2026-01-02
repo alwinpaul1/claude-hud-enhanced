@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import type { ContextHealth, ContextBreakdown, HudEvent } from './types.js';
+import { logger } from './logger.js';
 
 const COMPACTION_THRESHOLD = 0.85;
 const WARNING_THRESHOLD = 0.7;
@@ -134,8 +135,8 @@ export class UnifiedContextTracker {
               this.model = entry.message.model;
             }
           }
-        } catch {
-          // Skip malformed lines
+        } catch (err) {
+          logger.warn('UnifiedContextTracker', 'Failed to parse transcript line', { err });
         }
       }
 
@@ -155,8 +156,8 @@ export class UnifiedContextTracker {
 
       this.transcriptModified = stat.mtimeMs;
       this.recordHistory();
-    } catch {
-      // Transcript not available, keep using estimates
+    } catch (err) {
+      logger.debug('UnifiedContextTracker', 'Transcript not available, using estimates', { err });
     }
   }
 

@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import type { HudEvent } from './types.js';
+import { logger } from './logger.js';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -60,8 +61,8 @@ export class EventReader extends EventEmitter {
           const event = JSON.parse(line) as HudEvent;
           this.lastEventTime = Date.now();
           this.emit('event', event);
-        } catch {
-          // Ignore malformed JSON silently
+        } catch (err) {
+          logger.warn('EventReader', 'Failed to parse JSON line', { line, err });
         }
       });
 
@@ -80,7 +81,8 @@ export class EventReader extends EventEmitter {
           this.scheduleReconnect();
         }
       });
-    } catch {
+    } catch (err) {
+      logger.error('EventReader', 'Failed to connect to FIFO', err);
       this.setStatus('error');
       this.scheduleReconnect();
     }

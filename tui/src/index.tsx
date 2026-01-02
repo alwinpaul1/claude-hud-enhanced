@@ -3,6 +3,7 @@ import { render } from 'ink';
 import minimist from 'minimist';
 import { readFileSync, existsSync } from 'node:fs';
 import { App } from './app.js';
+import { logger } from './lib/logger.js';
 
 const HUD_DIR = `${process.env.HOME}/.claude/hud`;
 const REFRESH_FILE = `${HUD_DIR}/refresh.json`;
@@ -32,8 +33,8 @@ function Root({ initialSession }: { initialSession: SessionConfig }) {
           transcriptPath: parsed.transcriptPath,
         });
       }
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.warn('Root', 'Failed to parse refresh file', { err });
     }
   }, []);
 
@@ -56,8 +57,8 @@ function Root({ initialSession }: { initialSession: SessionConfig }) {
             transcriptPath: parsed.transcriptPath,
           });
         }
-      } catch {
-        // Ignore
+      } catch (err) {
+        logger.debug('Root', 'Failed to poll refresh file', { err });
       }
     }, 2000);
     return () => {

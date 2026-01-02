@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { execSync } from 'child_process';
+import { logger } from '../lib/logger.js';
 
 interface GitInfo {
   branch: string;
@@ -39,8 +40,8 @@ function getGitInfo(cwd?: string): GitInfo | null {
         ahead = parseInt(aheadStr, 10) || 0;
         behind = parseInt(behindStr, 10) || 0;
       }
-    } catch {
-      // No upstream configured
+    } catch (err) {
+      logger.debug('GitStatus', 'No upstream configured', { err });
     }
 
     // Get status counts
@@ -64,7 +65,8 @@ function getGitInfo(cwd?: string): GitInfo | null {
     }
 
     return { branch, ahead, behind, staged, modified, untracked };
-  } catch {
+  } catch (err) {
+    logger.debug('GitStatus', 'Failed to get git info', { cwd, err });
     return null;
   }
 }

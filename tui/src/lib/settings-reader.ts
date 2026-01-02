@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { logger } from './logger.js';
 
 export interface ClaudeSettings {
   model: string;
@@ -42,7 +43,8 @@ export function readSettings(settingsPath: string = SETTINGS_PATH): SettingsData
       mcpNames,
       allowedPermissions: settings.permissions?.allow || [],
     };
-  } catch {
+  } catch (err) {
+    logger.debug('SettingsReader', 'Failed to read settings', { path: settingsPath, err });
     return null;
   }
 }

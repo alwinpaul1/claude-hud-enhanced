@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { logger } from './logger.js';
 
 interface ModelUsage {
   inputTokens: number;
@@ -99,7 +100,8 @@ export function readStats(): TokenStats | null {
       totalSessions: stats.totalSessions || 0,
       totalMessages: stats.totalMessages || 0,
     };
-  } catch {
+  } catch (err) {
+    logger.debug('StatsReader', 'Failed to read stats cache', { path: STATS_PATH, err });
     return null;
   }
 }
