@@ -1,7 +1,6 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
 import type { HudEvent } from './types.js';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -45,7 +44,9 @@ export class EventReader extends EventEmitter {
     }
 
     try {
-      this.stream = createReadStream(this.fifoPath, { encoding: 'utf-8' });
+      // Use 'r+' (O_RDWR) flag - this doesn't block on FIFOs unlike 'r' (O_RDONLY)
+      // because the process itself counts as a potential writer
+      this.stream = createReadStream(this.fifoPath, { encoding: 'utf-8', flags: 'r+' });
       this.rl = createInterface({ input: this.stream });
 
       this.stream.once('open', () => {
@@ -108,5 +109,14 @@ export class EventReader extends EventEmitter {
     this.closed = true;
     this.cleanup();
     this.setStatus('disconnected');
+  }
+
+  switchFifo(newFifoPath: string): void {
+    this.cleanup();
+    this.fifoPath = newFifoPath;
+    this.reconnectAttempts = 0;
+    this.closed = false;
+    this.setStatus('connecting');
+    this.connect();
   }
 }

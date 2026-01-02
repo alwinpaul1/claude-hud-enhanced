@@ -2,7 +2,7 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [0.1.0] - 2026-01-02
+## [0.1.0] - 2025-01-02
 
 ### Added
 - **Developer Intelligence Dashboard**: Surface real data from Claude Code internals
@@ -14,7 +14,6 @@ All notable changes to Claude HUD will be documented in this file.
 - **ContextInfo Component**: Visual indicator of loaded context files
 
 ### Changed
-- Version reset to 0.1.0 (was incorrectly labeled 2.0.0 during development)
 - ContextMeter now displays real token data when available (today's usage, cache stats)
 - McpStatus renamed to Connections, now shows both MCP servers and plugins
 
@@ -49,30 +48,3 @@ All notable changes to Claude HUD will be documented in this file.
 - CostTracker class for API cost estimation
 - GitStatus component with 30-second auto-refresh
 - Event parser with edge case handling
-
-## [1.0.0] - 2025-01-02
-
-### Added
-- Initial release
-- Context health tracking with burn rate and breakdown
-- Tool stream with duration and status icons
-- Agent tracking with elapsed time and nested tools
-- Session stats (tool counts, lines changed, duration)
-- Error boundaries for crash protection
-- Reconnection with exponential backoff
-- Cross-terminal support (tmux, iTerm2, Kitty, WezTerm, Zellij, Windows Terminal)
-
-### Features
-- Real-time tool activity display
-- Todo list tracking
-- Modified files tracking
-- MCP server status
-- Keyboard shortcuts (Ctrl+H toggle, Ctrl+C exit)
-
-## [0.1.0] - 2025-01-02
-
-### Added
-- MVP release
-- Basic HUD with context meter
-- Tool stream display
-- Hook-based event capture via FIFO

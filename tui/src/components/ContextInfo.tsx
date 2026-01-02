@@ -12,35 +12,25 @@ export function ContextInfo({ contextFiles }: Props) {
   }
 
   const { globalClaudeMd, projectClaudeMd, projectSettings, projectSettingsRules } = contextFiles;
+  const fileCount = [globalClaudeMd, projectClaudeMd, projectSettings].filter(Boolean).length;
 
-  if (!globalClaudeMd && !projectClaudeMd && !projectSettings) {
+  if (fileCount === 0) {
     return null;
   }
 
+  const parts: string[] = [];
+  if (globalClaudeMd || projectClaudeMd) {
+    const mdCount = (globalClaudeMd ? 1 : 0) + (projectClaudeMd ? 1 : 0);
+    parts.push(`${mdCount} CLAUDE.md`);
+  }
+  if (projectSettings && projectSettingsRules > 0) {
+    parts.push(`${projectSettingsRules} rules`);
+  }
+
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold dimColor>Context Files</Text>
-      {globalClaudeMd && (
-        <Box>
-          <Text dimColor>├ </Text>
-          <Text color="green">✓</Text>
-          <Text dimColor> ~/.claude/CLAUDE.md</Text>
-        </Box>
-      )}
-      {projectClaudeMd && (
-        <Box>
-          <Text dimColor>├ </Text>
-          <Text color="green">✓</Text>
-          <Text dimColor> CLAUDE.md (project)</Text>
-        </Box>
-      )}
-      {projectSettings && (
-        <Box>
-          <Text dimColor>└ </Text>
-          <Text color="blue">⚙</Text>
-          <Text dimColor> .claude/settings ({projectSettingsRules} rules)</Text>
-        </Box>
-      )}
+    <Box marginBottom={1}>
+      <Text dimColor>Context: </Text>
+      <Text>{parts.join(', ')}</Text>
     </Box>
   );
 }

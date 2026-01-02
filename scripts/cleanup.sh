@@ -16,14 +16,9 @@ fi
 
 HUD_DIR="$HOME/.claude/hud"
 EVENT_FIFO="$HUD_DIR/events/$SESSION_ID.fifo"
-PID_FILE="$HUD_DIR/pids/$SESSION_ID.pid"
 
-if [ -f "$PID_FILE" ]; then
-  PID=$(cat "$PID_FILE")
-  kill "$PID" 2>/dev/null || true
-  rm -f "$PID_FILE"
-fi
-
+# Only clean up the FIFO, not the HUD process
+# HUD persists across sessions for /new and /resume
 rm -f "$EVENT_FIFO"
 
 exit 0

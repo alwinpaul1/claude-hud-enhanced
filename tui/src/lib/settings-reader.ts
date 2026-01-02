@@ -20,12 +20,12 @@ export interface SettingsData {
 
 const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
-export function readSettings(): SettingsData | null {
+export function readSettings(settingsPath: string = SETTINGS_PATH): SettingsData | null {
   try {
-    if (!fs.existsSync(SETTINGS_PATH)) {
+    if (!fs.existsSync(settingsPath)) {
       return null;
     }
-    const content = fs.readFileSync(SETTINGS_PATH, 'utf-8');
+    const content = fs.readFileSync(settingsPath, 'utf-8');
     const settings: ClaudeSettings = JSON.parse(content);
 
     const enabledPlugins = Object.entries(settings.enabledPlugins || {})
@@ -51,18 +51,23 @@ export class SettingsReader {
   private data: SettingsData | null = null;
   private lastRead: number = 0;
   private readonly refreshInterval = 30000;
+  private readonly settingsPath: string;
+
+  constructor(settingsPath: string = SETTINGS_PATH) {
+    this.settingsPath = settingsPath;
+  }
 
   read(): SettingsData | null {
     const now = Date.now();
     if (!this.data || now - this.lastRead > this.refreshInterval) {
-      this.data = readSettings();
+      this.data = readSettings(this.settingsPath);
       this.lastRead = now;
     }
     return this.data;
   }
 
   forceRefresh(): SettingsData | null {
-    this.data = readSettings();
+    this.data = readSettings(this.settingsPath);
     this.lastRead = Date.now();
     return this.data;
   }

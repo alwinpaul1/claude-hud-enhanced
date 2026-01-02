@@ -78,8 +78,6 @@ export interface SessionInfo {
   cwd: string;
   transcriptPath: string;
   isIdle: boolean;
-  lastPrompt: string;
-  compactionCount: number;
 }
 
 export interface CostEstimate {

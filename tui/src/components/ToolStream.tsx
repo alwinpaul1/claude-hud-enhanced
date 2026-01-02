@@ -53,7 +53,7 @@ function formatDuration(ms: number | undefined): string {
   return `${Math.round(ms / 1000)}s`;
 }
 
-export function ToolStream({ tools, maxVisible = 8 }: Props) {
+export function ToolStream({ tools, maxVisible = 4 }: Props) {
   const recentTools = tools.slice(-maxVisible);
 
   return (
