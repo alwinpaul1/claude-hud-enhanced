@@ -18,6 +18,16 @@ bun run build
 
 # Run tests
 bun test
+
+# Run with coverage
+bun test --coverage
+
+# Lint and typecheck
+bun run lint
+bun run typecheck
+
+# Format code
+bun run format
 ```
 
 ### Local Testing
@@ -48,26 +58,39 @@ claude-hud/
 │   ├── capture-event.sh      # Captures events and sends to FIFO
 │   ├── cleanup.sh            # Cleans up on session end
 │   └── verify-install.sh     # Installation verification
+├── docs/
+│   ├── CHANGELOG.md          # Version history
+│   ├── research/             # Research notes
+│   └── adr/                  # Architecture Decision Records
 ├── tui/
 │   ├── src/
-│   │   ├── index.tsx         # Main app, state management, event processing
+│   │   ├── index.tsx         # Entry point, session handling
+│   │   ├── app.tsx           # Main App component (slim)
 │   │   ├── components/       # React/Ink UI components
-│   │   │   ├── ContextMeter.tsx   # Token usage display
+│   │   │   ├── ContextMeter.tsx   # Token usage + sparkline
+│   │   │   ├── CostDisplay.tsx    # API cost tracking
 │   │   │   ├── ToolStream.tsx     # Tool activity list
 │   │   │   ├── AgentList.tsx      # Subagent tracking
+│   │   │   ├── StatusBar.tsx      # Model + idle status
 │   │   │   ├── SessionStats.tsx   # Session statistics
 │   │   │   ├── TodoList.tsx       # Task tracking
-│   │   │   ├── ModifiedFiles.tsx  # Changed files
-│   │   │   ├── McpStatus.tsx      # MCP server status
+│   │   │   ├── ContextInfo.tsx    # CLAUDE.md detection
 │   │   │   ├── Sparkline.tsx      # Sparkline visualization
 │   │   │   └── ErrorBoundary.tsx  # Error handling
+│   │   ├── hooks/
+│   │   │   ├── useHudState.ts     # Centralized state management
+│   │   │   └── useElapsedTime.ts  # Timer hook
 │   │   └── lib/
-│   │       ├── types.ts           # TypeScript interfaces
-│   │       ├── event-reader.ts    # FIFO reader with reconnection
-│   │       ├── context-tracker.ts # Token estimation and tracking
-│   │       └── cost-tracker.ts    # Cost estimation
+│   │       ├── types.ts                    # TypeScript interfaces
+│   │       ├── event-reader.ts             # FIFO reader
+│   │       ├── unified-context-tracker.ts  # Token tracking (real + estimated)
+│   │       ├── cost-tracker.ts             # Cost estimation
+│   │       ├── settings-reader.ts          # Claude settings
+│   │       ├── context-detector.ts         # CLAUDE.md detection
+│   │       └── logger.ts                   # Debug logging
 │   ├── package.json
 │   ├── tsconfig.json
+│   ├── eslint.config.js      # ESLint flat config
 │   └── vitest.config.ts
 ├── README.md
 ├── CONTRIBUTING.md
@@ -91,33 +114,41 @@ Claude Code → Hook Events → capture-event.sh → FIFO → EventReader → Re
 
 ### Key Components
 
+**useHudState** (`hooks/useHudState.ts`)
+- Centralized state management hook
+- Processes all events from EventReader
+- Manages tools, agents, context, cost, todos
+- Single source of truth for HUD state
+
 **EventReader** (`lib/event-reader.ts`)
 - Reads from named pipe (FIFO)
 - Handles reconnection with exponential backoff
 - Emits 'event' and 'status' events
 
-**ContextTracker** (`lib/context-tracker.ts`)
-- Estimates tokens from event payloads
-- Tracks burn rate over time
-- Maintains token history for sparkline
+**UnifiedContextTracker** (`lib/unified-context-tracker.ts`)
+- Reads real tokens from transcript files when available
+- Falls back to estimation when transcript unavailable
+- Tracks burn rate and token history for sparkline
+- Eliminates flickering from dual data sources
 
 **CostTracker** (`lib/cost-tracker.ts`)
 - Calculates cost based on token usage
-- Supports different model pricing
+- Supports different model pricing (Opus, Sonnet, Haiku)
+- Tracks input/output tokens separately
 
 ## Adding a New Panel
 
 1. Create a component in `tui/src/components/`:
 
 ```tsx
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 
 interface Props {
   data: YourDataType;
 }
 
-export function YourPanel({ data }: Props) {
+export const YourPanel = memo(function YourPanel({ data }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
@@ -126,16 +157,16 @@ export function YourPanel({ data }: Props) {
       {/* Panel content */}
     </Box>
   );
-}
+});
 ```
 
-2. Add state in `index.tsx`:
+2. Add state in `hooks/useHudState.ts`:
 
 ```tsx
 const [yourData, setYourData] = useState<YourDataType>(initialValue);
 ```
 
-3. Process relevant events in `processEvent`:
+3. Process relevant events in the `processEvent` callback:
 
 ```tsx
 if (event.event === 'RelevantEvent') {
@@ -143,7 +174,24 @@ if (event.event === 'RelevantEvent') {
 }
 ```
 
-4. Add the component to the render tree (wrapped in ErrorBoundary).
+4. Return the new state from `useHudState`:
+
+```tsx
+return {
+  // ... existing state
+  yourData,
+};
+```
+
+5. Add the component to `app.tsx` (wrapped in ErrorBoundary):
+
+```tsx
+<ErrorBoundary>
+  <YourPanel data={state.yourData} />
+</ErrorBoundary>
+```
+
+6. Add tests in `components/YourPanel.test.tsx`.
 
 ## Adding a New Hook
 
@@ -189,6 +237,27 @@ bun test context-tracker
 - **No `any` types** - Use `unknown` or proper types
 - **Ink components** - Use Box, Text from ink for UI
 - **Error boundaries** - Wrap components to prevent crashes
+- **React.memo** - Use for all components to prevent unnecessary re-renders
+- **ESLint + Prettier** - Run `bun run lint` and `bun run format`
+- **Pre-commit hooks** - Husky runs lint-staged on commit
+
+### Quality Tools
+
+```bash
+# Lint (ESLint)
+bun run lint
+bun run lint:fix
+
+# Format (Prettier)
+bun run format
+bun run format:check
+
+# Type check
+bun run typecheck
+
+# All tests with coverage
+bun test --coverage
+```
 
 ## Pull Requests
 
