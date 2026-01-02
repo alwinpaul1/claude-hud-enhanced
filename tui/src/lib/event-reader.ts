@@ -1,7 +1,7 @@
 import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import type { HudEvent } from './types.js';
+import { parseHudEvent } from './hud-event.js';
 import { logger } from './logger.js';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -57,13 +57,13 @@ export class EventReader extends EventEmitter {
 
       this.rl.on('line', (line: string) => {
         if (!line.trim()) return;
-        try {
-          const event = JSON.parse(line) as HudEvent;
-          this.lastEventTime = Date.now();
-          this.emit('event', event);
-        } catch (err) {
-          logger.warn('EventReader', 'Failed to parse JSON line', { line, err });
+        const event = parseHudEvent(line);
+        if (!event) {
+          logger.warn('EventReader', 'Failed to parse HUD event line', { line });
+          return;
         }
+        this.lastEventTime = Date.now();
+        this.emit('event', event);
       });
 
       this.stream.on('end', () => {

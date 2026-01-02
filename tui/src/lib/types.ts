@@ -1,5 +1,5 @@
-export interface HudEvent {
-  event: string;
+type BaseHudEvent<TEvent extends string> = {
+  event: TEvent;
   tool: string | null;
   toolUseId?: string;
   input: Record<string, unknown> | null;
@@ -10,7 +10,19 @@ export interface HudEvent {
   transcriptPath?: string;
   cwd?: string;
   prompt?: string;
-}
+};
+
+export type KnownHudEvent =
+  | BaseHudEvent<'PreToolUse'>
+  | BaseHudEvent<'PostToolUse'>
+  | BaseHudEvent<'UserPromptSubmit'>
+  | BaseHudEvent<'Stop'>
+  | BaseHudEvent<'PreCompact'>
+  | BaseHudEvent<'SubagentStop'>
+  | BaseHudEvent<'SessionStart'>
+  | BaseHudEvent<'SessionEnd'>;
+
+export type HudEvent = KnownHudEvent | BaseHudEvent<string>;
 
 export interface ToolEntry {
   id: string;
