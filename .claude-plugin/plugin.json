@@ -1,0 +1,13 @@
+{
+  "name": "claude-hud",
+  "description": "Real-time terminal HUD showing Claude Code activity in a split pane - context usage, tool activity, MCP status, todos, and modified files",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jarrod"
+  },
+  "homepage": "https://github.com/jarrod/claude-hud",
+  "repository": "https://github.com/jarrod/claude-hud",
+  "license": "MIT",
+  "keywords": ["hud", "monitoring", "tui", "terminal", "dashboard", "context", "tools"],
+  "hooks": "./hooks/hooks.json"
+}
