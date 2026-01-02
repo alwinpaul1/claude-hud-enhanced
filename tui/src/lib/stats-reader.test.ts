@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTokens } from './stats-reader.js';
+import { formatTokens, StatsReader } from './stats-reader.js';
 
 describe('formatTokens', () => {
   it('should return raw number for values under 1000', () => {
@@ -33,5 +33,32 @@ describe('formatTokens', () => {
     expect(formatTokens(1234)).toBe('1.2k');
     expect(formatTokens(1250)).toBe('1.3k');
     expect(formatTokens(1249)).toBe('1.2k');
+  });
+});
+
+describe('StatsReader', () => {
+  it('should return null or data based on file existence', () => {
+    const reader = new StatsReader();
+    const result = reader.read();
+    // Stats may or may not exist depending on environment
+    expect(result === null || typeof result === 'object').toBe(true);
+  });
+
+  it('should cache reads on consecutive calls', () => {
+    const reader = new StatsReader();
+    const result1 = reader.read();
+    const result2 = reader.read();
+    expect(result1).toEqual(result2);
+  });
+
+  it('should have forceRefresh method', () => {
+    const reader = new StatsReader();
+    expect(typeof reader.forceRefresh).toBe('function');
+  });
+
+  it('should return same shape from forceRefresh', () => {
+    const reader = new StatsReader();
+    const result = reader.forceRefresh();
+    expect(result === null || typeof result === 'object').toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (ms < 60000) return `${Math.round(ms / 1000)}s`;
   const mins = Math.floor(ms / 60000);
   const secs = Math.round((ms % 60000) / 1000);
