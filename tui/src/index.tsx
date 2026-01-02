@@ -12,6 +12,7 @@ import { ModifiedFiles } from './components/ModifiedFiles.js';
 import { AgentList } from './components/AgentList.js';
 import { SessionStats } from './components/SessionStats.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
+import { GitStatus } from './components/GitStatus.js';
 import type { ConnectionStatus } from './lib/event-reader.js';
 import type { HudEvent, ToolEntry, TodoItem, ModifiedFile, ContextHealth, AgentEntry, SessionInfo, CostEstimate } from './lib/types.js';
 
@@ -286,6 +287,9 @@ function App({ sessionId, fifoPath }: AppProps) {
       </ErrorBoundary>
       <ErrorBoundary>
         <AgentList agents={agents} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <GitStatus cwd={sessionInfo.cwd || undefined} />
       </ErrorBoundary>
       <ErrorBoundary>
         <McpStatus servers={mcpServers} />

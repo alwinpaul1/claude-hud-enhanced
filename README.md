@@ -59,6 +59,13 @@ When Claude spawns subagents:
 - Session duration
 - Number of completed agents
 
+### Git Status
+Track your repository state:
+- **Current branch** with ahead/behind indicators
+- **Staged** changes count
+- **Modified** files count
+- **Untracked** files count
+
 ### Additional Panels
 - **Todo List** — Claude's current task tracking
 - **Modified Files** — files changed this session
