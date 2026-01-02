@@ -2,6 +2,20 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.1] - 2026-01-03
+
+### Added
+- **GitHub Actions CI**: Automated lint, typecheck, test, and build on push/PR
+  - Plugin structure validation (plugin.json, hooks.json, scripts)
+  - Note: Requires `workflow` scope on GitHub token to push
+
+### Fixed
+- **Agent tools tracking**: Agent tools array now populates correctly
+  - Tools tracked per-agent and limited to last 5 calls
+  - Excludes Task tool itself from tracking
+
+---
+
 ## [2.0.0] - 2026-01-02
 
 ### Architecture Overhaul
