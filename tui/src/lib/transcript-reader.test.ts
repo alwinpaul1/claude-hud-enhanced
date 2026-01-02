@@ -98,4 +98,37 @@ describe('TranscriptReader', () => {
     expect(health?.shouldCompact).toBe(true);
     expect(health?.remaining).toBe(30000);
   });
+
+  it('invalidate clears the cache', () => {
+    // #given
+    writeTranscript(filePath, [
+      JSON.stringify({
+        type: 'assistant',
+        message: { usage: { input_tokens: 100, output_tokens: 50 } },
+      }),
+    ]);
+    const first = reader.read(filePath);
+    expect(first?.inputTokens).toBe(100);
+
+    // #when
+    reader.invalidate();
+
+    // Update file with different values
+    writeTranscript(filePath, [
+      JSON.stringify({
+        type: 'assistant',
+        message: { usage: { input_tokens: 200, output_tokens: 100 } },
+      }),
+    ]);
+
+    // Force mtime change by adding small delay
+    const now = Date.now();
+    fs.utimesSync(filePath, new Date(now + 1000), new Date(now + 1000));
+
+    const second = reader.read(filePath);
+
+    // #then
+    expect(second?.inputTokens).toBe(200);
+    expect(second).not.toBe(first);
+  });
 });
