@@ -45,13 +45,6 @@ export interface AgentEntry {
   tools: ToolEntry[];
 }
 
-export interface ContextState {
-  tokens: number;
-  percent: number;
-  remaining: number;
-  maxTokens: number;
-}
-
 export interface ContextHealth {
   tokens: number;
   percent: number;
