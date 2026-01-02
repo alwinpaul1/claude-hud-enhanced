@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Text } from 'ink';
 
 const BLOCKS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
@@ -9,7 +9,7 @@ interface Props {
   color?: string;
 }
 
-export function Sparkline({ data, width = 20, color = 'cyan' }: Props) {
+export const Sparkline = memo(function Sparkline({ data, width = 20, color = 'cyan' }: Props) {
   if (data.length === 0) {
     return <Text dimColor>{'─'.repeat(width)}</Text>;
   }
@@ -37,4 +37,4 @@ export function Sparkline({ data, width = 20, color = 'cyan' }: Props) {
       <Text color={color}>{sparkline}</Text>
     </Text>
   );
-}
+});

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { TodoItem } from '../lib/types.js';
 
@@ -18,7 +18,7 @@ const STATUS_COLORS: Record<string, string> = {
   completed: 'green',
 };
 
-export function TodoList({ todos }: Props) {
+export const TodoList = memo(function TodoList({ todos }: Props) {
   const visibleTodos = todos.slice(0, 6);
 
   return (
@@ -44,4 +44,4 @@ export function TodoList({ todos }: Props) {
       {todos.length > 6 && <Text dimColor>+{todos.length - 6} more</Text>}
     </Box>
   );
-}
+});

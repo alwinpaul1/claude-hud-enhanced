@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ContextFiles } from '../lib/context-detector.js';
 
@@ -6,7 +6,7 @@ interface Props {
   contextFiles: ContextFiles | null;
 }
 
-export function ContextInfo({ contextFiles }: Props) {
+export const ContextInfo = memo(function ContextInfo({ contextFiles }: Props) {
   if (!contextFiles) {
     return null;
   }
@@ -33,4 +33,4 @@ export function ContextInfo({ contextFiles }: Props) {
       <Text>{parts.join(', ')}</Text>
     </Box>
   );
-}
+});
