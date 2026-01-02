@@ -126,4 +126,28 @@ describe('AgentList', () => {
     const { lastFrame } = render(<AgentList agents={agents} />);
     expect(lastFrame()).toContain('1m');
   });
+
+  it('should handle tool with filename-only target', () => {
+    const tools = [createTool({ target: 'file.ts' })];
+    const agents = [createAgent({ tools })];
+    const { lastFrame } = render(<AgentList agents={agents} />);
+    expect(lastFrame()).toContain('file.ts');
+  });
+
+  it('should truncate long tool targets', () => {
+    const tools = [createTool({ target: '/path/to/very-long-filename-here.ts' })];
+    const agents = [createAgent({ tools })];
+    const { lastFrame } = render(<AgentList agents={agents} />);
+    const frame = lastFrame() || '';
+    expect(frame).toContain('very-long-filen');
+    expect(frame).not.toContain('very-long-filename-here.ts');
+  });
+
+  it('should handle tool with empty target', () => {
+    const tools = [createTool({ target: '' })];
+    const agents = [createAgent({ tools })];
+    const { lastFrame } = render(<AgentList agents={agents} />);
+    expect(lastFrame()).toContain('Grep');
+    expect(lastFrame()).not.toContain(': ');
+  });
 });
