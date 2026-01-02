@@ -26,6 +26,7 @@ describe('reduceHudState', () => {
   it('tracks tool lifecycle from PreToolUse to PostToolUse', () => {
     const state = createState();
     const preEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'Read',
       toolUseId: 'tool-1',
@@ -42,6 +43,7 @@ describe('reduceHudState', () => {
     expect(afterPre.runningTools.has('tool-1')).toBe(true);
 
     const postEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PostToolUse',
       tool: 'Read',
       toolUseId: 'tool-1',
@@ -60,6 +62,7 @@ describe('reduceHudState', () => {
   it('applies todo updates and agent lifecycle', () => {
     const state = createState();
     const todoEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'TodoWrite',
       toolUseId: 'todo-1',
@@ -72,6 +75,7 @@ describe('reduceHudState', () => {
     expect(afterTodo.todos).toHaveLength(1);
 
     const taskEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'Task',
       toolUseId: 'agent-1',
@@ -85,6 +89,7 @@ describe('reduceHudState', () => {
     expect(afterTask.agents[0]?.status).toBe('running');
 
     const stopEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'SubagentStop',
       tool: null,
       input: null,
