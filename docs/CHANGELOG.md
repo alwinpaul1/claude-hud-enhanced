@@ -2,6 +2,17 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.6] - 2026-01-03
+
+### Improved
+- **Documentation**: Updated CONTRIBUTING.md with v2.0 architecture
+  - Added coverage, lint, typecheck, format commands
+  - Documented useHudState as central state management
+  - Updated project structure with new files
+  - Added Code Style section with quality tools
+
+---
+
 ## [2.0.5] - 2026-01-03
 
 ### Improved
