@@ -103,19 +103,19 @@ export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOpti
       const existingTool = runningToolsRef.current.get(toolUseId);
       const startTs = existingTool?.startTs || event.ts * 1000;
 
+      const entry: ToolEntry = {
+        id: toolUseId,
+        tool: event.tool ?? '',
+        target: existingTool?.target || '',
+        status: hasError ? 'error' : 'complete',
+        ts: event.ts,
+        startTs,
+        endTs: now,
+        duration: response?.duration_ms || now - startTs,
+      };
+
       setTools((prev) => {
         const idx = prev.findIndex((t) => t.id === toolUseId);
-        const entry: ToolEntry = {
-          id: toolUseId,
-          tool: event.tool ?? '',
-          target: existingTool?.target || '',
-          status: hasError ? 'error' : 'complete',
-          ts: event.ts,
-          startTs,
-          endTs: now,
-          duration: response?.duration_ms || now - startTs,
-        };
-
         if (idx !== -1) {
           const updated = [...prev];
           updated[idx] = entry;
@@ -123,6 +123,22 @@ export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOpti
         }
         return [...prev.slice(-29), entry];
       });
+
+      // Track tool calls for running agents (not Task tool itself)
+      if (event.tool !== 'Task') {
+        setAgents((prev) => {
+          const runningIdx = prev.findIndex((a) => a.status === 'running');
+          if (runningIdx !== -1) {
+            const updated = [...prev];
+            updated[runningIdx] = {
+              ...updated[runningIdx],
+              tools: [...updated[runningIdx].tools.slice(-5), entry],
+            };
+            return updated;
+          }
+          return prev;
+        });
+      }
 
       runningToolsRef.current.delete(toolUseId);
       contextTrackerRef.current.processEvent(event);
