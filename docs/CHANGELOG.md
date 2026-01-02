@@ -7,10 +7,11 @@ All notable changes to claude-hud will be documented in this file.
 ### Added
 - **CI**: GitHub Actions workflow for automated testing
   - Lint, typecheck, test, and build on push/PR
-  - Plugin structure validation
+  - Plugin structure validation (Note: requires `workflow` scope to push)
 
 ### Fixed
 - **Build**: Removed accidental .gitignore entry blocking CI workflow
+- **Version**: Synced plugin.json version with package.json (was 0.1.0, now 2.0.10)
 
 ---
 
