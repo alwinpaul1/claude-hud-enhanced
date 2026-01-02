@@ -17,6 +17,7 @@ bun run build        # Build TypeScript
 bun run dev          # Watch mode for development
 bun test             # Run all tests
 bun test <pattern>   # Run specific test (e.g., bun test sparkline)
+ bun run replay:events -- --input ../tui/test-fixtures/hud-events.jsonl  # Replay events
 
 # Manual testing with a FIFO
 mkfifo /tmp/test.fifo
@@ -76,6 +77,20 @@ Runtime files stored in `~/.claude/hud/`:
 - `events/<session_id>.fifo` - Named pipe for event streaming
 - `pids/<session_id>.pid` - Process ID for cleanup
 - `logs/<session_id>.log` - Fallback output when split pane unavailable
+
+## HUD Configuration
+
+Optional HUD config lives at `~/.claude/hud/config.json`:
+
+```json
+{
+  "panelOrder": ["status", "context", "tools", "agents", "todos"],
+  "hiddenPanels": ["cost"],
+  "width": 56
+}
+```
+
+Panel IDs: `status`, `context`, `cost`, `contextInfo`, `tools`, `agents`, `todos`.
 
 ## Dependencies
 

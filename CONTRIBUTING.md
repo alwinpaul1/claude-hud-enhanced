@@ -2,6 +2,10 @@
 
 Thanks for your interest in contributing! This guide will help you get started.
 
+## Community Standards
+
+Please read `CODE_OF_CONDUCT.md`. For security issues, see `SECURITY.md`.
+
 ## Development Setup
 
 ```bash
@@ -28,6 +32,17 @@ bun run typecheck
 
 # Format code
 bun run format
+
+# Replay a fixture event stream
+bun run replay:events -- --input ../tui/test-fixtures/hud-events.jsonl
+```
+
+### One-shot checks
+
+From the repo root:
+
+```bash
+./scripts/check.sh
 ```
 
 ### Local Testing
