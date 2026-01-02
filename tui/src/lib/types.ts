@@ -13,6 +13,10 @@ export interface ToolEntry {
   target: string;
   status: 'running' | 'complete' | 'error';
   ts: number;
+  startTs: number;
+  endTs?: number;
+  duration?: number;
+  agentId?: string;
 }
 
 export interface TodoItem {

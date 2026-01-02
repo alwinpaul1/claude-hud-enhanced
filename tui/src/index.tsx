@@ -85,22 +85,29 @@ function App({ sessionId, fifoPath }: AppProps) {
       const input = event.input as { file_path?: string; command?: string; pattern?: string } | null;
       let target = '';
       if (input?.file_path) {
-        target = input.file_path.split('/').pop() || input.file_path;
+        target = input.file_path;
       } else if (input?.command) {
-        target = input.command.slice(0, 30);
+        target = input.command.slice(0, 40);
       } else if (input?.pattern) {
-        target = input.pattern.slice(0, 20);
+        target = input.pattern.slice(0, 30);
       }
 
+      const response = event.response as { error?: string; duration_ms?: number } | null;
+      const hasError = response?.error !== undefined;
+      const now = Date.now();
+
       const entry: ToolEntry = {
-        id: `${event.ts}-${event.tool}`,
+        id: `${event.ts}-${event.tool}-${now}`,
         tool: event.tool,
         target,
-        status: 'complete',
+        status: hasError ? 'error' : 'complete',
         ts: event.ts,
+        startTs: event.ts * 1000,
+        endTs: now,
+        duration: response?.duration_ms || (now - event.ts * 1000),
       };
 
-      setTools((prev) => [...prev.slice(-20), entry]);
+      setTools((prev) => [...prev.slice(-30), entry]);
 
       contextTrackerRef.current.processEvent(event);
       setContext(contextTrackerRef.current.getHealth());
