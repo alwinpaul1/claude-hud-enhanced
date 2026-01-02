@@ -1,80 +1,113 @@
-# Claude HUD 🖥️
+# Claude HUD
 
-Real-time terminal HUD (Heads-Up Display) for Claude Code. Shows context usage, tool activity, MCP status, todos, and modified files in a split pane.
+Real-time terminal dashboard for Claude Code. See context usage, tool activity, agent status, and more — all in a split pane next to your terminal.
 
 ![Claude HUD Screenshot](screenshot.png)
-
-## Features
-
-- **Context Meter** - Live token count, percentage, and remaining context
-- **Tool Stream** - Real-time feed of all tool calls with status
-- **MCP Status** - Connected MCP server indicators
-- **Todo List** - Current tasks with progress highlighting
-- **Modified Files** - Files changed during the session
 
 ## Installation
 
 ```bash
-claude /plugin install github.com/jarrod/claude-hud
+claude /plugin install github.com/jarrodwatts/claude-hud
 ```
 
-The plugin will automatically:
-1. Install dependencies on first run (bun preferred, falls back to npm)
-2. Build the TUI
-3. Create a split pane in your terminal
+That's it. The HUD appears automatically when you start Claude Code.
+
+## Features
+
+### Context Health
+The most important metric when working with AI. See at a glance:
+- **Token count** with visual progress bar
+- **Burn rate** — tokens consumed per minute
+- **Compaction warning** when context is getting full
+- **Breakdown** of input vs output token usage
+
+### Tool Activity Stream
+Watch Claude work in real-time:
+- Every tool call with status icons (✓ complete, ◐ running, ✗ error)
+- **Duration** for each operation
+- **Smart path truncation** showing filename + parent
+- Color-coded: green for success, yellow for running, red for errors
+
+### Agent Tracking
+When Claude spawns subagents:
+- **Type and description** of each agent
+- **Live elapsed time** counter
+- **Nested tool calls** — see what the agent is doing
+- Completion status
+
+### Session Statistics
+- Total tool call counts by type
+- Lines changed (+additions/-deletions)
+- Session duration
+- Number of completed agents
+
+### Additional Panels
+- **Todo List** — Claude's current task tracking
+- **Modified Files** — files changed this session
+- **MCP Status** — connected MCP servers
 
 ## Supported Terminals
 
 | Terminal | Split Support |
-|----------|--------------|
-| tmux | Native split pane |
-| iTerm2 | Native split (AppleScript) |
-| Kitty | Native split (remote control) |
-| WezTerm | Native split (CLI) |
-| Zellij | Native split |
-| Windows Terminal | Native split (WSL) |
-| macOS Terminal | Companion window |
-| Others | Background process |
+|----------|---------------|
+| **tmux** | ✓ Native split pane |
+| **iTerm2** | ✓ Native split |
+| **Kitty** | ✓ Remote control split |
+| **WezTerm** | ✓ CLI split pane |
+| **Zellij** | ✓ Native split |
+| **Windows Terminal** | ✓ WSL split |
+| **macOS Terminal** | Separate window |
+| **xterm (Linux)** | Separate window |
+| **Others** | Background process |
 
-## Usage
-
-Once installed, the HUD appears automatically when you start Claude Code.
-
-### Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+H` | Toggle HUD visibility |
 | `Ctrl+C` | Exit HUD |
 
-## Configuration
-
-The HUD uses sensible defaults. Future versions will support configuration via `.claude/claude-hud.local.md`.
-
 ## How It Works
 
-1. **SessionStart hook** - Spawns the HUD TUI in a terminal split pane
-2. **PostToolUse hook** - Captures all tool calls and writes to a FIFO
-3. **SubagentStop hook** - Tracks subagent completion
-4. **SessionEnd hook** - Cleans up the HUD process and FIFO
+Claude HUD uses Claude Code's plugin hooks to capture events:
 
-Data flows from Claude Code hooks → FIFO → HUD TUI (React/Ink).
+1. **SessionStart** — Spawns the HUD in a split pane
+2. **PostToolUse** — Captures every tool call
+3. **SubagentStop** — Tracks agent completion
+4. **SessionEnd** — Cleans up
 
-## Development
-
-```bash
-cd tui
-bun install
-bun run build
-bun run start -- --session test --fifo /tmp/test.fifo
-```
+Data flows through a named pipe (FIFO) to a React/Ink terminal UI.
 
 ## Requirements
 
 - Claude Code
 - Node.js 18+ or Bun
-- jq (for JSON parsing in hooks)
+- `jq` (for JSON parsing in hooks)
+
+## Development
+
+```bash
+# Clone the repo
+git clone https://github.com/jarrodwatts/claude-hud
+cd claude-hud/tui
+
+# Install dependencies
+bun install
+
+# Build
+bun run build
+
+# Run tests
+bun test
+
+# Start manually (for development)
+bun run start -- --session test --fifo /tmp/test.fifo
+```
 
 ## License
 
 MIT
+
+## Credits
+
+Built with [Claude Code](https://claude.ai/code) and [Ink](https://github.com/vadimdemedes/ink).

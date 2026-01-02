@@ -1,13 +1,14 @@
 {
   "name": "claude-hud",
-  "description": "Real-time terminal HUD showing Claude Code activity in a split pane - context usage, tool activity, MCP status, todos, and modified files",
+  "description": "Real-time terminal dashboard for Claude Code - context health, tool activity, agent tracking, and session stats in a split pane",
   "version": "0.1.0",
   "author": {
-    "name": "Jarrod"
+    "name": "Jarrod Watts",
+    "url": "https://github.com/jarrodwatts"
   },
-  "homepage": "https://github.com/jarrod/claude-hud",
-  "repository": "https://github.com/jarrod/claude-hud",
+  "homepage": "https://github.com/jarrodwatts/claude-hud",
+  "repository": "https://github.com/jarrodwatts/claude-hud",
   "license": "MIT",
-  "keywords": ["hud", "monitoring", "tui", "terminal", "dashboard", "context", "tools"],
+  "keywords": ["hud", "monitoring", "tui", "terminal", "dashboard", "context", "tools", "agents", "claude-code"],
   "hooks": "./hooks/hooks.json"
 }
