@@ -37,6 +37,7 @@ export interface AgentEntry {
   status: 'running' | 'complete' | 'error';
   startTs: number;
   endTs?: number;
+  tools: ToolEntry[];
 }
 
 export interface ContextState {

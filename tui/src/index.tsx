@@ -51,7 +51,8 @@ function App({ sessionId, fifoPath }: AppProps) {
         type: taskInput.subagent_type || 'Task',
         description: taskInput.description || '',
         status: 'running',
-        startTs: event.ts,
+        startTs: event.ts * 1000,
+        tools: [],
       };
       setAgents((prev) => [...prev.slice(-10), agentEntry]);
     }
@@ -61,7 +62,11 @@ function App({ sessionId, fifoPath }: AppProps) {
         const updated = [...prev];
         const runningIdx = updated.findIndex((a) => a.status === 'running');
         if (runningIdx !== -1) {
-          updated[runningIdx] = { ...updated[runningIdx], status: 'complete', endTs: event.ts };
+          updated[runningIdx] = {
+            ...updated[runningIdx],
+            status: 'complete',
+            endTs: Date.now(),
+          };
         }
         return updated;
       });
