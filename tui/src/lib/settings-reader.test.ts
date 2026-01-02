@@ -50,6 +50,28 @@ describe('readSettings', () => {
     expect(data?.mcpNames).toEqual(['server-a']);
     expect(data?.allowedPermissions).toEqual(['shell_command']);
   });
+
+  it('returns null for invalid JSON', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, 'invalid json {', 'utf-8');
+
+    const data = readSettings(settingsPath);
+
+    expect(data).toBeNull();
+  });
+
+  it('handles missing optional fields gracefully', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify({}), 'utf-8');
+
+    const data = readSettings(settingsPath);
+
+    expect(data).not.toBeNull();
+    expect(data?.model).toBe('unknown');
+    expect(data?.pluginCount).toBe(0);
+    expect(data?.mcpCount).toBe(0);
+    expect(data?.allowedPermissions).toEqual([]);
+  });
 });
 
 describe('SettingsReader', () => {
