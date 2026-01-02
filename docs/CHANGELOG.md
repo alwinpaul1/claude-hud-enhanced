@@ -2,6 +2,14 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.7] - 2026-01-03
+
+### Improved
+- **Performance**: Added React.memo to McpStatus and ModifiedFiles components
+- **Debugging**: ErrorBoundary now logs errors via logger utility
+
+---
+
 ## [2.0.6] - 2026-01-03
 
 ### Improved
