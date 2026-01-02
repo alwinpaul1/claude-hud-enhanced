@@ -13,7 +13,8 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "replay:events": "bun run scripts/replay-events.ts --"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
