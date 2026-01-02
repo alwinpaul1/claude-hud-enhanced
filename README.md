@@ -12,14 +12,26 @@ claude /plugin install github.com/jarrodwatts/claude-hud
 
 That's it. The HUD appears automatically when you start Claude Code.
 
+### Verify Installation
+
+```bash
+~/.claude/plugins/claude-hud/scripts/verify-install.sh
+```
+
 ## Features
 
 ### Context Health
 The most important metric when working with AI. See at a glance:
 - **Token count** with visual progress bar
+- **Sparkline** showing token usage history
 - **Burn rate** — tokens consumed per minute
 - **Compaction warning** when context is getting full
 - **Breakdown** of input vs output token usage
+
+### Cost Estimation
+Track your API costs in real-time:
+- **Total cost** with input/output breakdown
+- Automatically detects model pricing (Sonnet/Opus/Haiku)
 
 ### Tool Activity Stream
 Watch Claude work in real-time:
@@ -27,6 +39,12 @@ Watch Claude work in real-time:
 - **Duration** for each operation
 - **Smart path truncation** showing filename + parent
 - Color-coded: green for success, yellow for running, red for errors
+
+### Session Status
+- **Idle indicator** (💤 idle / ⚡ working)
+- **Permission mode** when not default
+- **Compaction count** warnings
+- **Last user prompt** preview
 
 ### Agent Tracking
 When Claude spawns subagents:
@@ -72,9 +90,13 @@ When Claude spawns subagents:
 Claude HUD uses Claude Code's plugin hooks to capture events:
 
 1. **SessionStart** — Spawns the HUD in a split pane
-2. **PostToolUse** — Captures every tool call
-3. **SubagentStop** — Tracks agent completion
-4. **SessionEnd** — Cleans up
+2. **PreToolUse** — Shows tools before execution (running state)
+3. **PostToolUse** — Captures tool completion
+4. **UserPromptSubmit** — Tracks user prompts
+5. **Stop** — Detects idle state
+6. **PreCompact** — Tracks context compaction
+7. **SubagentStop** — Tracks agent completion
+8. **SessionEnd** — Cleans up
 
 Data flows through a named pipe (FIFO) to a React/Ink terminal UI.
 
@@ -83,6 +105,22 @@ Data flows through a named pipe (FIFO) to a React/Ink terminal UI.
 - Claude Code
 - Node.js 18+ or Bun
 - `jq` (for JSON parsing in hooks)
+
+## Troubleshooting
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and solutions.
+
+Quick checks:
+```bash
+# Verify installation
+~/.claude/plugins/claude-hud/scripts/verify-install.sh
+
+# Check plugin is valid
+claude plugin validate ~/.claude/plugins/claude-hud
+
+# View debug output
+claude --debug hooks
+```
 
 ## Development
 
