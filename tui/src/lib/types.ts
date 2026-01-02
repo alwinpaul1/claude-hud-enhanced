@@ -42,6 +42,26 @@ export interface ContextState {
   maxTokens: number;
 }
 
+export interface ContextHealth {
+  tokens: number;
+  percent: number;
+  remaining: number;
+  maxTokens: number;
+  burnRate: number;
+  status: 'healthy' | 'warning' | 'critical';
+  shouldCompact: boolean;
+  breakdown: ContextBreakdown;
+  sessionStart: number;
+  lastUpdate: number;
+}
+
+export interface ContextBreakdown {
+  toolOutputs: number;
+  toolInputs: number;
+  messages: number;
+  other: number;
+}
+
 export interface AppState {
   events: HudEvent[];
   tools: ToolEntry[];

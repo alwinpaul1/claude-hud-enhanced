@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import minimist from 'minimist';
 import { EventReader } from './lib/event-reader.js';
+import { ContextTracker } from './lib/context-tracker.js';
 import { ContextMeter } from './components/ContextMeter.js';
 import { ToolStream } from './components/ToolStream.js';
 import { McpStatus } from './components/McpStatus.js';
 import { TodoList } from './components/TodoList.js';
 import { ModifiedFiles } from './components/ModifiedFiles.js';
 import { AgentList } from './components/AgentList.js';
-import type { HudEvent, ToolEntry, TodoItem, ModifiedFile, ContextState, AgentEntry } from './lib/types.js';
-
-const MAX_TOKENS = 200000;
+import type { HudEvent, ToolEntry, TodoItem, ModifiedFile, ContextHealth, AgentEntry } from './lib/types.js';
 
 interface AppProps {
   sessionId: string;
@@ -23,12 +22,8 @@ function App({ sessionId, fifoPath }: AppProps) {
   const [tools, setTools] = useState<ToolEntry[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [modifiedFiles, setModifiedFiles] = useState<Map<string, ModifiedFile>>(new Map());
-  const [context, setContext] = useState<ContextState>({
-    tokens: 0,
-    percent: 0,
-    remaining: MAX_TOKENS,
-    maxTokens: MAX_TOKENS,
-  });
+  const contextTrackerRef = useRef(new ContextTracker());
+  const [context, setContext] = useState<ContextHealth>(contextTrackerRef.current.getHealth());
   const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentEntry[]>([]);
 
@@ -107,16 +102,8 @@ function App({ sessionId, fifoPath }: AppProps) {
 
       setTools((prev) => [...prev.slice(-20), entry]);
 
-      const estimatedTokens = JSON.stringify(event.response || {}).length / 4;
-      setContext((prev) => {
-        const newTokens = Math.min(prev.tokens + estimatedTokens, MAX_TOKENS);
-        return {
-          ...prev,
-          tokens: Math.round(newTokens),
-          percent: Math.round((newTokens / MAX_TOKENS) * 100),
-          remaining: Math.round(MAX_TOKENS - newTokens),
-        };
-      });
+      contextTrackerRef.current.processEvent(event);
+      setContext(contextTrackerRef.current.getHealth());
     }
   }, []);
 
