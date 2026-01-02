@@ -1,13 +1,14 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { ContextHealth } from '../lib/types.js';
+import { Sparkline } from './Sparkline.js';
 
 interface Props {
   context: ContextHealth;
 }
 
 export function ContextMeter({ context }: Props) {
-  const { tokens, percent, remaining, burnRate, status, shouldCompact, breakdown } = context;
+  const { tokens, percent, remaining, burnRate, status, shouldCompact, breakdown, tokenHistory } = context;
 
   const barWidth = 20;
   const filled = Math.round((percent / 100) * barWidth);
@@ -51,6 +52,10 @@ export function ContextMeter({ context }: Props) {
         <Text color={color}>{'█'.repeat(filled)}</Text>
         <Text dimColor>{'░'.repeat(empty)}</Text>
         <Text color={color}> {percent}%</Text>
+      </Box>
+      <Box>
+        <Sparkline data={tokenHistory} width={20} color={color} />
+        <Text dimColor> usage</Text>
       </Box>
       <Box>
         <Text dimColor>{formatNumber(tokens)} used</Text>

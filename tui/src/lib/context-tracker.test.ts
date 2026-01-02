@@ -126,4 +126,61 @@ describe('ContextTracker', () => {
       expect(health.breakdown.toolOutputs).toBe(0);
     });
   });
+
+  describe('getTokenHistory', () => {
+    it('should return empty array when no events processed', () => {
+      // #given - fresh tracker
+      // #when
+      const history = tracker.getTokenHistory();
+      // #then
+      expect(history).toEqual([]);
+    });
+
+    it('should track token history as events are processed', () => {
+      // #given
+      const events = [
+        { content: 'x'.repeat(100) },
+        { content: 'x'.repeat(200) },
+        { content: 'x'.repeat(300) },
+      ];
+
+      // #when
+      events.forEach((response, i) => {
+        tracker.processEvent({
+          event: 'PostToolUse',
+          tool: 'Read',
+          input: null,
+          response,
+          session: 'test',
+          ts: Date.now() / 1000 + i,
+        });
+      });
+
+      // #then
+      const history = tracker.getTokenHistory();
+      expect(history.length).toBe(3);
+      expect(history[0]).toBeLessThan(history[1]);
+      expect(history[1]).toBeLessThan(history[2]);
+    });
+
+    it('should include tokenHistory in getHealth output', () => {
+      // #given
+      tracker.processEvent({
+        event: 'PostToolUse',
+        tool: 'Read',
+        input: null,
+        response: { content: 'test' },
+        session: 'test',
+        ts: Date.now() / 1000,
+      });
+
+      // #when
+      const health = tracker.getHealth();
+
+      // #then
+      expect(health.tokenHistory).toBeDefined();
+      expect(Array.isArray(health.tokenHistory)).toBe(true);
+      expect(health.tokenHistory.length).toBeGreaterThan(0);
+    });
+  });
 });

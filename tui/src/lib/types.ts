@@ -1,10 +1,15 @@
 export interface HudEvent {
   event: string;
   tool: string | null;
+  toolUseId?: string;
   input: Record<string, unknown> | null;
   response: Record<string, unknown> | null;
   session: string;
   ts: number;
+  permissionMode?: string;
+  transcriptPath?: string;
+  cwd?: string;
+  prompt?: string;
 }
 
 export interface ToolEntry {
@@ -58,6 +63,7 @@ export interface ContextHealth {
   breakdown: ContextBreakdown;
   sessionStart: number;
   lastUpdate: number;
+  tokenHistory: number[];
 }
 
 export interface ContextBreakdown {
@@ -67,6 +73,23 @@ export interface ContextBreakdown {
   other: number;
 }
 
+export interface SessionInfo {
+  permissionMode: string;
+  cwd: string;
+  transcriptPath: string;
+  isIdle: boolean;
+  lastPrompt: string;
+  compactionCount: number;
+}
+
+export interface CostEstimate {
+  inputCost: number;
+  outputCost: number;
+  totalCost: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AppState {
   events: HudEvent[];
   tools: ToolEntry[];
@@ -74,4 +97,6 @@ export interface AppState {
   modifiedFiles: Map<string, ModifiedFile>;
   context: ContextState;
   mcpServers: string[];
+  sessionInfo: SessionInfo;
+  cost: CostEstimate;
 }

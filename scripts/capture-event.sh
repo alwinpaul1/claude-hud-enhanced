@@ -7,9 +7,14 @@ if [ -p "$EVENT_FIFO" ]; then
   echo "$INPUT" | jq -c '{
     event: .hook_event_name,
     tool: .tool_name,
+    toolUseId: .tool_use_id,
     input: .tool_input,
     response: .tool_response,
     session: .session_id,
+    permissionMode: .permission_mode,
+    transcriptPath: .transcript_path,
+    cwd: .cwd,
+    prompt: .prompt,
     ts: (now | floor)
   }' >> "$EVENT_FIFO" 2>/dev/null || true
 fi

@@ -4,6 +4,7 @@ const MAX_TOKENS = 200000;
 const CHARS_PER_TOKEN = 4;
 const COMPACTION_THRESHOLD = 0.85;
 const WARNING_THRESHOLD = 0.70;
+const SPARKLINE_SAMPLES = 20;
 
 export interface ContextHealth {
   tokens: number;
@@ -16,6 +17,7 @@ export interface ContextHealth {
   breakdown: ContextBreakdown;
   sessionStart: number;
   lastUpdate: number;
+  tokenHistory: number[];
 }
 
 export interface ContextBreakdown {
@@ -106,6 +108,11 @@ export class ContextTracker {
     return 'healthy';
   }
 
+  getTokenHistory(): number[] {
+    const history = this.tokenHistory.slice(-SPARKLINE_SAMPLES);
+    return history.map(s => s.tokens);
+  }
+
   getHealth(): ContextHealth {
     const percent = Math.min((this.totalTokens / MAX_TOKENS) * 100, 100);
     const remaining = Math.max(MAX_TOKENS - this.totalTokens, 0);
@@ -121,6 +128,7 @@ export class ContextTracker {
       breakdown: { ...this.breakdown },
       sessionStart: this.sessionStart,
       lastUpdate: this.lastUpdate,
+      tokenHistory: this.getTokenHistory(),
     };
   }
 

@@ -2,141 +2,99 @@
 active: true
 iteration: 1
 max_iterations: 100
-completion_promise: "LAUNCH READY"
-started_at: "2026-01-02T02:25:58Z"
+completion_promise: "HUD V2 COMPLETE"
+started_at: "2026-01-02T03:08:24Z"
 ---
 
-You are iteratively improving claude-hud, a Claude Code plugin that shows a real-time terminal HUD in a split pane.
+You are iteratively improving claude-hud v2, a Claude Code plugin that shows a real-time terminal HUD.
 
 ## GOAL
-Make this a Vercel-grade developer experience ready for a viral Twitter launch. Zero config magic where everything just works. Install the plugin, start Claude Code, and the HUD appears with useful real-time information.
+Make this THE definitive Claude Code developer dashboard. Surface everything developers need: real tokens, costs, model info, conversation flow, compaction events. Vercel-grade polish.
 
 ## CURRENT STATE
-- MVP: basic HUD with context meter, tool stream, MCP status, todos, modified files, agents
-- React/Ink TUI in tui/
-- Hook-based event capture via FIFO
-- Supports tmux, iTerm2, Kitty, WezTerm, Zellij, Windows Terminal
+- v1.0.0 complete with: context meter, tool stream, agent tracking, session stats
+- React/Ink TUI
+- Hooks: PostToolUse, SubagentStop, SessionStart, SessionEnd
 
-## DESIGN PRINCIPLES
-1. Peripheral awareness - always visible like a car dashboard
-2. Context is the killer feature - help developers understand context health
-3. Pure display - read-only, no interaction needed
-4. Subtle alerts - color changes for warnings, never intrusive
-5. Zero config - works perfectly out of the box
+## PHASE 1: Enhanced Data Capture
+Add missing hooks to hooks.json:
+- PreToolUse (true running state)
+- UserPromptSubmit (track prompts)
+- Stop (idle detection)
+- PreCompact (compaction events)
 
-## PHASE 1: Context Health (THE KILLER FEATURE)
-Context is the most important thing when working with AI. Make this exceptional.
+Enrich capture-event.sh with:
+- permission_mode, transcript_path, cwd
 
-Research:
-- How can we get accurate token counts? Check if Claude Code exposes this anywhere
-- Research context engineering best practices and blogs
-- What makes context 'healthy' vs 'unhealthy'?
+Research real token counting from transcript_path JSONL.
 
-Implement:
-- Accurate token tracking (investigate Claude Code internals, or best approximation)
-- Burn rate indicator (tokens/minute trend)
-- Compaction warning when approaching threshold
-- Context breakdown - show what's consuming context (tool outputs, messages, etc)
-- Consider a 'Context Score' or health indicator
+Push after phase.
 
-Push after this phase completes.
+## PHASE 2: UI Enhancements
+- Token sparkline (▁▂▃▄▅▆▇█ characters)
+- Cost estimation panel ($ based on Anthropic pricing)
+- Session status bar (model, permission mode, idle/working, compaction count)
+- Conversation preview (last user prompt)
+- Visual polish
 
-## PHASE 2: Tool Stream Enhancement
-- Show: Tool + status + duration (e.g., 'Grep: auth/ (1.2s) ✓')
-- Color-code: green=success, red=error, yellow=running
-- Smart truncation for long paths (filename + parent)
-- For nested agent tools, show latest 2-3 only
+Push after phase.
 
-Push after this phase completes.
+## PHASE 3: Developer Experience
+- Post-install verification
+- Screenshot for README
+- Troubleshooting guide
+- Configuration support (.claude-hud.json)
 
-## PHASE 3: Agent Tracking
-- Show type + description ('Explore: finding auth patterns')
-- Elapsed time for running agents
-- Nested activity - agent's own tool calls as sub-items
-- Completion status
+Push after phase.
 
-Push after this phase completes.
+## PHASE 4: Robustness & Testing
+- Test all new components
+- Test edge cases
+- Profile performance
 
-## PHASE 4: Session Stats & Polish
-Add session-wide statistics:
-- Tool counts by type (23 Reads, 15 Edits, 8 Bash...)
-- Lines changed (+342 / -89 across N files)
-- Session duration
-- Agent spawn counts
+Push after phase.
 
-Visual polish:
-- Subtle animations/transitions for status changes
-- Make it visually distinctive and memorable
-- Ensure 45-55 char width works well
+## PHASE 5: Documentation Excellence
+- README rewrite with screenshot
+- Enhanced CONTRIBUTING
+- Code documentation
 
-Push after this phase completes.
+Push after phase.
 
-## PHASE 5: Session Lifecycle & Robustness
-- Handle Claude Code lifecycle: fresh start, --continue, --resume
-- Reconnect to existing session on resume
-- Show 'disconnected' state cleanly
-- Error boundaries for React components
-- Graceful degradation when FIFO unavailable
-- Handle edge cases (empty data, rapid events, very long paths)
+## PHASE 6: Advanced Features
+- MCP server health indicators
+- Git integration (branch, changes)
+- Keyboard shortcuts
+- Theme support
 
-Push after this phase completes.
+Push after phase.
 
-## PHASE 6: Cross-Terminal Support
-- Verify native splits work: tmux, iTerm2, Kitty, WezTerm, Zellij
-- Implement fallback to separate window for unsupported terminals
-- Test on macOS Terminal
-- Ensure reliable behavior everywhere
+## PHASE 7: Final Polish
+- Version 2.0.0
+- Performance audit
+- Code cleanup
+- Changelog
 
-Push after this phase completes.
-
-## PHASE 7: Testing
-- Add vitest for unit tests
-- Test EventReader (parsing, reconnection, malformed JSON)
-- Test key components
-- Test hook scripts
-
-Push after this phase completes.
-
-## PHASE 8: Documentation & Onboarding
-README must be excellent:
-- Clear installation: claude /plugin install github.com/jarrod/claude-hud
-- GIF or screenshot showing HUD in action
-- Feature overview
-- Supported terminals list
-- Zero config emphasis
-
-Add CONTRIBUTING.md for contributors.
-Clean up package.json metadata.
-
-Push after this phase completes.
-
-## PHASE 9: Final Polish
-- TypeScript strict mode with no errors
-- Remove console.log statements
-- Clean, meaningful commit messages
-- Version bump to 1.0.0
-- Final README review
-
-Push after this phase completes.
+Push after phase.
 
 ## RULES
-1. Commit after each meaningful improvement with descriptive message
-2. Push after each PHASE completes (not individual commits)
-3. Run tests after significant changes
-4. If stuck on something for 3+ attempts, document the issue in a TODO comment and move on
-5. Keep the HUD performant - no heavy operations in render loop
-6. Installation MUST remain: claude /plugin install github.com/jarrod/claude-hud
+1. Commit after meaningful improvements
+2. Push after each PHASE
+3. Run tests frequently
+4. If stuck 3+ times, TODO comment and move on
+5. Keep HUD performant
+6. Installation: claude /plugin install github.com/jarrodwatts/claude-hud
 
-## COMPLETION CRITERIA
-Output <promise>LAUNCH READY</promise> ONLY when:
-- Context health feature is working and useful
-- Tool stream shows real-time activity with status/duration
-- Agent tracking with nested activity works
-- Session stats are visible
-- Cross-terminal support verified
-- Tests passing
-- README is polished and complete
-- TypeScript compiles clean
-- The plugin feels delightful to use
+## COMPLETION
+Output <promise>HUD V2 COMPLETE</promise> ONLY when:
+- All new hooks capturing data
+- Token sparkline working
+- Cost estimation visible
+- Session status bar with model/mode
+- Screenshot in README
+- Troubleshooting guide
+- Tests cover new features
+- Version 2.0.0
+- Performance verified
 
-If after 90 iterations you haven't completed everything, output <promise>LAUNCH READY</promise> anyway with a summary of what's done vs what remains.
+After 90 iterations, output promise anyway with summary.
