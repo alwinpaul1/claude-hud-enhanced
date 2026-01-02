@@ -2,6 +2,14 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.9] - 2026-01-03
+
+### Improved
+- **Performance**: Added React.memo to SessionStats component
+  - All components now consistently wrapped with React.memo
+
+---
+
 ## [2.0.8] - 2026-01-03
 
 ### Improved
