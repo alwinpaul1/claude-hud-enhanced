@@ -2,6 +2,15 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.5] - 2026-01-03
+
+### Improved
+- **Test coverage**: Increased to 94.00% (229 total tests)
+  - Added ContextMeter tests (header, percentage, compact warning, number formatting)
+  - Added settings-reader edge case tests (invalid JSON, missing fields)
+
+---
+
 ## [2.0.4] - 2026-01-03
 
 ### Improved
