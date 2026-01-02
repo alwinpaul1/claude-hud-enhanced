@@ -8,7 +8,10 @@ describe('StatusBar', () => {
   const mockSettings: SettingsData = {
     model: 'claude-sonnet-4',
     pluginCount: 3,
+    pluginNames: ['plugin1', 'plugin2', 'plugin3'],
     mcpCount: 2,
+    mcpNames: ['mcp1', 'mcp2'],
+    allowedPermissions: [],
   };
 
   it('should render model name from settings', () => {
