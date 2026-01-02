@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Box, Text } from 'ink';
 import type { AgentEntry } from '../lib/types.js';
 
@@ -44,7 +44,7 @@ interface AgentItemProps {
   agent: AgentEntry;
 }
 
-function AgentItem({ agent }: AgentItemProps) {
+const AgentItem = memo(function AgentItem({ agent }: AgentItemProps) {
   const [elapsed, setElapsed] = useState(formatElapsed(agent.startTs, agent.endTs));
 
   useEffect(() => {
@@ -90,9 +90,9 @@ function AgentItem({ agent }: AgentItemProps) {
       )}
     </Box>
   );
-}
+});
 
-export function AgentList({ agents }: Props) {
+export const AgentList = memo(function AgentList({ agents }: Props) {
   const recentAgents = agents.slice(-4);
   const runningCount = agents.filter((a) => a.status === 'running').length;
 
@@ -113,4 +113,4 @@ export function AgentList({ agents }: Props) {
       ))}
     </Box>
   );
-}
+});
