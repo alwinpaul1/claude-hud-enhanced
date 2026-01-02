@@ -2,6 +2,16 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.8] - 2026-01-03
+
+### Improved
+- **Test coverage**: Increased to 94.25% (231 total tests)
+  - ToolStream now at 100% line coverage
+  - Added edge case tests for path truncation
+- **Code quality**: Removed dead code from truncatePath function
+
+---
+
 ## [2.0.7] - 2026-01-03
 
 ### Improved
