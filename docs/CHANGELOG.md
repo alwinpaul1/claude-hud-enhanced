@@ -2,30 +2,54 @@
 
 All notable changes to claude-hud will be documented in this file.
 
-## [Unreleased] - v2.0.0 Architecture Overhaul
+## [2.0.0] - 2026-01-02
 
-### Research Phase
-- Researched Claude Code plugin best practices from Anthropic documentation
-- Studied TUI design principles from lazygit, btop, and awesome-tuis
-- Analyzed Ink/React terminal UI performance patterns
-- Documented findings in `docs/research/RESEARCH.md`
+### Architecture Overhaul
 
-### Architecture Decisions
-- **ADR 001**: State management via custom hooks + useReducer (not XState/Context)
-- **ADR 002**: Event-driven data flow with minimal polling
-- **ADR 003**: Minimal shell scripts, logic in TypeScript
-- **ADR 004**: Session ID tracking for graceful /new /exit /resume handling
+A complete rewrite focusing on stability, accuracy, and developer experience.
 
-### Key Changes Planned
-- Refactor 300+ line app.tsx into domain-specific hooks
-- Eliminate multiple polling sources that cause flickering
-- Add proper session change detection
-- Implement exponential backoff reconnection
-- Add ESLint + Prettier for code quality
-- Set up GitHub Actions CI
+### Added
+- **UnifiedContextTracker**: Single source of truth for context tracking
+  - Reads real token counts from Claude transcript files
+  - Falls back to estimation when transcript unavailable
+  - Eliminates flickering from dual data sources
+- **CostDisplay**: Real-time API cost estimation
+  - Tracks input/output tokens separately
+  - Automatic model detection for accurate pricing
+  - Supports Opus, Sonnet, and Haiku pricing
+- **Custom hooks architecture**:
+  - `useHudState` - Centralized state management
+  - `useElapsedTime` - Session timer hook
+- **Code quality tooling**:
+  - ESLint with TypeScript, React, and React Hooks rules
+  - Prettier with consistent formatting
+  - Husky pre-commit hooks with lint-staged
+- **Comprehensive test suite**: 152 tests covering all components
 
-### What Users Will Notice
-- **No more flickering**: Single event source instead of multiple pollers
-- **Session handling works**: /new, /exit, /resume transitions smoothly
-- **Accurate context**: Real token counts from events, not estimates
-- **Better performance**: Reduced CPU usage from eliminated polling
+### Changed
+- **app.tsx**: Reduced from 329 lines to 136 lines (59% reduction)
+- **Context tracking**: Reads transcript on Stop events only, not polling
+- **State management**: Follows ADR 001 pattern with custom hooks
+
+### Fixed
+- **Context flickering**: Eliminated dual-source updates
+- **Session handling**: Proper transcript path detection on /resume
+- **Test reliability**: Fixed race condition in smoke tests
+
+### Technical
+- Added Architecture Decision Records (ADRs):
+  - ADR 001: State management via custom hooks
+  - ADR 002: Event-driven data flow with minimal polling
+  - ADR 003: Minimal shell scripts, logic in TypeScript
+  - ADR 004: Session ID tracking for graceful transitions
+- Research documented in `docs/research/RESEARCH.md`
+
+## [1.0.0] - Initial Release
+
+- Context meter with sparkline
+- Tool stream with live status
+- Agent tracking
+- Todo list display
+- Session statistics
+- Git status panel
+- MCP server status
