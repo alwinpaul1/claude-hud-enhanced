@@ -136,8 +136,20 @@ If you're still having issues:
 
 ## Debug Mode
 
-Run the HUD with verbose output:
+Enable debug logging for more verbose output:
 ```bash
+# Method 1: Environment variable (recommended)
+CLAUDE_HUD_DEBUG=1 claude
+
+# Method 2: Claude's built-in debug mode
+claude --debug hooks
+
+# Method 3: Manual testing with debug output
 cd ~/.claude/plugins/claude-hud/tui
-DEBUG=* node dist/index.js --session test --fifo /tmp/test.fifo
+CLAUDE_HUD_DEBUG=1 node dist/index.js --session test --fifo /tmp/test.fifo
 ```
+
+Debug output is written to stderr and includes:
+- Event parsing errors
+- FIFO connection status
+- Transcript file reading attempts
