@@ -27,12 +27,14 @@
     "minimist": "^1.2.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@testing-library/react": "^16.3.1",
     "@types/minimist": "^1.2.5",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@typescript-eslint/eslint-plugin": "^8.51.0",
     "@typescript-eslint/parser": "^8.51.0",
+    "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
