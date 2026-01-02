@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ToolEntry } from '../lib/types.js';
 
@@ -19,7 +19,7 @@ const STATUS_COLORS: Record<string, string> = {
   error: 'red',
 };
 
-function truncatePath(path: string, maxLen: number = 22): string {
+function truncatePath(path: string, maxLen = 22): string {
   if (!path || path.length <= maxLen) return path;
 
   const parts = path.split('/');
@@ -53,7 +53,7 @@ function formatDuration(ms: number | undefined): string {
   return `${Math.round(ms / 1000)}s`;
 }
 
-export function ToolStream({ tools, maxVisible = 4 }: Props) {
+export const ToolStream = memo(function ToolStream({ tools, maxVisible = 4 }: Props) {
   const recentTools = tools.slice(-maxVisible);
 
   return (
@@ -88,4 +88,4 @@ export function ToolStream({ tools, maxVisible = 4 }: Props) {
       )}
     </Box>
   );
-}
+});

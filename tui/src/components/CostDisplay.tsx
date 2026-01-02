@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { CostEstimate } from '../lib/types.js';
 
@@ -27,7 +27,7 @@ function getModelShortName(model: string | null): string {
   return model.split('-').slice(-1)[0] || 'unknown';
 }
 
-export function CostDisplay({ cost, model }: Props) {
+export const CostDisplay = memo(function CostDisplay({ cost, model }: Props) {
   if (cost.totalCost === 0 && cost.inputTokens === 0) {
     return null;
   }
@@ -53,4 +53,4 @@ export function CostDisplay({ cost, model }: Props) {
       </Box>
     </Box>
   );
-}
+});

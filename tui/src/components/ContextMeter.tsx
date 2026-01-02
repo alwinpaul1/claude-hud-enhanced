@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ContextHealth } from '../lib/types.js';
 import { Sparkline } from './Sparkline.js';
@@ -7,29 +7,29 @@ interface Props {
   context: ContextHealth;
 }
 
-export function ContextMeter({ context }: Props) {
+const STATUS_COLORS: Record<string, string> = {
+  healthy: 'green',
+  warning: 'yellow',
+  critical: 'red',
+};
+
+function formatNumber(n: number): string {
+  if (n >= 1000000) {
+    return `${(n / 1000000).toFixed(1)}M`;
+  }
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(0)}k`;
+  }
+  return n.toString();
+}
+
+export const ContextMeter = memo(function ContextMeter({ context }: Props) {
   const { tokens, percent, remaining, status, shouldCompact, tokenHistory } = context;
 
   const barWidth = 20;
   const filled = Math.round((percent / 100) * barWidth);
   const empty = barWidth - filled;
-
-  const statusColors: Record<string, string> = {
-    healthy: 'green',
-    warning: 'yellow',
-    critical: 'red',
-  };
-  const color = statusColors[status];
-
-  const formatNumber = (n: number): string => {
-    if (n >= 1000000) {
-      return `${(n / 1000000).toFixed(1)}M`;
-    }
-    if (n >= 1000) {
-      return `${(n / 1000).toFixed(0)}k`;
-    }
-    return n.toString();
-  };
+  const color = STATUS_COLORS[status];
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -59,4 +59,4 @@ export function ContextMeter({ context }: Props) {
       </Box>
     </Box>
   );
-}
+});
