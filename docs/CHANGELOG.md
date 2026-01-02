@@ -2,6 +2,18 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.10] - 2026-01-03
+
+### Added
+- **CI**: GitHub Actions workflow for automated testing
+  - Lint, typecheck, test, and build on push/PR
+  - Plugin structure validation
+
+### Fixed
+- **Build**: Removed accidental .gitignore entry blocking CI workflow
+
+---
+
 ## [2.0.9] - 2026-01-03
 
 ### Improved
