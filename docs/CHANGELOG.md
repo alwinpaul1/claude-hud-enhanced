@@ -5,14 +5,16 @@ All notable changes to claude-hud will be documented in this file.
 ## [2.0.11] - 2026-01-03
 
 ### Removed
-- **Dead code cleanup**: Removed 1,138 lines of unused legacy code
+- **Dead code cleanup**: Removed 1,145+ lines of unused code
   - `context-tracker.ts` - superseded by UnifiedContextTracker
   - `transcript-reader.ts` - functionality moved to UnifiedContextTracker
   - `stats-reader.ts` - unused
   - `usage-reader.ts` - unused
+  - `ContextState` interface - redundant subset of ContextHealth
 
 ### Improved
-- **Test coverage**: Now at 94.43% (194 tests)
+- **Test coverage**: Now at 95.14% (194 tests)
+- **Code reduction**: From ~3,000+ lines to 1,928 lines (36% reduction)
 
 ---
 
