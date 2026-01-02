@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import { EventReader } from './lib/event-reader.js';
-import { ContextTracker } from './lib/context-tracker.js';
+import { UnifiedContextTracker } from './lib/unified-context-tracker.js';
 import { SettingsReader } from './lib/settings-reader.js';
 import { ContextDetector } from './lib/context-detector.js';
-import { TranscriptReader } from './lib/transcript-reader.js';
 import { ContextMeter } from './components/ContextMeter.js';
 import { ToolStream } from './components/ToolStream.js';
 import { TodoList } from './components/TodoList.js';
@@ -46,10 +45,9 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
   const [visible, setVisible] = useState(true);
   const [tools, setTools] = useState<ToolEntry[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
-  const contextTrackerRef = useRef(new ContextTracker());
+  const contextTrackerRef = useRef(new UnifiedContextTracker());
   const settingsReaderRef = useRef(new SettingsReader());
   const contextDetectorRef = useRef(new ContextDetector());
-  const transcriptReaderRef = useRef(new TranscriptReader());
   const [context, setContext] = useState<ContextHealth>(contextTrackerRef.current.getHealth());
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [contextFiles, setContextFiles] = useState<ContextFiles | null>(null);
@@ -159,9 +157,16 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
       }));
     }
 
-    // Handle Stop - Claude finished responding
+    // Handle Stop - Claude finished responding, read transcript for accurate tokens
     if (event.event === 'Stop') {
       setSessionInfo((prev) => ({ ...prev, isIdle: true }));
+      contextTrackerRef.current.processEvent(event);
+      setContext(contextTrackerRef.current.getHealth());
+    }
+
+    // Handle PreCompact - context is about to be compacted
+    if (event.event === 'PreCompact') {
+      contextTrackerRef.current.processEvent(event);
     }
 
     // Handle TodoWrite
@@ -240,20 +245,12 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
     return () => clearInterval(interval);
   }, [sessionInfo.cwd]);
 
-  // Read transcript for real context data (especially important on session resume)
+  // Set transcript path on unified context tracker (it reads on Stop events)
   useEffect(() => {
-    if (!sessionInfo.transcriptPath) return;
-
-    const readTranscript = () => {
-      const health = transcriptReaderRef.current.getContextHealth(sessionInfo.transcriptPath);
-      if (health) {
-        setContext(health);
-      }
-    };
-
-    readTranscript();
-    const interval = setInterval(readTranscript, 5000);
-    return () => clearInterval(interval);
+    if (sessionInfo.transcriptPath) {
+      contextTrackerRef.current.setTranscriptPath(sessionInfo.transcriptPath);
+      setContext(contextTrackerRef.current.getHealth());
+    }
   }, [sessionInfo.transcriptPath]);
 
   if (!visible) {
