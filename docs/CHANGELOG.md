@@ -2,6 +2,16 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.3] - 2026-01-03
+
+### Improved
+- **Test coverage**: Increased to 93.64% (210 total tests)
+  - Added StatusBar.test.tsx with truncatePath tests
+  - Added ToolStream edge case tests for path truncation
+  - Added context-tracker tests for addMessageTokens and getContextState
+
+---
+
 ## [2.0.2] - 2026-01-03
 
 ### Improved
