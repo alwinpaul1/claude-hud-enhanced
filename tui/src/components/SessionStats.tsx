@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ToolEntry, ModifiedFile, AgentEntry } from '../lib/types.js';
 
@@ -27,7 +27,12 @@ function getToolCounts(tools: ToolEntry[]): Map<string, number> {
   return counts;
 }
 
-export function SessionStats({ tools, modifiedFiles, agents, sessionStart }: Props) {
+export const SessionStats = memo(function SessionStats({
+  tools,
+  modifiedFiles,
+  agents,
+  sessionStart,
+}: Props) {
   const [elapsed, setElapsed] = useState(formatDuration(Date.now() - sessionStart));
 
   useEffect(() => {
@@ -93,4 +98,4 @@ export function SessionStats({ tools, modifiedFiles, agents, sessionStart }: Pro
       </Box>
     </Box>
   );
-}
+});
