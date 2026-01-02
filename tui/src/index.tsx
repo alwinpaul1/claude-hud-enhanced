@@ -10,6 +10,8 @@ import { TodoList } from './components/TodoList.js';
 import { ModifiedFiles } from './components/ModifiedFiles.js';
 import { AgentList } from './components/AgentList.js';
 import { SessionStats } from './components/SessionStats.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
+import type { ConnectionStatus } from './lib/event-reader.js';
 import type { HudEvent, ToolEntry, TodoItem, ModifiedFile, ContextHealth, AgentEntry } from './lib/types.js';
 
 interface AppProps {
@@ -28,6 +30,7 @@ function App({ sessionId, fifoPath }: AppProps) {
   const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [sessionStart] = useState(Date.now());
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
 
   useInput((input, key) => {
     if (key.ctrl && input === 'h') {
@@ -124,6 +127,10 @@ function App({ sessionId, fifoPath }: AppProps) {
   useEffect(() => {
     const reader = new EventReader(fifoPath);
     reader.on('event', processEvent);
+    reader.on('status', (status: ConnectionStatus) => {
+      setConnectionStatus(status);
+    });
+    setConnectionStatus(reader.getStatus());
     return () => reader.close();
   }, [fifoPath, processEvent]);
 
@@ -139,25 +146,53 @@ function App({ sessionId, fifoPath }: AppProps) {
     );
   }
 
+  const statusColors: Record<ConnectionStatus, string> = {
+    connecting: 'yellow',
+    connected: 'green',
+    disconnected: 'gray',
+    error: 'red',
+  };
+  const statusIcons: Record<ConnectionStatus, string> = {
+    connecting: '◐',
+    connected: '●',
+    disconnected: '○',
+    error: '✗',
+  };
+
   return (
-    <Box flexDirection="column" width={45} borderStyle="round" borderColor="gray">
+    <Box flexDirection="column" width={48} borderStyle="round" borderColor="gray">
       <Box marginBottom={1}>
         <Text bold color="cyan"> Claude HUD </Text>
-        <Text dimColor>({sessionId.slice(0, 8)})</Text>
+        <Text dimColor>({sessionId.slice(0, 8)}) </Text>
+        <Text color={statusColors[connectionStatus]}>{statusIcons[connectionStatus]}</Text>
       </Box>
 
-      <ContextMeter context={context} />
-      <SessionStats
-        tools={tools}
-        modifiedFiles={modifiedFiles}
-        agents={agents}
-        sessionStart={sessionStart}
-      />
-      <ToolStream tools={tools} />
-      <AgentList agents={agents} />
-      <McpStatus servers={mcpServers} />
-      <TodoList todos={todos} />
-      <ModifiedFiles files={modifiedFiles} />
+      <ErrorBoundary>
+        <ContextMeter context={context} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <SessionStats
+          tools={tools}
+          modifiedFiles={modifiedFiles}
+          agents={agents}
+          sessionStart={sessionStart}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <ToolStream tools={tools} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <AgentList agents={agents} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <McpStatus servers={mcpServers} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <TodoList todos={todos} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <ModifiedFiles files={modifiedFiles} />
+      </ErrorBoundary>
 
       <Box marginTop={1}>
         <Text dimColor>Ctrl+H toggle • Ctrl+C exit</Text>
