@@ -9,6 +9,7 @@ import { McpStatus } from './components/McpStatus.js';
 import { TodoList } from './components/TodoList.js';
 import { ModifiedFiles } from './components/ModifiedFiles.js';
 import { AgentList } from './components/AgentList.js';
+import { SessionStats } from './components/SessionStats.js';
 import type { HudEvent, ToolEntry, TodoItem, ModifiedFile, ContextHealth, AgentEntry } from './lib/types.js';
 
 interface AppProps {
@@ -26,6 +27,7 @@ function App({ sessionId, fifoPath }: AppProps) {
   const [context, setContext] = useState<ContextHealth>(contextTrackerRef.current.getHealth());
   const [mcpServers, setMcpServers] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentEntry[]>([]);
+  const [sessionStart] = useState(Date.now());
 
   useInput((input, key) => {
     if (key.ctrl && input === 'h') {
@@ -145,6 +147,12 @@ function App({ sessionId, fifoPath }: AppProps) {
       </Box>
 
       <ContextMeter context={context} />
+      <SessionStats
+        tools={tools}
+        modifiedFiles={modifiedFiles}
+        agents={agents}
+        sessionStart={sessionStart}
+      />
       <ToolStream tools={tools} />
       <AgentList agents={agents} />
       <McpStatus servers={mcpServers} />
