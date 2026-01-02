@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: tui
+        run: bun install --frozen-lockfile
+
+      - name: Build TUI
+        working-directory: tui
+        run: bun run build
+
+      - name: Package artifact
+        run: tar -czf claude-hud-tui.tar.gz tui/dist tui/package.json
+
+      - name: Release artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: claude-hud-tui.tar.gz

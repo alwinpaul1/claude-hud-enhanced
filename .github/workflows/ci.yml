@@ -8,18 +8,23 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        bun: [latest, 1.1.30]
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: ${{ matrix.bun }}
 
       - name: Install dependencies
         working-directory: tui
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Lint
         working-directory: tui
@@ -32,6 +37,9 @@ jobs:
       - name: Test
         working-directory: tui
         run: bun test
+
+      - name: Snapshot guard
+        run: git diff --exit-code
 
       - name: Build
         working-directory: tui
@@ -59,3 +67,21 @@ jobs:
         run: |
           jq . .claude-plugin/plugin.json > /dev/null
           jq . hooks/hooks.json > /dev/null
+
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: tui
+        run: bun install --frozen-lockfile
+
+      - name: Dependency audit
+        working-directory: tui
+        run: bun run audit
