@@ -37,10 +37,7 @@ function truncatePath(path: string, maxLen = 22): string {
     }
 
     const available = maxLen - filename.length - 2;
-    if (available > 0) {
-      return `…${parent.slice(-available)}/${filename}`;
-    }
-    return `…/${filename}`;
+    return `…${parent.slice(-available)}/${filename}`;
   }
 
   return `…${path.slice(-(maxLen - 1))}`;

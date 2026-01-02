@@ -129,5 +129,25 @@ describe('ToolStream', () => {
       const frame = lastFrame() || '';
       expect(frame).toContain('.ts');
     });
+
+    it('should show ellipsis and filename when filename fills available space', () => {
+      const longFilename = 'a'.repeat(20) + '.ts';
+      const path = `/path/to/${longFilename}`;
+      const tools = [createTool({ target: path })];
+      const { lastFrame } = render(<ToolStream tools={tools} />);
+      const frame = lastFrame() || '';
+      expect(frame).toContain('…');
+      expect(frame).toContain('.ts');
+    });
+
+    it('should truncate long path without slashes', () => {
+      const longName = 'a'.repeat(30) + '.ts';
+      const tools = [createTool({ target: longName })];
+      const { lastFrame } = render(<ToolStream tools={tools} />);
+      const frame = lastFrame() || '';
+      expect(frame).toContain('…');
+      expect(frame).toContain('.ts');
+      expect(frame.length).toBeLessThan(longName.length + 50);
+    });
   });
 });
