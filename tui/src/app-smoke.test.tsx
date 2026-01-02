@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process';
 import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
 
@@ -28,11 +28,29 @@ async function waitForFrameContains(getFrame: () => string | undefined, text: st
   throw new Error(`Timed out waiting for frame to contain: ${text}`);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 describe('HUD smoke test', () => {
   const testFn = canUseFifo() ? it : it.skip;
+  let tempDir: string | null = null;
+
+  afterEach(async () => {
+    // Wait for any pending timers to clear before cleanup
+    await sleep(100);
+    if (tempDir) {
+      try {
+        rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      tempDir = null;
+    }
+  });
 
   testFn('renders and processes fifo events', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'claude-hud-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'claude-hud-'));
     const fifoPath = join(tempDir, 'events.fifo');
     execSync(`${MKFIFO_COMMAND} ${fifoPath}`);
 
@@ -52,6 +70,7 @@ describe('HUD smoke test', () => {
     await waitForFrameContains(lastFrame, 'Claude HUD');
 
     unmount();
-    rmSync(tempDir, { recursive: true, force: true });
+    // Wait for EventReader cleanup timers to clear
+    await sleep(50);
   });
 });
