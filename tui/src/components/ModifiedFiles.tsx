@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ModifiedFile } from '../lib/types.js';
 
@@ -6,7 +6,7 @@ interface Props {
   files: Map<string, ModifiedFile>;
 }
 
-export function ModifiedFiles({ files }: Props) {
+export const ModifiedFiles = memo(function ModifiedFiles({ files }: Props) {
   const fileList = Array.from(files.values()).slice(-6);
 
   return (
@@ -30,4 +30,4 @@ export function ModifiedFiles({ files }: Props) {
       {files.size > 6 && <Text dimColor>+{files.size - 6} more</Text>}
     </Box>
   );
-}
+});

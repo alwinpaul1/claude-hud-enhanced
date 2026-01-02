@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { Box, Text } from 'ink';
+import { logger } from '../lib/logger.js';
 
 interface Props {
   children: ReactNode;
@@ -21,8 +22,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(_error: Error, _errorInfo: ErrorInfo): void {
-    // Log error for debugging but don't crash
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    logger.error('ErrorBoundary', error.message, { stack: errorInfo.componentStack });
   }
 
   render(): ReactNode {

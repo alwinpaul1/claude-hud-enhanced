@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 
 interface Props {
@@ -6,7 +6,7 @@ interface Props {
   plugins?: string[];
 }
 
-export function McpStatus({ servers, plugins }: Props) {
+export const McpStatus = memo(function McpStatus({ servers, plugins }: Props) {
   if (servers.length === 0 && (!plugins || plugins.length === 0)) {
     return null;
   }
@@ -39,4 +39,4 @@ export function McpStatus({ servers, plugins }: Props) {
       )}
     </Box>
   );
-}
+});
