@@ -2,6 +2,22 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.2] - 2026-01-03
+
+### Improved
+- **Test coverage**: Increased to 92%+ (192 total tests)
+  - Added ErrorBoundary tests for error rendering
+  - Added event-reader tests for getLastEventTime() and switchFifo()
+  - Added usage-reader tests for invalidate() and edge cases
+- **Performance**: Added React.memo to all remaining components
+  - TodoList, Sparkline, AgentList, StatusBar, ContextInfo now memoized
+  - Moved all helper functions outside component bodies
+
+### Removed
+- Unused GitStatus component
+
+---
+
 ## [2.0.1] - 2026-01-03
 
 ### Added
