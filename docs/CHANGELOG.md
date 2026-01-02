@@ -5,6 +5,9 @@ All notable changes to claude-hud will be documented in this file.
 ## [2.0.1] - 2026-01-03
 
 ### Added
+- **Debug logging**: Proper error logging via `CLAUDE_HUD_DEBUG=1`
+  - Logger utility with debug/warn/error levels
+  - Replaces all silent catch blocks with logged errors
 - **GitHub Actions CI**: Automated lint, typecheck, test, and build on push/PR
   - Plugin structure validation (plugin.json, hooks.json, scripts)
   - Note: Requires `workflow` scope on GitHub token to push
@@ -13,6 +16,18 @@ All notable changes to claude-hud will be documented in this file.
 - **Agent tools tracking**: Agent tools array now populates correctly
   - Tools tracked per-agent and limited to last 5 calls
   - Excludes Task tool itself from tracking
+
+### Improved
+- **Test coverage**: Increased from 82% to 90%+ (31 new tests)
+  - Added tests for logger, ContextInfo, useElapsedTime, StatsReader
+- **Performance**: Added React.memo to prevent unnecessary re-renders
+  - Wrapped ContextMeter, ToolStream, CostDisplay
+  - Moved helper functions outside component bodies
+
+### Removed
+- Unused components: Edits.tsx, RateLimitMeter.tsx
+- Unused types: AppState interface
+- Unused exports: readStats() now internal-only
 
 ---
 
