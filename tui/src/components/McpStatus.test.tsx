@@ -72,9 +72,7 @@ describe('McpStatus', () => {
   });
 
   it('should render both servers and plugins', () => {
-    const { lastFrame } = render(
-      <McpStatus servers={['mcp1']} plugins={['plugin1']} />
-    );
+    const { lastFrame } = render(<McpStatus servers={['mcp1']} plugins={['plugin1']} />);
     expect(lastFrame()).toContain('MCP:');
     expect(lastFrame()).toContain('mcp1');
     expect(lastFrame()).toContain('Plugins:');

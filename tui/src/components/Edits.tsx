@@ -16,7 +16,9 @@ export function Edits({ files }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text dimColor>Edits</Text>
-      <Text dimColor>+{totalAdditions} lines in {files.size} file{files.size !== 1 ? 's' : ''}</Text>
+      <Text dimColor>
+        +{totalAdditions} lines in {files.size} file{files.size !== 1 ? 's' : ''}
+      </Text>
     </Box>
   );
 }

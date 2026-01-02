@@ -3,7 +3,7 @@ import type { HudEvent, ContextState } from './types.js';
 const MAX_TOKENS = 200000;
 const CHARS_PER_TOKEN = 4;
 const COMPACTION_THRESHOLD = 0.85;
-const WARNING_THRESHOLD = 0.70;
+const WARNING_THRESHOLD = 0.7;
 const SPARKLINE_SAMPLES = 20;
 
 export interface ContextHealth {
@@ -110,7 +110,7 @@ export class ContextTracker {
 
   getTokenHistory(): number[] {
     const history = this.tokenHistory.slice(-SPARKLINE_SAMPLES);
-    return history.map(s => s.tokens);
+    return history.map((s) => s.tokens);
   }
 
   getHealth(): ContextHealth {

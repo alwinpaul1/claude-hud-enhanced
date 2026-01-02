@@ -79,12 +79,17 @@ describe('ModifiedFiles', () => {
     files.set(longName, createFile(longName));
     const { lastFrame } = render(<ModifiedFiles files={files} />);
     const frame = lastFrame() || '';
-    expect(frame.includes('this-is-a-very-long-file-name-that-should-be-truncated.tsx')).toBe(false);
+    expect(frame.includes('this-is-a-very-long-file-name-that-should-be-truncated.tsx')).toBe(
+      false,
+    );
   });
 
   it('should extract filename from path', () => {
     const files = new Map<string, ModifiedFile>();
-    files.set('/deep/nested/path/to/component.tsx', createFile('/deep/nested/path/to/component.tsx'));
+    files.set(
+      '/deep/nested/path/to/component.tsx',
+      createFile('/deep/nested/path/to/component.tsx'),
+    );
     const { lastFrame } = render(<ModifiedFiles files={files} />);
     expect(lastFrame()).toContain('component.tsx');
     expect(lastFrame()).not.toContain('/deep');

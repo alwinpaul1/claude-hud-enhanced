@@ -19,12 +19,14 @@ export function Sparkline({ data, width = 20, color = 'cyan' }: Props) {
   const max = Math.max(...samples);
   const range = max - min;
 
-  const sparkline = samples.map(value => {
-    if (range === 0) return BLOCKS[0];
-    const normalized = (value - min) / range;
-    const index = Math.min(Math.floor(normalized * BLOCKS.length), BLOCKS.length - 1);
-    return BLOCKS[index];
-  }).join('');
+  const sparkline = samples
+    .map((value) => {
+      if (range === 0) return BLOCKS[0];
+      const normalized = (value - min) / range;
+      const index = Math.min(Math.floor(normalized * BLOCKS.length), BLOCKS.length - 1);
+      return BLOCKS[index];
+    })
+    .join('');
 
   const padding = width - samples.length;
   const padStr = padding > 0 ? '─'.repeat(padding) : '';

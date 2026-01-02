@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process';
 import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
 
@@ -18,7 +18,11 @@ function canUseFifo(): boolean {
   }
 }
 
-async function waitForFrameContains(getFrame: () => string | undefined, text: string, timeoutMs = 1000) {
+async function waitForFrameContains(
+  getFrame: () => string | undefined,
+  text: string,
+  timeoutMs = 1000,
+) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const frame = getFrame() ?? '';

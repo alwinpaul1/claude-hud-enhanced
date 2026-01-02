@@ -26,9 +26,15 @@ function getGitInfo(cwd?: string): GitInfo | null {
     let ahead = 0;
     let behind = 0;
     try {
-      const upstream = execSync('git rev-parse --abbrev-ref @{upstream} 2>/dev/null', options).trim();
+      const upstream = execSync(
+        'git rev-parse --abbrev-ref @{upstream} 2>/dev/null',
+        options,
+      ).trim();
       if (upstream) {
-        const aheadBehind = execSync(`git rev-list --left-right --count HEAD...${upstream} 2>/dev/null`, options).trim();
+        const aheadBehind = execSync(
+          `git rev-list --left-right --count HEAD...${upstream} 2>/dev/null`,
+          options,
+        ).trim();
         const [aheadStr, behindStr] = aheadBehind.split(/\s+/);
         ahead = parseInt(aheadStr, 10) || 0;
         behind = parseInt(behindStr, 10) || 0;
@@ -88,7 +94,9 @@ export function GitStatus({ cwd }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="white">Git </Text>
+        <Text bold color="white">
+          Git{' '}
+        </Text>
         <Text color="cyan">{branch}</Text>
         {ahead > 0 && <Text color="green"> ↑{ahead}</Text>}
         {behind > 0 && <Text color="yellow"> ↓{behind}</Text>}

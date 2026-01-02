@@ -30,7 +30,7 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'claude-opus-4-5': 200000,
   'claude-sonnet-4': 200000,
   'claude-haiku-3-5': 200000,
-  'default': 200000,
+  default: 200000,
 };
 
 function getContextLimit(model: string | null): number {
@@ -110,7 +110,11 @@ export class TranscriptReader {
     if (!tokens) return null;
 
     const maxTokens = getContextLimit(tokens.model);
-    const totalUsed = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+    const totalUsed =
+      tokens.inputTokens +
+      tokens.outputTokens +
+      tokens.cacheCreationTokens +
+      tokens.cacheReadTokens;
     const percent = Math.min((totalUsed / maxTokens) * 100, 100);
     const remaining = Math.max(maxTokens - totalUsed, 0);
 

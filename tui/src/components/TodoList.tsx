@@ -23,7 +23,9 @@ export function TodoList({ todos }: Props) {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text bold color="white">Todo</Text>
+      <Text bold color="white">
+        Todo
+      </Text>
       {visibleTodos.length === 0 ? (
         <Text dimColor>No todos</Text>
       ) : (
@@ -39,9 +41,7 @@ export function TodoList({ todos }: Props) {
           </Box>
         ))
       )}
-      {todos.length > 6 && (
-        <Text dimColor>+{todos.length - 6} more</Text>
-      )}
+      {todos.length > 6 && <Text dimColor>+{todos.length - 6} more</Text>}
     </Box>
   );
 }

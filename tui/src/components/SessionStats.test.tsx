@@ -33,12 +33,7 @@ function createAgent(status: 'running' | 'complete' | 'error' = 'complete'): Age
 describe('SessionStats', () => {
   it('should render session header', () => {
     const { lastFrame } = render(
-      <SessionStats
-        tools={[]}
-        modifiedFiles={new Map()}
-        agents={[]}
-        sessionStart={Date.now()}
-      />
+      <SessionStats tools={[]} modifiedFiles={new Map()} agents={[]} sessionStart={Date.now()} />,
     );
     expect(lastFrame()).toContain('Session');
   });
@@ -50,7 +45,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now() - 30000}
-      />
+      />,
     );
     expect(lastFrame()).toContain('30s');
   });
@@ -62,7 +57,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now() - 125000}
-      />
+      />,
     );
     expect(lastFrame()).toContain('2m');
   });
@@ -82,7 +77,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now()}
-      />
+      />,
     );
     expect(lastFrame()).toContain('3');
     expect(lastFrame()).toContain('Read');
@@ -94,12 +89,7 @@ describe('SessionStats', () => {
     files.set('/b.ts', createModifiedFile('/b.ts', 20, 3));
 
     const { lastFrame } = render(
-      <SessionStats
-        tools={[]}
-        modifiedFiles={files}
-        agents={[]}
-        sessionStart={Date.now()}
-      />
+      <SessionStats tools={[]} modifiedFiles={files} agents={[]} sessionStart={Date.now()} />,
     );
     expect(lastFrame()).toContain('+30');
     expect(lastFrame()).toContain('-8');
@@ -107,18 +97,14 @@ describe('SessionStats', () => {
   });
 
   it('should show completed agent count', () => {
-    const agents = [
-      createAgent('complete'),
-      createAgent('complete'),
-      createAgent('running'),
-    ];
+    const agents = [createAgent('complete'), createAgent('complete'), createAgent('running')];
     const { lastFrame } = render(
       <SessionStats
         tools={[]}
         modifiedFiles={new Map()}
         agents={agents}
         sessionStart={Date.now()}
-      />
+      />,
     );
     expect(lastFrame()).toContain('2 agents');
   });
@@ -131,18 +117,28 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={agents}
         sessionStart={Date.now()}
-      />
+      />,
     );
     expect(lastFrame()).not.toContain('agents');
   });
 
   it('should limit top tools to 4', () => {
     const tools = [
-      ...Array(10).fill(null).map(() => createTool('Read')),
-      ...Array(8).fill(null).map(() => createTool('Edit')),
-      ...Array(6).fill(null).map(() => createTool('Write')),
-      ...Array(4).fill(null).map(() => createTool('Grep')),
-      ...Array(2).fill(null).map(() => createTool('Glob')),
+      ...Array(10)
+        .fill(null)
+        .map(() => createTool('Read')),
+      ...Array(8)
+        .fill(null)
+        .map(() => createTool('Edit')),
+      ...Array(6)
+        .fill(null)
+        .map(() => createTool('Write')),
+      ...Array(4)
+        .fill(null)
+        .map(() => createTool('Grep')),
+      ...Array(2)
+        .fill(null)
+        .map(() => createTool('Glob')),
     ];
     const { lastFrame } = render(
       <SessionStats
@@ -150,7 +146,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now()}
-      />
+      />,
     );
     const frame = lastFrame() || '';
     expect(frame).toContain('Read');

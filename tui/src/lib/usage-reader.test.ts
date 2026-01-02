@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { UsageReader } from './usage-reader.js';
+import { UsageReader, UsageData } from './usage-reader.js';
 
 describe('UsageReader', () => {
   let reader: UsageReader;
@@ -19,9 +19,9 @@ describe('UsageReader', () => {
       'Resets in 2 days (approx)',
     ].join('\n');
 
-    const data = (reader as unknown as { parseOutput: (o: string) => unknown }).parseOutput(
-      output,
-    ) as ReturnType<UsageReader['read']>;
+    const data = (
+      reader as unknown as { parseOutput: (o: string) => UsageData | null }
+    ).parseOutput(output);
 
     expect(data).not.toBeNull();
     expect(data?.sessionPercent).toBe(12);
@@ -33,9 +33,7 @@ describe('UsageReader', () => {
   it('returns null for unrecognized output', () => {
     const output = ['No usage data', 'Nothing to see here'].join('\n');
 
-    const data = (reader as unknown as { parseOutput: (o: string) => unknown }).parseOutput(
-      output,
-    );
+    const data = (reader as unknown as { parseOutput: (o: string) => unknown }).parseOutput(output);
 
     expect(data).toBeNull();
   });
@@ -56,9 +54,11 @@ describe('UsageReader', () => {
 
   it('avoids overlapping fetch calls', async () => {
     let calls = 0;
-    let resolveFetch: (value: { sessionPercent: number; sessionResetTime: string }) => void;
+    const resolver: {
+      resolve: ((value: { sessionPercent: number; sessionResetTime: string }) => void) | null;
+    } = { resolve: null };
     const pending = new Promise<{ sessionPercent: number; sessionResetTime: string }>((resolve) => {
-      resolveFetch = resolve;
+      resolver.resolve = resolve;
     });
 
     (reader as unknown as { fetchUsage: () => Promise<unknown> }).fetchUsage = async () => {
@@ -72,7 +72,7 @@ describe('UsageReader', () => {
     expect(calls).toBe(1);
     expect(second).toBeNull();
 
-    resolveFetch!({ sessionPercent: 1, sessionResetTime: 'soon' });
+    resolver.resolve?.({ sessionPercent: 1, sessionResetTime: 'soon' });
     const first = await firstPromise;
     expect(first).not.toBeNull();
   });

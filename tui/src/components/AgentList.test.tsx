@@ -82,7 +82,7 @@ describe('AgentList', () => {
 
   it('should limit visible agents to 4', () => {
     const agents = Array.from({ length: 6 }, (_, i) =>
-      createAgent({ id: `agent-${i}`, type: `type-${i}` })
+      createAgent({ id: `agent-${i}`, type: `type-${i}` }),
     );
     const { lastFrame } = render(<AgentList agents={agents} />);
     const frame = lastFrame() || '';
@@ -102,7 +102,7 @@ describe('AgentList', () => {
 
   it('should limit visible tools to 3', () => {
     const tools = Array.from({ length: 5 }, (_, i) =>
-      createTool({ id: `tool-${i}`, tool: `Tool${i}` })
+      createTool({ id: `tool-${i}`, tool: `Tool${i}` }),
     );
     const agents = [createAgent({ tools })];
     const { lastFrame } = render(<AgentList agents={agents} />);
@@ -113,7 +113,9 @@ describe('AgentList', () => {
   });
 
   it('should truncate long descriptions', () => {
-    const agents = [createAgent({ description: 'This is a very long description that exceeds the limit' })];
+    const agents = [
+      createAgent({ description: 'This is a very long description that exceeds the limit' }),
+    ];
     const { lastFrame } = render(<AgentList agents={agents} />);
     const frame = lastFrame() || '';
     expect(frame).toContain('…');

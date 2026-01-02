@@ -20,7 +20,9 @@ export function McpStatus({ servers, plugins }: Props) {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text bold dimColor>Connections</Text>
+      <Text bold dimColor>
+        Connections
+      </Text>
       {servers.length > 0 && (
         <Box>
           <Text dimColor>MCP: </Text>

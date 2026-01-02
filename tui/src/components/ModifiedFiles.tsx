@@ -11,7 +11,9 @@ export function ModifiedFiles({ files }: Props) {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text bold color="white">Modified</Text>
+      <Text bold color="white">
+        Modified
+      </Text>
       {fileList.length === 0 ? (
         <Text dimColor>No files modified</Text>
       ) : (
@@ -25,9 +27,7 @@ export function ModifiedFiles({ files }: Props) {
           );
         })
       )}
-      {files.size > 6 && (
-        <Text dimColor>+{files.size - 6} more</Text>
-      )}
+      {files.size > 6 && <Text dimColor>+{files.size - 6} more</Text>}
     </Box>
   );
 }

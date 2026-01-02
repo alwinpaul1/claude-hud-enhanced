@@ -58,7 +58,7 @@ describe('ToolStream', () => {
 
     it('should limit visible tools to maxVisible', () => {
       const tools = Array.from({ length: 15 }, (_, i) =>
-        createTool({ id: `tool-${i}`, tool: `Tool${i}` })
+        createTool({ id: `tool-${i}`, tool: `Tool${i}` }),
       );
       const { lastFrame } = render(<ToolStream tools={tools} maxVisible={5} />);
       const frame = lastFrame() || '';
@@ -86,7 +86,8 @@ describe('ToolStream', () => {
     });
 
     it('should truncate long file paths', () => {
-      const longPath = '/very/long/deeply/nested/path/that/exceeds/the/maximum/allowed/limit/file.ts';
+      const longPath =
+        '/very/long/deeply/nested/path/that/exceeds/the/maximum/allowed/limit/file.ts';
       const tools = [createTool({ target: longPath })];
       const { lastFrame } = render(<ToolStream tools={tools} />);
       const frame = lastFrame() || '';

@@ -22,7 +22,9 @@ export function StatusBar({ settings, isIdle, cwd }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="magenta">{model}</Text>
+        <Text bold color="magenta">
+          {model}
+        </Text>
         <Text> {idleIndicator} </Text>
         {settings && (
           <>

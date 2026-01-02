@@ -67,22 +67,14 @@ describe('SettingsReader', () => {
   });
 
   it('uses cached data until forceRefresh is called', async () => {
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ model: 'alpha', enabledPlugins: {} }),
-      'utf-8',
-    );
+    fs.writeFileSync(settingsPath, JSON.stringify({ model: 'alpha', enabledPlugins: {} }), 'utf-8');
 
     const reader = new SettingsReader(settingsPath);
 
     const first = reader.read();
     expect(first?.model).toBe('alpha');
 
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ model: 'beta', enabledPlugins: {} }),
-      'utf-8',
-    );
+    fs.writeFileSync(settingsPath, JSON.stringify({ model: 'beta', enabledPlugins: {} }), 'utf-8');
 
     const cached = reader.read();
     expect(cached?.model).toBe('alpha');

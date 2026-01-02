@@ -59,10 +59,10 @@ export function ToolStream({ tools, maxVisible = 4 }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="white">Tools</Text>
-        {tools.length > 0 && (
-          <Text dimColor> ({tools.length})</Text>
-        )}
+        <Text bold color="white">
+          Tools
+        </Text>
+        {tools.length > 0 && <Text dimColor> ({tools.length})</Text>}
       </Box>
       {recentTools.length === 0 ? (
         <Text dimColor>No tool activity yet</Text>
@@ -75,12 +75,11 @@ export function ToolStream({ tools, maxVisible = 4 }: Props) {
             <Box key={tool.id}>
               <Text color={STATUS_COLORS[tool.status]}>{STATUS_ICONS[tool.status]} </Text>
               <Text color="cyan">{tool.tool}</Text>
-              {target && (
-                <Text dimColor>: {target}</Text>
-              )}
+              {target && <Text dimColor>: {target}</Text>}
               {duration && (
                 <Text dimColor color={tool.duration && tool.duration > 5000 ? 'yellow' : undefined}>
-                  {' '}({duration})
+                  {' '}
+                  ({duration})
                 </Text>
               )}
             </Box>

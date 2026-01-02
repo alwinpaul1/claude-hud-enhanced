@@ -15,7 +15,14 @@ import { ContextInfo } from './components/ContextInfo.js';
 import type { ConnectionStatus } from './lib/event-reader.js';
 import type { SettingsData } from './lib/settings-reader.js';
 import type { ContextFiles } from './lib/context-detector.js';
-import type { HudEvent, ToolEntry, TodoItem, ContextHealth, AgentEntry, SessionInfo } from './lib/types.js';
+import type {
+  HudEvent,
+  ToolEntry,
+  TodoItem,
+  ContextHealth,
+  AgentEntry,
+  SessionInfo,
+} from './lib/types.js';
 
 interface AppProps {
   fifoPath: string;
@@ -80,7 +87,11 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
 
     // Handle PreToolUse - mark tool as running
     if (event.event === 'PreToolUse' && event.tool && event.toolUseId) {
-      const input = event.input as { file_path?: string; command?: string; pattern?: string } | null;
+      const input = event.input as {
+        file_path?: string;
+        command?: string;
+        pattern?: string;
+      } | null;
       let target = '';
       if (input?.file_path) {
         target = input.file_path;
@@ -118,13 +129,13 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
         const idx = prev.findIndex((t) => t.id === toolUseId);
         const entry: ToolEntry = {
           id: toolUseId,
-          tool: event.tool!,
+          tool: event.tool ?? '',
           target: existingTool?.target || '',
           status: hasError ? 'error' : 'complete',
           ts: event.ts,
           startTs,
           endTs: now,
-          duration: response?.duration_ms || (now - startTs),
+          duration: response?.duration_ms || now - startTs,
         };
 
         if (idx !== -1) {
@@ -190,7 +201,6 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
         return updated;
       });
     }
-
   }, []);
 
   useEffect(() => {
@@ -214,7 +224,9 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
     if (!stdout) return;
     const handleResize = () => setTermRows(stdout.rows || 24);
     stdout.on('resize', handleResize);
-    return () => { stdout.off('resize', handleResize); };
+    return () => {
+      stdout.off('resize', handleResize);
+    };
   }, [stdout]);
 
   useEffect(() => {
@@ -265,13 +277,19 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
     error: '✗',
   };
 
-  const modeLabel = sessionInfo.permissionMode !== 'default' ? ` [${sessionInfo.permissionMode}]` : '';
+  const modeLabel =
+    sessionInfo.permissionMode !== 'default' ? ` [${sessionInfo.permissionMode}]` : '';
 
   return (
     <Box flexDirection="column" width={48} height={termRows} borderStyle="round" borderColor="gray">
       <Box marginBottom={1}>
-        <Text bold color="cyan"> Claude HUD </Text>
-        <Text dimColor>({elapsed}){modeLabel} </Text>
+        <Text bold color="cyan">
+          {' '}
+          Claude HUD{' '}
+        </Text>
+        <Text dimColor>
+          ({elapsed}){modeLabel}{' '}
+        </Text>
         <Text color={statusColors[connectionStatus]}>{statusIcons[connectionStatus]}</Text>
       </Box>
 

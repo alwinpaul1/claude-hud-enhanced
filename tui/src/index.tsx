@@ -20,7 +20,11 @@ function Root({ initialSession }: { initialSession: SessionConfig }) {
     if (!existsSync(REFRESH_FILE)) return;
     try {
       const data = readFileSync(REFRESH_FILE, 'utf-8');
-      const parsed = JSON.parse(data) as { sessionId?: string; fifoPath?: string; transcriptPath?: string };
+      const parsed = JSON.parse(data) as {
+        sessionId?: string;
+        fifoPath?: string;
+        transcriptPath?: string;
+      };
       if (parsed.sessionId && parsed.fifoPath) {
         setSession({
           sessionId: parsed.sessionId,
@@ -40,7 +44,11 @@ function Root({ initialSession }: { initialSession: SessionConfig }) {
       if (!existsSync(REFRESH_FILE)) return;
       try {
         const data = readFileSync(REFRESH_FILE, 'utf-8');
-        const parsed = JSON.parse(data) as { sessionId?: string; fifoPath?: string; transcriptPath?: string };
+        const parsed = JSON.parse(data) as {
+          sessionId?: string;
+          fifoPath?: string;
+          transcriptPath?: string;
+        };
         if (parsed.sessionId && parsed.fifoPath && parsed.sessionId !== session.sessionId) {
           setSession({
             sessionId: parsed.sessionId,

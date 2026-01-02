@@ -27,9 +27,7 @@ export function RateLimitMeter({ usage }: Props) {
         <Text dimColor>{'░'.repeat(empty)}</Text>
         <Text color={color}> {sessionPercent}%</Text>
       </Box>
-      {sessionResetTime && (
-        <Text dimColor>Resets {sessionResetTime}</Text>
-      )}
+      {sessionResetTime && <Text dimColor>Resets {sessionResetTime}</Text>}
     </Box>
   );
 }

@@ -34,9 +34,13 @@ export function ContextMeter({ context }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="white">Context </Text>
+        <Text bold color="white">
+          Context{' '}
+        </Text>
         {shouldCompact && (
-          <Text color="red" bold>⚠ COMPACT</Text>
+          <Text color="red" bold>
+            ⚠ COMPACT
+          </Text>
         )}
       </Box>
       <Box>

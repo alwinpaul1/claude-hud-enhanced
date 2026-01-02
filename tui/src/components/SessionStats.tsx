@@ -38,8 +38,14 @@ export function SessionStats({ tools, modifiedFiles, agents, sessionStart }: Pro
   }, [sessionStart]);
 
   const toolCounts = getToolCounts(tools);
-  const totalAdditions = Array.from(modifiedFiles.values()).reduce((sum, f) => sum + f.additions, 0);
-  const totalDeletions = Array.from(modifiedFiles.values()).reduce((sum, f) => sum + f.deletions, 0);
+  const totalAdditions = Array.from(modifiedFiles.values()).reduce(
+    (sum, f) => sum + f.additions,
+    0,
+  );
+  const totalDeletions = Array.from(modifiedFiles.values()).reduce(
+    (sum, f) => sum + f.deletions,
+    0,
+  );
   const completedAgents = agents.filter((a) => a.status === 'complete').length;
 
   const topTools = Array.from(toolCounts.entries())
@@ -49,7 +55,9 @@ export function SessionStats({ tools, modifiedFiles, agents, sessionStart }: Pro
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="white">Session</Text>
+        <Text bold color="white">
+          Session
+        </Text>
         <Text dimColor> ({elapsed})</Text>
       </Box>
 

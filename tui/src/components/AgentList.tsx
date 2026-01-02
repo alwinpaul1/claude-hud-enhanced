@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import type { AgentEntry, ToolEntry } from '../lib/types.js';
+import type { AgentEntry } from '../lib/types.js';
 
 interface Props {
   agents: AgentEntry[];
@@ -63,7 +63,9 @@ function AgentItem({ agent }: AgentItemProps) {
     <Box flexDirection="column">
       <Box>
         <Text color={STATUS_COLORS[agent.status]}>{STATUS_ICONS[agent.status]} </Text>
-        <Text color="magenta" bold>{agent.type}</Text>
+        <Text color="magenta" bold>
+          {agent.type}
+        </Text>
         <Text dimColor> ({elapsed})</Text>
       </Box>
       {agent.description && (
@@ -101,10 +103,10 @@ export function AgentList({ agents }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="white">Agents</Text>
-        {runningCount > 0 && (
-          <Text color="yellow"> ({runningCount} active)</Text>
-        )}
+        <Text bold color="white">
+          Agents
+        </Text>
+        {runningCount > 0 && <Text color="yellow"> ({runningCount} active)</Text>}
       </Box>
       {recentAgents.map((agent) => (
         <AgentItem key={agent.id} agent={agent} />

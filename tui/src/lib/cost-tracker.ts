@@ -3,9 +3,9 @@ import type { CostEstimate, HudEvent } from './types.js';
 // Anthropic pricing per 1M tokens (as of Jan 2025)
 // Using Claude Sonnet 4 pricing as default
 const PRICING = {
-  'sonnet': { input: 3.00, output: 15.00 },
-  'opus': { input: 15.00, output: 75.00 },
-  'haiku': { input: 0.25, output: 1.25 },
+  sonnet: { input: 3.0, output: 15.0 },
+  opus: { input: 15.0, output: 75.0 },
+  haiku: { input: 0.25, output: 1.25 },
 };
 
 const CHARS_PER_TOKEN = 4;
