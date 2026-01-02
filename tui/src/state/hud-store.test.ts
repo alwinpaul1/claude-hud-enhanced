@@ -33,12 +33,14 @@ describe('HudStore', () => {
     const store = new HudStore({
       fifoPath: '/tmp/test.fifo',
       clockIntervalMs: 0,
+      emitIntervalMs: 0,
       eventSourceFactory: () => source,
     });
     const listener = vi.fn();
     const unsubscribe = store.subscribe(listener);
 
     const event: HudEvent = {
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'Read',
       toolUseId: 'tool-1',
@@ -62,10 +64,12 @@ describe('HudStore', () => {
     const store = new HudStore({
       fifoPath: '/tmp/test.fifo',
       clockIntervalMs: 0,
+      emitIntervalMs: 0,
       eventSourceFactory: () => source,
     });
 
     const preEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'Read',
       toolUseId: 'tool-1',
@@ -75,6 +79,7 @@ describe('HudStore', () => {
       ts: 1,
     };
     const postEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PostToolUse',
       tool: 'Read',
       toolUseId: 'tool-1',
@@ -84,6 +89,7 @@ describe('HudStore', () => {
       ts: 2,
     };
     const todoEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'TodoWrite',
       toolUseId: 'todo-1',
@@ -93,6 +99,7 @@ describe('HudStore', () => {
       ts: 3,
     };
     const stopEvent: HudEvent = {
+      schemaVersion: 1,
       event: 'Stop',
       tool: null,
       input: null,

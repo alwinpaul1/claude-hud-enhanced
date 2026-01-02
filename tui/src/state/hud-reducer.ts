@@ -5,6 +5,7 @@ import type { ContextFiles } from '../lib/context-detector.js';
 import type { ConnectionStatus } from '../lib/event-reader.js';
 import type { HudConfig } from '../lib/hud-config.js';
 import type { HudStateInternal } from './hud-state.js';
+import type { HudError } from './hud-errors.js';
 
 type HudAction =
   | { type: 'event'; event: HudEvent; now: number }
@@ -15,7 +16,9 @@ type HudAction =
   | { type: 'context'; context: ContextHealth }
   | { type: 'cost'; cost: CostEstimate }
   | { type: 'model'; model: string | null }
-  | { type: 'tick'; now: number };
+  | { type: 'tick'; now: number }
+  | { type: 'error'; error: HudError }
+  | { type: 'safeMode'; safeMode: boolean; reason: string | null };
 
 function updateSessionInfo(state: HudStateInternal, event: HudEvent): HudStateInternal {
   if (event.permissionMode || event.cwd || event.transcriptPath) {
@@ -131,6 +134,16 @@ export function reduceHudState(state: HudStateInternal, action: HudAction): HudS
       return withSessionPhase({ ...state, model: action.model });
     case 'tick':
       return withSessionPhase({ ...state, now: action.now });
+    case 'error': {
+      const errors = [...state.errors, action.error].slice(-5);
+      return withSessionPhase({ ...state, errors });
+    }
+    case 'safeMode':
+      return withSessionPhase({
+        ...state,
+        safeMode: action.safeMode,
+        safeModeReason: action.reason,
+      });
     case 'event': {
       const { event, now } = action;
       let next = updateSessionInfo(state, event);

@@ -14,7 +14,9 @@
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
     "typecheck": "tsc --noEmit",
-    "replay:events": "bun run scripts/replay-events.ts --"
+    "replay:events": "bun run scripts/replay-events.ts --",
+    "profile:events": "bun run scripts/profile-events.ts --",
+    "audit": "bun audit"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

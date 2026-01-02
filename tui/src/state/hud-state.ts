@@ -2,6 +2,7 @@ import type { ConnectionStatus } from '../lib/event-reader.js';
 import type { SettingsData } from '../lib/settings-reader.js';
 import type { ContextFiles } from '../lib/context-detector.js';
 import type { HudConfig } from '../lib/hud-config.js';
+import type { HudError } from './hud-errors.js';
 import type {
   ToolEntry,
   TodoItem,
@@ -18,6 +19,9 @@ export interface HudState {
   agents: AgentEntry[];
   sessionInfo: SessionInfo;
   sessionPhase: 'connecting' | 'connected' | 'idle' | 'active' | 'disconnected' | 'error';
+  safeMode: boolean;
+  safeModeReason: string | null;
+  errors: HudError[];
   settings: SettingsData | null;
   contextFiles: ContextFiles | null;
   connectionStatus: ConnectionStatus;
@@ -48,6 +52,9 @@ export function createInitialHudState(options: {
       isIdle: true,
     },
     sessionPhase: 'connecting',
+    safeMode: false,
+    safeModeReason: null,
+    errors: [],
     settings: null,
     contextFiles: null,
     connectionStatus: 'connecting',

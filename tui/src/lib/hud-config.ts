@@ -11,6 +11,11 @@ export interface HudConfig {
   width?: number;
 }
 
+export interface HudConfigReadResult {
+  data: HudConfig | null;
+  error?: string;
+}
+
 const HUD_CONFIG_PATH = path.join(os.homedir(), '.claude', 'hud', 'config.json');
 const PANEL_IDS: PanelId[] = [
   'status',
@@ -28,10 +33,10 @@ function normalizePanelList(value: unknown): PanelId[] | undefined {
   return Array.from(new Set(list));
 }
 
-export function readHudConfig(configPath: string = HUD_CONFIG_PATH): HudConfig | null {
+export function readHudConfigWithStatus(configPath: string = HUD_CONFIG_PATH): HudConfigReadResult {
   try {
     if (!fs.existsSync(configPath)) {
-      return null;
+      return { data: null };
     }
     const content = fs.readFileSync(configPath, 'utf-8');
     const raw = JSON.parse(content) as Record<string, unknown>;
@@ -41,18 +46,25 @@ export function readHudConfig(configPath: string = HUD_CONFIG_PATH): HudConfig |
     const width = typeof raw.width === 'number' && raw.width > 0 ? raw.width : undefined;
 
     return {
-      panelOrder,
-      hiddenPanels,
-      width,
+      data: {
+        panelOrder,
+        hiddenPanels,
+        width,
+      },
     };
   } catch (err) {
     logger.debug('HudConfig', 'Failed to read config', { path: configPath, err });
-    return null;
+    return { data: null, error: 'Failed to read hud config' };
   }
+}
+
+export function readHudConfig(configPath: string = HUD_CONFIG_PATH): HudConfig | null {
+  return readHudConfigWithStatus(configPath).data;
 }
 
 export class HudConfigReader {
   private data: HudConfig | null = null;
+  private lastError: string | undefined;
   private lastRead = 0;
   private readonly refreshInterval = 30000;
   private readonly configPath: string;
@@ -64,14 +76,30 @@ export class HudConfigReader {
   read(): HudConfig | null {
     const now = Date.now();
     if (!this.data || now - this.lastRead > this.refreshInterval) {
-      this.data = readHudConfig(this.configPath);
+      const result = readHudConfigWithStatus(this.configPath);
+      this.data = result.data;
+      this.lastError = result.error;
       this.lastRead = now;
     }
     return this.data;
   }
 
+  readWithStatus(): HudConfigReadResult {
+    const now = Date.now();
+    if (!this.data || now - this.lastRead > this.refreshInterval) {
+      const result = readHudConfigWithStatus(this.configPath);
+      this.data = result.data;
+      this.lastError = result.error;
+      this.lastRead = now;
+      return result;
+    }
+    return { data: this.data, error: this.lastError };
+  }
+
   forceRefresh(): HudConfig | null {
-    this.data = readHudConfig(this.configPath);
+    const result = readHudConfigWithStatus(this.configPath);
+    this.data = result.data;
+    this.lastError = result.error;
     this.lastRead = Date.now();
     return this.data;
   }

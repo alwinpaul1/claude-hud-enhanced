@@ -54,6 +54,9 @@ const mockState: HudState = {
     isIdle: false,
   },
   sessionPhase: 'active',
+  safeMode: false,
+  safeModeReason: null,
+  errors: [],
   config: null,
   now: 1700000006000,
   settings: {

@@ -129,10 +129,22 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
           Claude HUD{' '}
         </Text>
         <Text dimColor>({elapsed}) </Text>
+        {state.safeMode && (
+          <Text color="red" bold>
+            SAFE
+          </Text>
+        )}
         <Text color={STATUS_COLORS[state.connectionStatus]}>
           {STATUS_ICONS[state.connectionStatus]}
         </Text>
       </Box>
+
+      {state.safeMode && state.safeModeReason && (
+        <Box marginBottom={1}>
+          <Text color="red">Safe mode: </Text>
+          <Text dimColor>{state.safeModeReason}</Text>
+        </Box>
+      )}
 
       {state.connectionStatus === 'disconnected' && (
         <Box marginBottom={1}>

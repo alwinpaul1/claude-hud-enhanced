@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { readSettings, SettingsReader } from './settings-reader.js';
+import { readSettings, readSettingsWithStatus, SettingsReader } from './settings-reader.js';
 
 describe('readSettings', () => {
   let tmpDir: string;
@@ -58,6 +58,16 @@ describe('readSettings', () => {
     const data = readSettings(settingsPath);
 
     expect(data).toBeNull();
+  });
+
+  it('returns an error status for invalid JSON', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, 'invalid json {', 'utf-8');
+
+    const result = readSettingsWithStatus(settingsPath);
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBeDefined();
   });
 
   it('handles missing optional fields gracefully', () => {

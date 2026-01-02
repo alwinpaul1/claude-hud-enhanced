@@ -8,6 +8,8 @@ import type { HudEvent } from '../lib/types.js';
 import { createInitialHudState, toPublicState } from './hud-state.js';
 import type { HudState, HudStateInternal } from './hud-state.js';
 import { reduceHudState } from './hud-reducer.js';
+import type { HudError } from './hud-errors.js';
+import { logger } from '../lib/logger.js';
 
 export interface EventSource {
   on(event: 'event', listener: (event: HudEvent) => void): void;
@@ -21,6 +23,7 @@ interface HudStoreOptions {
   fifoPath: string;
   initialTranscriptPath?: string;
   clockIntervalMs?: number;
+  emitIntervalMs?: number;
   eventSourceFactory?: (fifoPath: string) => EventSource;
 }
 
@@ -38,6 +41,11 @@ export class HudStore {
   private clockInterval: ReturnType<typeof setInterval> | null = null;
   private lastCwd = '';
   private emitScheduled = false;
+  private emitTimeout: ReturnType<typeof setTimeout> | null = null;
+  private lastEmitAt = 0;
+  private readonly emitIntervalMs: number;
+  private settingsError: string | null = null;
+  private configError: string | null = null;
 
   constructor(options: HudStoreOptions) {
     if (options.initialTranscriptPath) {
@@ -54,6 +62,7 @@ export class HudStore {
     const eventSourceFactory =
       options.eventSourceFactory || ((fifoPath) => new EventReader(fifoPath));
     this.reader = eventSourceFactory(options.fifoPath);
+    this.emitIntervalMs = options.emitIntervalMs ?? 16;
     this.reader.on('event', this.handleEvent);
     this.reader.on('status', this.handleStatus);
 
@@ -87,6 +96,10 @@ export class HudStore {
       clearInterval(this.clockInterval);
       this.clockInterval = null;
     }
+    if (this.emitTimeout) {
+      clearTimeout(this.emitTimeout);
+      this.emitTimeout = null;
+    }
     this.reader.close();
     this.listeners.clear();
   }
@@ -98,12 +111,25 @@ export class HudStore {
   private emit(): void {
     if (this.emitScheduled) return;
     this.emitScheduled = true;
-    Promise.resolve().then(() => {
+    const now = Date.now();
+    const elapsed = now - this.lastEmitAt;
+    const delay = Math.max(0, this.emitIntervalMs - elapsed);
+    const flush = () => {
       this.emitScheduled = false;
+      this.lastEmitAt = Date.now();
       for (const listener of this.listeners) {
         listener();
       }
-    });
+    };
+
+    if (delay === 0) {
+      Promise.resolve().then(flush);
+    } else if (!this.emitTimeout) {
+      this.emitTimeout = setTimeout(() => {
+        this.emitTimeout = null;
+        flush();
+      }, delay);
+    }
   }
 
   private apply(action: Parameters<typeof reduceHudState>[1]): void {
@@ -158,15 +184,57 @@ export class HudStore {
   };
 
   private refreshEnvironment(): void {
-    this.apply({ type: 'settings', settings: this.settingsReader.read() });
+    const settingsResult = this.settingsReader.readWithStatus();
+    if (settingsResult.error) {
+      logger.warn('HudStore', 'Settings read failed', { error: settingsResult.error });
+      this.recordError({
+        code: 'settings_read_failed',
+        message: settingsResult.error,
+        ts: Date.now(),
+      });
+      this.settingsError = settingsResult.error;
+    } else {
+      this.settingsError = null;
+      this.apply({ type: 'settings', settings: settingsResult.data });
+    }
+
+    const configResult = this.configReader.readWithStatus();
+    if (configResult.error) {
+      logger.warn('HudStore', 'Config read failed', { error: configResult.error });
+      this.recordError({
+        code: 'config_read_failed',
+        message: configResult.error,
+        ts: Date.now(),
+      });
+      this.configError = configResult.error;
+    } else {
+      this.configError = null;
+      this.apply({ type: 'config', config: configResult.data });
+    }
+
     const contextFiles = this.contextDetector.detect(this.lastCwd || undefined);
     this.apply({ type: 'contextFiles', contextFiles });
-    this.apply({ type: 'config', config: this.configReader.read() });
+
+    this.updateSafeMode();
     this.emit();
   }
 
   private tick(): void {
     this.apply({ type: 'tick', now: Date.now() });
     this.emit();
+  }
+
+  private recordError(error: HudError): void {
+    this.apply({ type: 'error', error });
+  }
+
+  private updateSafeMode(): void {
+    const safeMode = Boolean(this.settingsError || this.configError);
+    const reason = this.settingsError
+      ? 'Settings read failed; using last known good values.'
+      : this.configError
+        ? 'Config read failed; using last known good values.'
+        : null;
+    this.apply({ type: 'safeMode', safeMode, reason });
   }
 }

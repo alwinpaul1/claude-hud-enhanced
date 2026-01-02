@@ -35,6 +35,9 @@ bun run format
 
 # Replay a fixture event stream
 bun run replay:events -- --input ../tui/test-fixtures/hud-events.jsonl
+
+# Profile event throughput
+bun run profile:events -- ../tui/test-fixtures/hud-events-stress.jsonl
 ```
 
 ### One-shot checks
