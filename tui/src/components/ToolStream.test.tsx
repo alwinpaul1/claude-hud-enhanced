@@ -106,5 +106,28 @@ describe('ToolStream', () => {
       const { lastFrame } = render(<ToolStream tools={tools} />);
       expect(lastFrame()).toContain('Read');
     });
+
+    it('should truncate very long filename', () => {
+      const longFilename = '/path/' + 'a'.repeat(50) + '.ts';
+      const tools = [createTool({ target: longFilename })];
+      const { lastFrame } = render(<ToolStream tools={tools} />);
+      const frame = lastFrame() || '';
+      expect(frame).toContain('…');
+      expect(frame).toContain('.ts');
+    });
+
+    it('should handle paths with no directory', () => {
+      const tools = [createTool({ target: 'file.ts' })];
+      const { lastFrame } = render(<ToolStream tools={tools} />);
+      expect(lastFrame()).toContain('file.ts');
+    });
+
+    it('should truncate parent when filename is long but fits', () => {
+      const path = '/very/long/parent/directory/' + 'a'.repeat(15) + '.ts';
+      const tools = [createTool({ target: path })];
+      const { lastFrame } = render(<ToolStream tools={tools} />);
+      const frame = lastFrame() || '';
+      expect(frame).toContain('.ts');
+    });
   });
 });
