@@ -2,8 +2,6 @@
 
 Real-time terminal dashboard for Claude Code. See context usage, tool activity, agent status, and more — all in a split pane next to your terminal.
 
-![Claude HUD Screenshot](screenshot.png)
-
 ## Installation
 
 ```bash
