@@ -2,6 +2,17 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.4] - 2026-01-03
+
+### Improved
+- **Test coverage**: Increased to 93.92% (218 total tests)
+  - Added SessionStats hours format test
+  - Added transcript-reader invalidate test
+  - Added AgentList edge case tests (filename-only targets, truncation, empty targets)
+  - Added context-detector edge case tests (missing permissions, undefined cwd)
+
+---
+
 ## [2.0.3] - 2026-01-03
 
 ### Improved
