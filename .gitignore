@@ -54,3 +54,4 @@ temp/
 # bun.lock
 package-lock.json
 yarn.lock
+.github/workflows/ci.yml
