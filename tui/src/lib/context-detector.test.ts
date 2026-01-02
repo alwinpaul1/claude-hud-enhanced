@@ -42,6 +42,34 @@ describe('detectContextFiles', () => {
     expect(result.projectSettings).toBe(true);
     expect(result.projectSettingsRules).toBe(3);
   });
+
+  it('handles settings.json without permissions field', () => {
+    const settingsPath = path.join(tmpDir, '.claude', 'settings.json');
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify({ someOtherField: true }), 'utf-8');
+
+    const result = detectContextFiles(tmpDir);
+
+    expect(result.projectSettings).toBe(true);
+    expect(result.projectSettingsRules).toBe(0);
+  });
+
+  it('returns default values when cwd is undefined', () => {
+    const result = detectContextFiles(undefined);
+
+    expect(result.projectClaudeMd).toBe(false);
+    expect(result.projectClaudeMdPath).toBeNull();
+    expect(result.projectSettings).toBe(false);
+  });
+
+  it('returns default values when cwd has no context files', () => {
+    const result = detectContextFiles(tmpDir);
+
+    expect(result.projectClaudeMd).toBe(false);
+    expect(result.projectClaudeMdPath).toBeNull();
+    expect(result.projectSettings).toBe(false);
+    expect(result.projectSettingsRules).toBe(0);
+  });
 });
 
 describe('ContextDetector', () => {
