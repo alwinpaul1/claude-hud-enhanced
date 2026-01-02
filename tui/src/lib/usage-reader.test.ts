@@ -76,4 +76,55 @@ describe('UsageReader', () => {
     const first = await firstPromise;
     expect(first).not.toBeNull();
   });
+
+  it('invalidate() clears cache and allows refetch', async () => {
+    let calls = 0;
+    (reader as unknown as { fetchUsage: () => Promise<unknown> }).fetchUsage = async () => {
+      calls++;
+      return { sessionPercent: calls * 10, sessionResetTime: 'soon' };
+    };
+
+    const first = await reader.read();
+    expect(first?.sessionPercent).toBe(10);
+    expect(calls).toBe(1);
+
+    reader.invalidate();
+
+    const second = await reader.read();
+    expect(second?.sessionPercent).toBe(20);
+    expect(calls).toBe(2);
+  });
+
+  it('handles session-only output without week data', () => {
+    const output = ['Current session', 'Resets in 1 hour', '50% used'].join('\n');
+
+    const data = (
+      reader as unknown as { parseOutput: (o: string) => UsageData | null }
+    ).parseOutput(output);
+
+    expect(data).not.toBeNull();
+    expect(data?.sessionPercent).toBe(50);
+    expect(data?.sessionResetTime).toBe('in 1 hour');
+    expect(data?.weekPercent).toBeUndefined();
+    expect(data?.weekResetTime).toBeUndefined();
+  });
+
+  it('handles output with 0% session usage', () => {
+    const output = ['Current session', 'Resets in 4 hours', '0% used'].join('\n');
+
+    const data = (
+      reader as unknown as { parseOutput: (o: string) => UsageData | null }
+    ).parseOutput(output);
+
+    expect(data).not.toBeNull();
+    expect(data?.sessionPercent).toBe(0);
+    expect(data?.sessionResetTime).toBe('in 4 hours');
+  });
+
+  it('handles malformed input gracefully', () => {
+    const data = (
+      reader as unknown as { parseOutput: (o: string) => UsageData | null }
+    ).parseOutput('');
+    expect(data).toBeNull();
+  });
 });

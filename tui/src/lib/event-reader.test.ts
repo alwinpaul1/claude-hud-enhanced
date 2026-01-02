@@ -65,4 +65,73 @@ describe('EventReader', () => {
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  it('tracks last event time', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-'));
+    const filePath = path.join(tmpDir, 'events.log');
+    const event = JSON.stringify({
+      event: 'PostToolUse',
+      tool: 'Read',
+      input: null,
+      response: null,
+      session: 'test',
+      ts: Date.now() / 1000,
+    });
+    fs.writeFileSync(filePath, `${event}\n`, 'utf-8');
+
+    const reader = new EventReader(filePath);
+    expect(reader.getLastEventTime()).toBe(0);
+
+    await wait(50);
+    expect(reader.getLastEventTime()).toBeGreaterThan(0);
+
+    reader.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('switches to a new fifo path', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-'));
+    const filePath1 = path.join(tmpDir, 'events1.log');
+    const filePath2 = path.join(tmpDir, 'events2.log');
+
+    fs.writeFileSync(
+      filePath1,
+      JSON.stringify({
+        event: 'Stop',
+        tool: null,
+        input: null,
+        response: null,
+        session: 'test1',
+        ts: 1,
+      }) + '\n',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      filePath2,
+      JSON.stringify({
+        event: 'PreCompact',
+        tool: null,
+        input: null,
+        response: null,
+        session: 'test2',
+        ts: 2,
+      }) + '\n',
+      'utf-8',
+    );
+
+    const reader = new EventReader(filePath1);
+    const events: Array<{ event: string }> = [];
+    reader.on('event', (event) => events.push(event));
+
+    await wait(50);
+    expect(events.some((e) => e.event === 'Stop')).toBe(true);
+
+    reader.switchFifo(filePath2);
+    await wait(100);
+
+    expect(events.some((e) => e.event === 'PreCompact')).toBe(true);
+
+    reader.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
 });
