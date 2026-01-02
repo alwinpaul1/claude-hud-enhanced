@@ -59,7 +59,7 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-export function readStats(): TokenStats | null {
+function readStats(): TokenStats | null {
   try {
     if (!fs.existsSync(STATS_PATH)) {
       return null;

@@ -87,14 +87,3 @@ export interface CostEstimate {
   inputTokens: number;
   outputTokens: number;
 }
-
-export interface AppState {
-  events: HudEvent[];
-  tools: ToolEntry[];
-  todos: TodoItem[];
-  modifiedFiles: Map<string, ModifiedFile>;
-  context: ContextState;
-  mcpServers: string[];
-  sessionInfo: SessionInfo;
-  cost: CostEstimate;
-}
