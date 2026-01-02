@@ -1,9 +1,12 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { AgentEntry } from '../lib/types.js';
+import { truncateDescription } from '../lib/ui-formatters.js';
+import { getRecentAgents, getRunningAgentCount } from '../state/hud-selectors.js';
 
 interface Props {
   agents: AgentEntry[];
+  now: number;
 }
 
 const STATUS_ICONS: Record<string, string> = {
@@ -24,8 +27,8 @@ const TOOL_STATUS_COLORS: Record<string, string> = {
   error: 'red',
 };
 
-function formatElapsed(startTs: number, endTs?: number): string {
-  const end = endTs || Date.now();
+function formatElapsed(startTs: number, endTs: number | undefined, now: number): string {
+  const end = endTs || now;
   const elapsed = Math.max(0, end - startTs);
 
   if (elapsed < 1000) return '<1s';
@@ -35,27 +38,13 @@ function formatElapsed(startTs: number, endTs?: number): string {
   return `${mins}m${secs}s`;
 }
 
-function truncateDescription(desc: string, maxLen: number = 25): string {
-  if (!desc || desc.length <= maxLen) return desc;
-  return `${desc.slice(0, maxLen - 1)}…`;
-}
-
 interface AgentItemProps {
   agent: AgentEntry;
+  now: number;
 }
 
-const AgentItem = memo(function AgentItem({ agent }: AgentItemProps) {
-  const [elapsed, setElapsed] = useState(formatElapsed(agent.startTs, agent.endTs));
-
-  useEffect(() => {
-    if (agent.status !== 'running') return;
-
-    const interval = setInterval(() => {
-      setElapsed(formatElapsed(agent.startTs));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [agent.status, agent.startTs]);
+const AgentItem = memo(function AgentItem({ agent, now }: AgentItemProps) {
+  const elapsed = formatElapsed(agent.startTs, agent.endTs, now);
 
   const recentTools = agent.tools.slice(-3);
 
@@ -92,9 +81,9 @@ const AgentItem = memo(function AgentItem({ agent }: AgentItemProps) {
   );
 });
 
-export const AgentList = memo(function AgentList({ agents }: Props) {
-  const recentAgents = agents.slice(-4);
-  const runningCount = agents.filter((a) => a.status === 'running').length;
+export const AgentList = memo(function AgentList({ agents, now }: Props) {
+  const recentAgents = getRecentAgents(agents, 4);
+  const runningCount = getRunningAgentCount(agents);
 
   if (recentAgents.length === 0) {
     return null;
@@ -109,7 +98,7 @@ export const AgentList = memo(function AgentList({ agents }: Props) {
         {runningCount > 0 && <Text color="yellow"> ({runningCount} active)</Text>}
       </Box>
       {recentAgents.map((agent) => (
-        <AgentItem key={agent.id} agent={agent} />
+        <AgentItem key={agent.id} agent={agent} now={now} />
       ))}
     </Box>
   );

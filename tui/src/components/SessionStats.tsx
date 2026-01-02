@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ToolEntry, ModifiedFile, AgentEntry } from '../lib/types.js';
 
@@ -7,6 +7,7 @@ interface Props {
   modifiedFiles: Map<string, ModifiedFile>;
   agents: AgentEntry[];
   sessionStart: number;
+  now: number;
 }
 
 function formatDuration(ms: number): string {
@@ -32,15 +33,9 @@ export const SessionStats = memo(function SessionStats({
   modifiedFiles,
   agents,
   sessionStart,
+  now,
 }: Props) {
-  const [elapsed, setElapsed] = useState(formatDuration(Date.now() - sessionStart));
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(formatDuration(Date.now() - sessionStart));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [sessionStart]);
+  const elapsed = formatDuration(Math.max(0, now - sessionStart));
 
   const toolCounts = getToolCounts(tools);
   const totalAdditions = Array.from(modifiedFiles.values()).reduce(

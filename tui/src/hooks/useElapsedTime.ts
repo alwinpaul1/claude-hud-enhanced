@@ -1,5 +1,3 @@
-import { useState, useEffect, useRef } from 'react';
-
 export function formatDuration(ms: number): string {
   if (ms < 60000) return `${Math.round(ms / 1000)}s`;
   const mins = Math.floor(ms / 60000);
@@ -10,16 +8,7 @@ export function formatDuration(ms: number): string {
   return `${hours}h ${remainMins}m`;
 }
 
-export function useElapsedTime(): string {
-  const sessionStartRef = useRef(Date.now());
-  const [elapsed, setElapsed] = useState('0s');
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(formatDuration(Date.now() - sessionStartRef.current));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return elapsed;
+export function useElapsedTime(sessionStart: number, now: number): string {
+  const elapsedMs = Math.max(0, now - sessionStart);
+  return formatDuration(elapsedMs);
 }

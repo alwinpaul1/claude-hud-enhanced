@@ -1,18 +1,12 @@
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { SettingsData } from '../lib/settings-reader.js';
+import { truncatePathTail } from '../lib/ui-formatters.js';
 
 interface Props {
   settings: SettingsData | null;
   isIdle: boolean;
   cwd?: string;
-}
-
-function truncatePath(p: string, maxLen: number): string {
-  if (p.length <= maxLen) return p;
-  const parts = p.split('/');
-  if (parts.length <= 2) return '...' + p.slice(-(maxLen - 3));
-  return '.../' + parts.slice(-2).join('/');
 }
 
 export const StatusBar = memo(function StatusBar({ settings, isIdle, cwd }: Props) {
@@ -38,7 +32,7 @@ export const StatusBar = memo(function StatusBar({ settings, isIdle, cwd }: Prop
       </Box>
       {cwd && (
         <Box>
-          <Text dimColor>📁 {truncatePath(cwd, 38)}</Text>
+          <Text dimColor>📁 {truncatePathTail(cwd, 38)}</Text>
         </Box>
       )}
     </Box>

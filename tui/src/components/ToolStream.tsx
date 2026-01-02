@@ -1,6 +1,8 @@
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { ToolEntry } from '../lib/types.js';
+import { formatDurationMs, truncatePath } from '../lib/ui-formatters.js';
+import { getVisibleTools } from '../state/hud-selectors.js';
 
 interface Props {
   tools: ToolEntry[];
@@ -19,39 +21,8 @@ const STATUS_COLORS: Record<string, string> = {
   error: 'red',
 };
 
-function truncatePath(path: string, maxLen = 22): string {
-  if (!path || path.length <= maxLen) return path;
-
-  const parts = path.split('/');
-  if (parts.length >= 2) {
-    const filename = parts[parts.length - 1];
-    const parent = parts[parts.length - 2];
-
-    if (filename.length > maxLen - 4) {
-      return `…${filename.slice(-(maxLen - 1))}`;
-    }
-
-    const combined = `${parent}/${filename}`;
-    if (combined.length <= maxLen) {
-      return combined;
-    }
-
-    const available = maxLen - filename.length - 2;
-    return `…${parent.slice(-available)}/${filename}`;
-  }
-
-  return `…${path.slice(-(maxLen - 1))}`;
-}
-
-function formatDuration(ms: number | undefined): string {
-  if (!ms || ms < 0) return '';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 10000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.round(ms / 1000)}s`;
-}
-
 export const ToolStream = memo(function ToolStream({ tools, maxVisible = 4 }: Props) {
-  const recentTools = tools.slice(-maxVisible);
+  const recentTools = getVisibleTools(tools, maxVisible);
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -65,8 +36,8 @@ export const ToolStream = memo(function ToolStream({ tools, maxVisible = 4 }: Pr
         <Text dimColor>No tool activity yet</Text>
       ) : (
         recentTools.map((tool) => {
-          const duration = formatDuration(tool.duration);
-          const target = truncatePath(tool.target);
+          const duration = formatDurationMs(tool.duration);
+          const target = truncatePath(tool.target, 22);
 
           return (
             <Box key={tool.id}>

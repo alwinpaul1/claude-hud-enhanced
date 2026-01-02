@@ -11,6 +11,8 @@ import { StatusBar } from './components/StatusBar.js';
 import { ContextInfo } from './components/ContextInfo.js';
 import { CostDisplay } from './components/CostDisplay.js';
 import type { ConnectionStatus } from './lib/event-reader.js';
+import type { PanelId } from './lib/hud-config.js';
+import { getHiddenPanelSet, resolvePanelOrder } from './state/hud-selectors.js';
 
 interface AppProps {
   fifoPath: string;
@@ -38,7 +40,8 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
   const [visible, setVisible] = useState(true);
 
   const state = useHudState({ fifoPath, initialTranscriptPath });
-  const elapsed = useElapsedTime();
+  const sessionStart = state.context.sessionStart || state.now;
+  const elapsed = useElapsedTime(sessionStart, state.now);
 
   useInput((input, key) => {
     if (key.ctrl && input === 'h') {
@@ -66,19 +69,66 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
     );
   }
 
-  const modeLabel =
-    state.sessionInfo.permissionMode !== 'default' ? ` [${state.sessionInfo.permissionMode}]` : '';
+  const hiddenPanels = getHiddenPanelSet(state.config);
+  const panelOrder = resolvePanelOrder(state.config);
+  const panelWidth = state.config?.width || 48;
+
+  const panels: Record<PanelId, React.ReactNode> = {
+    status: (
+      <ErrorBoundary>
+        <StatusBar
+          settings={state.settings}
+          isIdle={state.sessionInfo.isIdle}
+          cwd={state.sessionInfo.cwd}
+        />
+      </ErrorBoundary>
+    ),
+    context: (
+      <ErrorBoundary>
+        <ContextMeter context={state.context} />
+      </ErrorBoundary>
+    ),
+    cost: (
+      <ErrorBoundary>
+        <CostDisplay cost={state.cost} model={state.model} />
+      </ErrorBoundary>
+    ),
+    contextInfo: (
+      <ErrorBoundary>
+        <ContextInfo contextFiles={state.contextFiles} />
+      </ErrorBoundary>
+    ),
+    tools: (
+      <ErrorBoundary>
+        <ToolStream tools={state.tools} />
+      </ErrorBoundary>
+    ),
+    agents: (
+      <ErrorBoundary>
+        <AgentList agents={state.agents} now={state.now} />
+      </ErrorBoundary>
+    ),
+    todos: (
+      <ErrorBoundary>
+        <TodoList todos={state.todos} />
+      </ErrorBoundary>
+    ),
+  };
 
   return (
-    <Box flexDirection="column" width={48} height={termRows} borderStyle="round" borderColor="gray">
+    <Box
+      flexDirection="column"
+      width={panelWidth}
+      height={termRows}
+      borderStyle="round"
+      borderColor="gray"
+    >
       <Box marginBottom={1}>
         <Text bold color="cyan">
           {' '}
           Claude HUD{' '}
         </Text>
-        <Text dimColor>
-          ({elapsed}){modeLabel}{' '}
-        </Text>
+        <Text dimColor>({elapsed}) </Text>
         <Text color={STATUS_COLORS[state.connectionStatus]}>
           {STATUS_ICONS[state.connectionStatus]}
         </Text>
@@ -96,37 +146,10 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
         </Box>
       )}
 
-      <ErrorBoundary>
-        <StatusBar
-          settings={state.settings}
-          isIdle={state.sessionInfo.isIdle}
-          cwd={state.sessionInfo.cwd}
-        />
-      </ErrorBoundary>
-
-      <ErrorBoundary>
-        <ContextMeter context={state.context} />
-      </ErrorBoundary>
-
-      <ErrorBoundary>
-        <CostDisplay cost={state.cost} model={state.model} />
-      </ErrorBoundary>
-
-      <ErrorBoundary>
-        <ContextInfo contextFiles={state.contextFiles} />
-      </ErrorBoundary>
-
-      <ErrorBoundary>
-        <ToolStream tools={state.tools} />
-      </ErrorBoundary>
-
-      <ErrorBoundary>
-        <AgentList agents={state.agents} />
-      </ErrorBoundary>
-
-      <ErrorBoundary>
-        <TodoList todos={state.todos} />
-      </ErrorBoundary>
+      {panelOrder.map((panel) => {
+        if (hiddenPanels.has(panel)) return null;
+        return <React.Fragment key={panel}>{panels[panel]}</React.Fragment>;
+      })}
     </Box>
   );
 }

@@ -33,7 +33,13 @@ function createAgent(status: 'running' | 'complete' | 'error' = 'complete'): Age
 describe('SessionStats', () => {
   it('should render session header', () => {
     const { lastFrame } = render(
-      <SessionStats tools={[]} modifiedFiles={new Map()} agents={[]} sessionStart={Date.now()} />,
+      <SessionStats
+        tools={[]}
+        modifiedFiles={new Map()}
+        agents={[]}
+        sessionStart={Date.now()}
+        now={Date.now()}
+      />,
     );
     expect(lastFrame()).toContain('Session');
   });
@@ -45,6 +51,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now() - 30000}
+        now={Date.now()}
       />,
     );
     expect(lastFrame()).toContain('30s');
@@ -57,6 +64,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now() - 125000}
+        now={Date.now()}
       />,
     );
     expect(lastFrame()).toContain('2m');
@@ -69,6 +77,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now() - 3720000} // 62 minutes
+        now={Date.now()}
       />,
     );
     expect(lastFrame()).toContain('1h');
@@ -90,6 +99,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now()}
+        now={Date.now()}
       />,
     );
     expect(lastFrame()).toContain('3');
@@ -102,7 +112,13 @@ describe('SessionStats', () => {
     files.set('/b.ts', createModifiedFile('/b.ts', 20, 3));
 
     const { lastFrame } = render(
-      <SessionStats tools={[]} modifiedFiles={files} agents={[]} sessionStart={Date.now()} />,
+      <SessionStats
+        tools={[]}
+        modifiedFiles={files}
+        agents={[]}
+        sessionStart={Date.now()}
+        now={Date.now()}
+      />,
     );
     expect(lastFrame()).toContain('+30');
     expect(lastFrame()).toContain('-8');
@@ -117,6 +133,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={agents}
         sessionStart={Date.now()}
+        now={Date.now()}
       />,
     );
     expect(lastFrame()).toContain('2 agents');
@@ -130,6 +147,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={agents}
         sessionStart={Date.now()}
+        now={Date.now()}
       />,
     );
     expect(lastFrame()).not.toContain('agents');
@@ -159,6 +177,7 @@ describe('SessionStats', () => {
         modifiedFiles={new Map()}
         agents={[]}
         sessionStart={Date.now()}
+        now={Date.now()}
       />,
     );
     const frame = lastFrame() || '';

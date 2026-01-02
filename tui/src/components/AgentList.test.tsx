@@ -30,13 +30,13 @@ function createTool(overrides: Partial<ToolEntry> = {}): ToolEntry {
 
 describe('AgentList', () => {
   it('should return null when no agents', () => {
-    const { lastFrame } = render(<AgentList agents={[]} />);
+    const { lastFrame } = render(<AgentList agents={[]} now={Date.now()} />);
     expect(lastFrame()).toBe('');
   });
 
   it('should render agent header', () => {
     const agents = [createAgent()];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('Agents');
   });
 
@@ -46,37 +46,37 @@ describe('AgentList', () => {
       createAgent({ id: 'agent-2', status: 'running' }),
       createAgent({ id: 'agent-3', status: 'complete' }),
     ];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('(2 active)');
   });
 
   it('should render agent type', () => {
     const agents = [createAgent({ type: 'codebase-search' })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('codebase-search');
   });
 
   it('should render agent description', () => {
     const agents = [createAgent({ description: 'Searching for auth code' })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('Searching for auth code');
   });
 
   it('should show running status icon', () => {
     const agents = [createAgent({ status: 'running' })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('◐');
   });
 
   it('should show complete status icon', () => {
     const agents = [createAgent({ status: 'complete', endTs: Date.now() })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('✓');
   });
 
   it('should show error status icon', () => {
     const agents = [createAgent({ status: 'error', endTs: Date.now() })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('✗');
   });
 
@@ -84,7 +84,7 @@ describe('AgentList', () => {
     const agents = Array.from({ length: 6 }, (_, i) =>
       createAgent({ id: `agent-${i}`, type: `type-${i}` }),
     );
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     const frame = lastFrame() || '';
     expect(frame).toContain('type-2');
     expect(frame).toContain('type-5');
@@ -95,7 +95,7 @@ describe('AgentList', () => {
   it('should show agent tools', () => {
     const tools = [createTool({ tool: 'Grep' }), createTool({ id: 'tool-2', tool: 'Read' })];
     const agents = [createAgent({ tools })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('Grep');
     expect(lastFrame()).toContain('Read');
   });
@@ -105,7 +105,7 @@ describe('AgentList', () => {
       createTool({ id: `tool-${i}`, tool: `Tool${i}` }),
     );
     const agents = [createAgent({ tools })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     const frame = lastFrame() || '';
     expect(frame).toContain('Tool2');
     expect(frame).toContain('Tool4');
@@ -116,28 +116,28 @@ describe('AgentList', () => {
     const agents = [
       createAgent({ description: 'This is a very long description that exceeds the limit' }),
     ];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     const frame = lastFrame() || '';
     expect(frame).toContain('…');
   });
 
   it('should format elapsed time', () => {
     const agents = [createAgent({ startTs: Date.now() - 65000, endTs: Date.now() })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('1m');
   });
 
   it('should handle tool with filename-only target', () => {
     const tools = [createTool({ target: 'file.ts' })];
     const agents = [createAgent({ tools })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('file.ts');
   });
 
   it('should truncate long tool targets', () => {
     const tools = [createTool({ target: '/path/to/very-long-filename-here.ts' })];
     const agents = [createAgent({ tools })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     const frame = lastFrame() || '';
     expect(frame).toContain('very-long-filen');
     expect(frame).not.toContain('very-long-filename-here.ts');
@@ -146,7 +146,7 @@ describe('AgentList', () => {
   it('should handle tool with empty target', () => {
     const tools = [createTool({ target: '' })];
     const agents = [createAgent({ tools })];
-    const { lastFrame } = render(<AgentList agents={agents} />);
+    const { lastFrame } = render(<AgentList agents={agents} now={Date.now()} />);
     expect(lastFrame()).toContain('Grep');
     expect(lastFrame()).not.toContain(': ');
   });
