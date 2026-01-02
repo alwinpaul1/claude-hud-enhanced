@@ -4,6 +4,7 @@ import { parseHudEvent } from './hud-event.js';
 describe('parseHudEvent', () => {
   it('parses a valid HUD event', () => {
     const line = JSON.stringify({
+      schemaVersion: 1,
       event: 'PreToolUse',
       tool: 'Read',
       toolUseId: 'tool-1',
@@ -22,6 +23,7 @@ describe('parseHudEvent', () => {
 
   it('accepts events without tool or input fields', () => {
     const line = JSON.stringify({
+      schemaVersion: 1,
       event: 'UserPromptSubmit',
       session: 's1',
       ts: 999,
@@ -40,6 +42,19 @@ describe('parseHudEvent', () => {
     expect(
       parseHudEvent(
         JSON.stringify({
+          schemaVersion: 2,
+          event: 'Stop',
+          tool: null,
+          input: null,
+          response: null,
+          session: 's1',
+          ts: 1,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseHudEvent(
+        JSON.stringify({
           event: 'Stop',
           tool: null,
           input: null,
@@ -49,5 +64,17 @@ describe('parseHudEvent', () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it('rejects missing schemaVersion', () => {
+    const line = JSON.stringify({
+      event: 'Stop',
+      tool: null,
+      input: null,
+      response: null,
+      session: 's1',
+      ts: 1,
+    });
+    expect(parseHudEvent(line)).toBeNull();
   });
 });

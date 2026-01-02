@@ -1,5 +1,6 @@
 type BaseHudEvent<TEvent extends string> = {
   event: TEvent;
+  schemaVersion?: number;
   tool: string | null;
   toolUseId?: string;
   input: Record<string, unknown> | null;

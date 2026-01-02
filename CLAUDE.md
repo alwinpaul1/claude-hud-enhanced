@@ -18,6 +18,7 @@ bun run dev          # Watch mode for development
 bun test             # Run all tests
 bun test <pattern>   # Run specific test (e.g., bun test sparkline)
  bun run replay:events -- --input ../tui/test-fixtures/hud-events.jsonl  # Replay events
+ bun run profile:events -- ../tui/test-fixtures/hud-events-stress.jsonl  # Profile throughput
 
 # Manual testing with a FIFO
 mkfifo /tmp/test.fifo
@@ -51,6 +52,8 @@ Claude Code Hooks → capture-event.sh → FIFO → EventReader → React State 
 | PreCompact | capture-event.sh | Increments compaction count |
 | SubagentStop | capture-event.sh | Marks agent complete |
 | SessionEnd | cleanup.sh | Kills process, removes FIFO |
+
+All events sent to the FIFO include `schemaVersion: 1` (see `docs/API.md`).
 
 ### Library Structure (tui/src/lib/)
 

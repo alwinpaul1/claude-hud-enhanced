@@ -14,15 +14,36 @@ if [[ -z "$SESSION_ID" || ! "$SESSION_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
   exit 0
 fi
 
-EVENT_FIFO="$HOME/.claude/hud/events/$SESSION_ID.fifo"
 HUD_DIR="$HOME/.claude/hud"
+EVENT_FIFO="$HUD_DIR/events/$SESSION_ID.fifo"
 REFRESH_FILE="$HUD_DIR/refresh.json"
 
-# Update refresh.json with transcriptPath when available (for session resume)
+mkdir -p "$HUD_DIR/events"
+
+if [ ! -p "$EVENT_FIFO" ]; then
+  rm -f "$EVENT_FIFO"
+  mkfifo "$EVENT_FIFO" 2>/dev/null || true
+fi
+
+# Ensure refresh.json points at this session in case SessionStart didn't fire.
+CURRENT_SESSION=$(jq -r '.sessionId // empty' "$REFRESH_FILE" 2>/dev/null)
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+if [ -z "$CURRENT_SESSION" ] || [ "$CURRENT_SESSION" != "$SESSION_ID" ]; then
+  if [ -n "$TRANSCRIPT_PATH" ]; then
+    cat > "$REFRESH_FILE" << EOF
+{"sessionId":"$SESSION_ID","fifoPath":"$EVENT_FIFO","transcriptPath":"$TRANSCRIPT_PATH"}
+EOF
+  else
+    cat > "$REFRESH_FILE" << EOF
+{"sessionId":"$SESSION_ID","fifoPath":"$EVENT_FIFO"}
+EOF
+  fi
+  CURRENT_SESSION="$SESSION_ID"
+fi
+
+# Update refresh.json with transcriptPath when available (for session resume)
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$REFRESH_FILE" ]; then
   # Only update if this session matches the current refresh.json session
-  CURRENT_SESSION=$(jq -r '.sessionId // empty' "$REFRESH_FILE" 2>/dev/null)
   if [ "$CURRENT_SESSION" = "$SESSION_ID" ]; then
     jq --arg tp "$TRANSCRIPT_PATH" '.transcriptPath = $tp' "$REFRESH_FILE" > "$REFRESH_FILE.tmp" && mv "$REFRESH_FILE.tmp" "$REFRESH_FILE"
   fi
@@ -30,6 +51,7 @@ fi
 
 if [ -p "$EVENT_FIFO" ]; then
   EVENT_JSON=$(echo "$INPUT" | jq -c '{
+    schemaVersion: 1,
     event: .hook_event_name,
     tool: .tool_name,
     toolUseId: .tool_use_id,

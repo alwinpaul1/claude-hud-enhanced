@@ -63,6 +63,7 @@ describe('HUD smoke test', () => {
     const writer = createWriteStream(fifoPath, { encoding: 'utf-8' });
     writer.write(
       `${JSON.stringify({
+        schemaVersion: 1,
         event: 'UserPromptSubmit',
         session: 'test-session',
         prompt: 'Smoke test prompt',

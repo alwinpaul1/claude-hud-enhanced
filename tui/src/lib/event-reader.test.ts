@@ -14,6 +14,7 @@ describe('EventReader', () => {
     const filePath = path.join(tmpDir, 'events.log');
     const lines = [
       JSON.stringify({
+        schemaVersion: 1,
         event: 'PostToolUse',
         tool: 'Read',
         input: { file_path: '/tmp/test.txt' },
@@ -23,6 +24,7 @@ describe('EventReader', () => {
       }),
       'not json',
       JSON.stringify({
+        schemaVersion: 1,
         event: 'UserPromptSubmit',
         tool: null,
         input: null,
@@ -70,6 +72,7 @@ describe('EventReader', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-'));
     const filePath = path.join(tmpDir, 'events.log');
     const event = JSON.stringify({
+      schemaVersion: 1,
       event: 'PostToolUse',
       tool: 'Read',
       input: null,
@@ -97,6 +100,7 @@ describe('EventReader', () => {
     fs.writeFileSync(
       filePath1,
       JSON.stringify({
+        schemaVersion: 1,
         event: 'Stop',
         tool: null,
         input: null,
@@ -109,6 +113,7 @@ describe('EventReader', () => {
     fs.writeFileSync(
       filePath2,
       JSON.stringify({
+        schemaVersion: 1,
         event: 'PreCompact',
         tool: null,
         input: null,

@@ -22,6 +22,8 @@ function readRecordOrNull(value: unknown): Record<string, unknown> | null | unde
   return isRecord(value) ? value : undefined;
 }
 
+export const HUD_EVENT_SCHEMA_VERSION = 1;
+
 export function parseHudEvent(line: string): HudEvent | null {
   let raw: unknown;
   try {
@@ -38,14 +40,26 @@ export function parseHudEvent(line: string): HudEvent | null {
   const tool = 'tool' in raw ? readStringOrNull(raw.tool) : null;
   const input = 'input' in raw ? readRecordOrNull(raw.input) : null;
   const response = 'response' in raw ? readRecordOrNull(raw.response) : null;
+  const schemaVersion = readNumber(raw.schemaVersion);
 
-  if (!event || !session || ts === undefined || tool === undefined || input === undefined) {
+  if (
+    !schemaVersion ||
+    !event ||
+    !session ||
+    ts === undefined ||
+    tool === undefined ||
+    input === undefined
+  ) {
     return null;
   }
   if (response === undefined) return null;
+  if (schemaVersion !== HUD_EVENT_SCHEMA_VERSION) {
+    return null;
+  }
 
   const parsed: HudEvent = {
     event,
+    schemaVersion,
     tool,
     toolUseId: readString(raw.toolUseId),
     input,
