@@ -9,6 +9,7 @@ import { AgentList } from './components/AgentList.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { StatusBar } from './components/StatusBar.js';
 import { ContextInfo } from './components/ContextInfo.js';
+import { CostDisplay } from './components/CostDisplay.js';
 import type { ConnectionStatus } from './lib/event-reader.js';
 
 interface AppProps {
@@ -105,6 +106,10 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
 
       <ErrorBoundary>
         <ContextMeter context={state.context} />
+      </ErrorBoundary>
+
+      <ErrorBoundary>
+        <CostDisplay cost={state.cost} model={state.model} />
       </ErrorBoundary>
 
       <ErrorBoundary>

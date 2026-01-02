@@ -3,6 +3,7 @@ import { EventReader, ConnectionStatus } from '../lib/event-reader.js';
 import { UnifiedContextTracker } from '../lib/unified-context-tracker.js';
 import { SettingsReader, SettingsData } from '../lib/settings-reader.js';
 import { ContextDetector, ContextFiles } from '../lib/context-detector.js';
+import { CostTracker } from '../lib/cost-tracker.js';
 import type {
   HudEvent,
   ToolEntry,
@@ -10,6 +11,7 @@ import type {
   ContextHealth,
   AgentEntry,
   SessionInfo,
+  CostEstimate,
 } from '../lib/types.js';
 
 export interface HudState {
@@ -21,6 +23,8 @@ export interface HudState {
   settings: SettingsData | null;
   contextFiles: ContextFiles | null;
   connectionStatus: ConnectionStatus;
+  cost: CostEstimate;
+  model: string | null;
 }
 
 interface UseHudStateOptions {
@@ -30,6 +34,7 @@ interface UseHudStateOptions {
 
 export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOptions): HudState {
   const contextTrackerRef = useRef(new UnifiedContextTracker());
+  const costTrackerRef = useRef(new CostTracker());
   const settingsReaderRef = useRef(new SettingsReader());
   const contextDetectorRef = useRef(new ContextDetector());
   const runningToolsRef = useRef<Map<string, ToolEntry>>(new Map());
@@ -41,6 +46,8 @@ export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOpti
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [contextFiles, setContextFiles] = useState<ContextFiles | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [cost, setCost] = useState<CostEstimate>(costTrackerRef.current.getCost());
+  const [model, setModel] = useState<string | null>(null);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo>({
     permissionMode: 'default',
     cwd: '',
@@ -119,17 +126,26 @@ export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOpti
 
       runningToolsRef.current.delete(toolUseId);
       contextTrackerRef.current.processEvent(event);
+      costTrackerRef.current.processEvent(event);
       setContext(contextTrackerRef.current.getHealth());
+      setCost(costTrackerRef.current.getCost());
     }
 
     if (event.event === 'UserPromptSubmit') {
       setSessionInfo((prev) => ({ ...prev, isIdle: false }));
+      costTrackerRef.current.processEvent(event);
+      setCost(costTrackerRef.current.getCost());
     }
 
     if (event.event === 'Stop') {
       setSessionInfo((prev) => ({ ...prev, isIdle: true }));
       contextTrackerRef.current.processEvent(event);
       setContext(contextTrackerRef.current.getHealth());
+      const detectedModel = contextTrackerRef.current.getModel();
+      if (detectedModel) {
+        setModel(detectedModel);
+        costTrackerRef.current.setModel(detectedModel);
+      }
     }
 
     if (event.event === 'PreCompact') {
@@ -209,5 +225,7 @@ export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOpti
     settings,
     contextFiles,
     connectionStatus,
+    cost,
+    model,
   };
 }
