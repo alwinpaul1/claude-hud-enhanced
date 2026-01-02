@@ -4,6 +4,9 @@ import minimist from 'minimist';
 import { EventReader } from './lib/event-reader.js';
 import { ContextTracker } from './lib/context-tracker.js';
 import { CostTracker } from './lib/cost-tracker.js';
+import { SettingsReader } from './lib/settings-reader.js';
+import { StatsReader } from './lib/stats-reader.js';
+import { ContextDetector } from './lib/context-detector.js';
 import { ContextMeter } from './components/ContextMeter.js';
 import { ToolStream } from './components/ToolStream.js';
 import { McpStatus } from './components/McpStatus.js';
@@ -13,7 +16,12 @@ import { AgentList } from './components/AgentList.js';
 import { SessionStats } from './components/SessionStats.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { GitStatus } from './components/GitStatus.js';
+import { StatusBar } from './components/StatusBar.js';
+import { ContextInfo } from './components/ContextInfo.js';
 import type { ConnectionStatus } from './lib/event-reader.js';
+import type { SettingsData } from './lib/settings-reader.js';
+import type { TokenStats } from './lib/stats-reader.js';
+import type { ContextFiles } from './lib/context-detector.js';
 import type { HudEvent, ToolEntry, TodoItem, ModifiedFile, ContextHealth, AgentEntry, SessionInfo, CostEstimate } from './lib/types.js';
 
 interface AppProps {
@@ -29,9 +37,14 @@ function App({ sessionId, fifoPath }: AppProps) {
   const [modifiedFiles, setModifiedFiles] = useState<Map<string, ModifiedFile>>(new Map());
   const contextTrackerRef = useRef(new ContextTracker());
   const costTrackerRef = useRef(new CostTracker());
+  const settingsReaderRef = useRef(new SettingsReader());
+  const statsReaderRef = useRef(new StatsReader());
+  const contextDetectorRef = useRef(new ContextDetector());
   const [context, setContext] = useState<ContextHealth>(contextTrackerRef.current.getHealth());
   const [cost, setCost] = useState<CostEstimate>(costTrackerRef.current.getCost());
-  const [mcpServers, setMcpServers] = useState<string[]>([]);
+  const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [realStats, setRealStats] = useState<TokenStats | null>(null);
+  const [contextFiles, setContextFiles] = useState<ContextFiles | null>(null);
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [sessionStart] = useState(Date.now());
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
@@ -220,8 +233,16 @@ function App({ sessionId, fifoPath }: AppProps) {
   }, [fifoPath, processEvent]);
 
   useEffect(() => {
-    setMcpServers(['context7', 'exa', 'grep-app']);
-  }, []);
+    const readData = () => {
+      setSettings(settingsReaderRef.current.read());
+      setRealStats(statsReaderRef.current.read());
+      setContextFiles(contextDetectorRef.current.detect(sessionInfo.cwd || undefined));
+    };
+
+    readData();
+    const interval = setInterval(readData, 30000);
+    return () => clearInterval(interval);
+  }, [sessionInfo.cwd]);
 
   if (!visible) {
     return (
@@ -244,20 +265,22 @@ function App({ sessionId, fifoPath }: AppProps) {
     error: '✗',
   };
 
-  const idleIndicator = sessionInfo.isIdle ? '💤' : '⚡';
   const modeLabel = sessionInfo.permissionMode !== 'default' ? ` [${sessionInfo.permissionMode}]` : '';
 
   return (
     <Box flexDirection="column" width={48} borderStyle="round" borderColor="gray">
       <Box marginBottom={1}>
         <Text bold color="cyan"> Claude HUD </Text>
-        <Text>{idleIndicator}</Text>
-        <Text dimColor> ({sessionId.slice(0, 8)}){modeLabel} </Text>
+        <Text dimColor>({sessionId.slice(0, 8)}){modeLabel} </Text>
         <Text color={statusColors[connectionStatus]}>{statusIcons[connectionStatus]}</Text>
       </Box>
 
       <ErrorBoundary>
-        <ContextMeter context={context} />
+        <StatusBar settings={settings} isIdle={sessionInfo.isIdle} cwd={sessionInfo.cwd} />
+      </ErrorBoundary>
+
+      <ErrorBoundary>
+        <ContextMeter context={context} realStats={realStats} />
       </ErrorBoundary>
 
       {cost.totalCost > 0.001 && (
@@ -292,7 +315,10 @@ function App({ sessionId, fifoPath }: AppProps) {
         <GitStatus cwd={sessionInfo.cwd || undefined} />
       </ErrorBoundary>
       <ErrorBoundary>
-        <McpStatus servers={mcpServers} />
+        <ContextInfo contextFiles={contextFiles} />
+      </ErrorBoundary>
+      <ErrorBoundary>
+        <McpStatus servers={settings?.mcpNames || []} plugins={settings?.pluginNames} />
       </ErrorBoundary>
       <ErrorBoundary>
         <TodoList todos={todos} />

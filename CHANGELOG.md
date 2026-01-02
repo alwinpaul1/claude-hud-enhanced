@@ -2,7 +2,31 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [2.0.0] - 2025-01-02
+## [0.1.0] - 2026-01-02
+
+### Added
+- **Developer Intelligence Dashboard**: Surface real data from Claude Code internals
+- **Real Token Stats**: Read actual token usage from `~/.claude/stats-cache.json` instead of estimates
+- **Model Display**: Show current model (opus/sonnet/haiku) from settings
+- **Plugin & MCP Awareness**: Display enabled plugins and MCP server counts from `~/.claude/settings.json`
+- **CLAUDE.md Detection**: Show when global and project CLAUDE.md files are loaded
+- **StatusBar Component**: Rich header showing model, idle state, plugin/MCP counts, and working directory
+- **ContextInfo Component**: Visual indicator of loaded context files
+
+### Changed
+- Version reset to 0.1.0 (was incorrectly labeled 2.0.0 during development)
+- ContextMeter now displays real token data when available (today's usage, cache stats)
+- McpStatus renamed to Connections, now shows both MCP servers and plugins
+
+### Technical
+- Added settings-reader.ts for parsing ~/.claude/settings.json
+- Added stats-reader.ts for parsing ~/.claude/stats-cache.json
+- Added context-detector.ts for CLAUDE.md file detection
+- 30-second polling interval for settings/stats refresh
+
+---
+
+## [0.0.2] - 2025-01-02
 
 ### Added
 - **Enhanced Hook Support**: Added PreToolUse, UserPromptSubmit, Stop, and PreCompact hooks

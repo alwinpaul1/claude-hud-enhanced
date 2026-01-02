@@ -1,13 +1,16 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { ContextHealth } from '../lib/types.js';
+import type { TokenStats } from '../lib/stats-reader.js';
+import { formatTokens } from '../lib/stats-reader.js';
 import { Sparkline } from './Sparkline.js';
 
 interface Props {
   context: ContextHealth;
+  realStats?: TokenStats | null;
 }
 
-export function ContextMeter({ context }: Props) {
+export function ContextMeter({ context, realStats }: Props) {
   const { tokens, percent, remaining, burnRate, status, shouldCompact, breakdown, tokenHistory } = context;
 
   const barWidth = 20;
@@ -72,6 +75,20 @@ export function ContextMeter({ context }: Props) {
           </>
         )}
       </Box>
+      {realStats && (
+        <Box>
+          <Text dimColor>Today: </Text>
+          <Text>{formatTokens(realStats.todayTokens)}</Text>
+          <Text dimColor> • </Text>
+          <Text dimColor>{realStats.todayMessages} msgs</Text>
+          {realStats.cacheReadTokens > 0 && (
+            <>
+              <Text dimColor> • </Text>
+              <Text color="cyan">{formatTokens(realStats.cacheReadTokens)} cached</Text>
+            </>
+          )}
+        </Box>
+      )}
     </Box>
   );
 }
