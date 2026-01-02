@@ -2,6 +2,20 @@
 
 All notable changes to claude-hud will be documented in this file.
 
+## [2.0.11] - 2026-01-03
+
+### Removed
+- **Dead code cleanup**: Removed 1,138 lines of unused legacy code
+  - `context-tracker.ts` - superseded by UnifiedContextTracker
+  - `transcript-reader.ts` - functionality moved to UnifiedContextTracker
+  - `stats-reader.ts` - unused
+  - `usage-reader.ts` - unused
+
+### Improved
+- **Test coverage**: Now at 94.43% (194 tests)
+
+---
+
 ## [2.0.10] - 2026-01-03
 
 ### Added
