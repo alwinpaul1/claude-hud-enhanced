@@ -63,13 +63,6 @@ When Claude spawns subagents:
 - Session duration
 - Number of completed agents
 
-### Git Status
-Track your repository state:
-- **Current branch** with ahead/behind indicators
-- **Staged** changes count
-- **Modified** files count
-- **Untracked** files count
-
 ### Additional Panels
 - **Todo List** — Claude's current task tracking
 - **Modified Files** — files changed this session
@@ -126,6 +119,9 @@ Quick checks:
 # Check plugin is valid
 claude plugin validate claude-hud
 
+# Enable debug logging for the HUD
+CLAUDE_HUD_DEBUG=1 claude
+
 # View debug output
 claude --debug hooks
 
@@ -149,8 +145,20 @@ bun run build
 # Run tests
 bun test
 
+# Lint & typecheck
+bun run lint
+bun run typecheck
+
 # Start manually (for development)
 bun run start -- --session test --fifo /tmp/test.fifo
+```
+
+### Debug Mode
+
+Set `CLAUDE_HUD_DEBUG=1` to enable detailed logging to stderr:
+
+```bash
+CLAUDE_HUD_DEBUG=1 bun run start -- --session test --fifo /tmp/test.fifo
 ```
 
 ## License
