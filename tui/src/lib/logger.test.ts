@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { logger } from './logger.js';
 
 describe('logger', () => {
@@ -8,10 +8,15 @@ describe('logger', () => {
     consoleSpy.mockClear();
   });
 
-  it('should have debug, warn, and error methods', () => {
+  afterAll(() => {
+    logger.close();
+  });
+
+  it('should have debug, warn, error, and close methods', () => {
     expect(typeof logger.debug).toBe('function');
     expect(typeof logger.warn).toBe('function');
     expect(typeof logger.error).toBe('function');
+    expect(typeof logger.close).toBe('function');
   });
 
   it('should accept context, message, and optional data', () => {
