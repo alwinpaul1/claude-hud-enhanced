@@ -76,26 +76,41 @@ export function parseHudEventResult(line: string): HudEventParseResult {
   const response = 'response' in raw ? readRecordOrNull(raw.response) : null;
   const schemaVersion = readNumber(raw.schemaVersion);
 
-  if (
-    !schemaVersion ||
-    !event ||
-    !session ||
-    ts === undefined ||
-    tool === undefined ||
-    input === undefined
-  ) {
+  if (!schemaVersion || !event || !session || ts === undefined) {
     return buildParseError('event_parse_failed', 'Missing required event fields', {
       event,
       session,
       schemaVersion,
     });
   }
-  if (response === undefined) {
-    return buildParseError('event_parse_failed', 'Malformed response field', {
+  if (tool === undefined) {
+    return buildParseError('event_parse_failed', 'Malformed tool field (expected string or null)', {
       event,
       session,
       schemaVersion,
     });
+  }
+  if (input === undefined) {
+    return buildParseError(
+      'event_parse_failed',
+      'Malformed input field (expected object or null)',
+      {
+        event,
+        session,
+        schemaVersion,
+      },
+    );
+  }
+  if (response === undefined) {
+    return buildParseError(
+      'event_parse_failed',
+      'Malformed response field (expected object or null)',
+      {
+        event,
+        session,
+        schemaVersion,
+      },
+    );
   }
   const schemaWarning =
     schemaVersion > HUD_EVENT_SCHEMA_VERSION

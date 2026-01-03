@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseHudEvent } from './hud-event.js';
+import { parseHudEvent, parseHudEventResult } from './hud-event.js';
 
 describe('parseHudEvent', () => {
   it('parses a valid HUD event', () => {
@@ -76,5 +76,71 @@ describe('parseHudEvent', () => {
       ts: 1,
     });
     expect(parseHudEvent(line)).toBeNull();
+  });
+
+  it('accepts explicit tool: null', () => {
+    const line = JSON.stringify({
+      schemaVersion: 1,
+      event: 'Stop',
+      tool: null,
+      input: null,
+      response: null,
+      session: 's1',
+      ts: 1,
+    });
+    const event = parseHudEvent(line);
+    expect(event).not.toBeNull();
+    expect(event?.tool).toBeNull();
+  });
+
+  it('rejects malformed tool field with specific error', () => {
+    const line = JSON.stringify({
+      schemaVersion: 1,
+      event: 'Stop',
+      tool: 123,
+      input: null,
+      response: null,
+      session: 's1',
+      ts: 1,
+    });
+    const result = parseHudEventResult(line);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain('tool');
+    }
+  });
+
+  it('rejects malformed input field with specific error', () => {
+    const line = JSON.stringify({
+      schemaVersion: 1,
+      event: 'Stop',
+      tool: null,
+      input: 'not-an-object',
+      response: null,
+      session: 's1',
+      ts: 1,
+    });
+    const result = parseHudEventResult(line);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain('input');
+    }
+  });
+
+  it('rejects malformed response field with specific error', () => {
+    const line = JSON.stringify({
+      schemaVersion: 1,
+      event: 'Stop',
+      tool: null,
+      input: null,
+      response: 'not-an-object',
+      session: 's1',
+      ts: 1,
+    });
+    const result = parseHudEventResult(line);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain('response');
+    }
   });
 });
