@@ -36,7 +36,10 @@ export const TodoList = memo(function TodoList({ todos }: Props) {
               color={todo.status === 'in_progress' ? 'white' : undefined}
               dimColor={todo.status === 'completed'}
             >
-              {todo.content.slice(0, 32)}
+              {(todo.status === 'in_progress' && todo.activeForm
+                ? todo.activeForm
+                : todo.content
+              ).slice(0, 32)}
             </Text>
           </Box>
         ))

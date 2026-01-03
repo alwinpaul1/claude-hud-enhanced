@@ -85,4 +85,19 @@ describe('TodoList', () => {
     const frame = lastFrame() || '';
     expect(frame.length).toBeLessThan(100);
   });
+
+  it('should show activeForm when in_progress and activeForm is set', () => {
+    const todos: TodoItem[] = [
+      { content: 'Run tests', status: 'in_progress', activeForm: 'Running tests' },
+    ];
+    const { lastFrame } = render(<TodoList todos={todos} />);
+    expect(lastFrame()).toContain('Running tests');
+    expect(lastFrame()).not.toContain('Run tests');
+  });
+
+  it('should fallback to content when in_progress but no activeForm', () => {
+    const todos: TodoItem[] = [{ content: 'Run tests', status: 'in_progress' }];
+    const { lastFrame } = render(<TodoList todos={todos} />);
+    expect(lastFrame()).toContain('Run tests');
+  });
 });
