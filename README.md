@@ -18,7 +18,7 @@ claude /plugin install github.com/jarrodwatts/claude-hud
 Or paste this into claude code:
 
 ```
-Install the "claude-hud" plugin using the following instructions: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
+Install the "claude-hud" claude code plugin using the following instructions: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
 ```
 
 ---
