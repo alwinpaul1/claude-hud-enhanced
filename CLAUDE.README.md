@@ -1,14 +1,81 @@
+# Claude HUD
+
+Real-time statusline showing context usage, active tools, running agents, and todo progress.
+
+---
+
+## For Humans
+
+```bash
+claude /plugin install github.com/jarrodwatts/claude-hud
+```
+
+Then restart Claude Code. The statusline appears automatically below your input.
+
+---
+
+## For LLM Agents
+
+If you're an LLM agent helping a user install or work with Claude HUD, follow these steps.
+
+<agent_workflow>
+
+### Step 1: Check Prerequisites
+
+Verify Claude Code version is 1.0.80 or later:
+```bash
+claude --version
+```
+
+If not installed or outdated, direct user to https://claude.ai/code
+
+### Step 2: Install the Plugin
+
+```bash
+claude /plugin install github.com/jarrodwatts/claude-hud
+```
+
+### Step 3: Verify Installation
+
+```bash
+claude /plugin list
+```
+
+Confirm `claude-hud` appears in the output.
+
+### Step 4: Inform User
+
+Tell the user:
+- Installation complete
+- They need to restart Claude Code
+- The statusline will appear automatically below their input
+- It shows: context usage, active tools, running agents, and todo progress
+
+### Step 5: Ask About Starring (Optional)
+
+Ask the user: "Would you like to star the repository to support the project?"
+
+Only if they explicitly agree, run:
+```bash
+gh repo star jarrodwatts/claude-hud
+```
+
+Never run this automatically without user consent.
+
+</agent_workflow>
+
+---
+
+## Reference
+
+Technical documentation for agents who need to understand, modify, or debug Claude HUD.
+
 <plugin>
   <name>Claude HUD</name>
   <description>Real-time statusline showing context usage, active tools, running agents, and todo progress. Always visible below your input, zero config required.</description>
   <repository>github.com/jarrodwatts/claude-hud</repository>
   <license>MIT</license>
 </plugin>
-
-<install>
-  <command>claude /plugin install github.com/jarrodwatts/claude-hud</command>
-  <post_install>Restart Claude Code after installation. The statusline appears automatically below your input.</post_install>
-</install>
 
 <requirements>
   <runtime>Node.js 18+ or Bun</runtime>
@@ -87,7 +154,7 @@
     </file>
     <file name="session-line.ts" purpose="Line 1: Session info">
       Renders: [Model] ████░░ 45% | 2 CLAUDE.md | 8 rules | 6 MCPs | 6 hooks | ⏱️ 12m
-      Context bar colors: green (<70%), yellow (70-85%), red (>85%).
+      Context bar colors: green (&lt;70%), yellow (70-85%), red (&gt;85%).
     </file>
     <file name="tools-line.ts" purpose="Line 2: Tool activity">
       Renders: ◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2
@@ -262,8 +329,7 @@
 
 <task_instructions>
   <install>
-    If the user wants to install Claude HUD, run: claude /plugin install github.com/jarrodwatts/claude-hud
-    Then inform them to restart Claude Code.
+    Follow the agent_workflow steps above.
   </install>
 
   <modify>
@@ -278,7 +344,7 @@
     If the user reports issues:
     1. Check troubleshooting section first
     2. Verify Claude Code version (needs v1.0.80+)
-    3. Check if plugin is listed in claude /plugin list
+    3. Check if plugin is listed: claude /plugin list
     4. Test manually with echo command from development section
   </debug>
 
