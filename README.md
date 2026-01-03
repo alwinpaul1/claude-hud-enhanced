@@ -1,22 +1,11 @@
-<p align="center">
-  <img src="claude-hud-preview.png" alt="Claude HUD in action" width="800">
-</p>
+# Claude HUD
 
-<h1 align="center">Claude HUD</h1>
+A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress.
 
-<p align="center">
-  <strong>See what Claude Code is doing — in real time</strong>
-</p>
+[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/jarrodwatts/claude-hud" alt="License"></a>
-  <a href="https://github.com/jarrodwatts/claude-hud/stargazers"><img src="https://img.shields.io/github/stars/jarrodwatts/claude-hud" alt="Stars"></a>
-  <a href="https://github.com/jarrodwatts/claude-hud/releases"><img src="https://img.shields.io/github/v/release/jarrodwatts/claude-hud" alt="Release"></a>
-</p>
-
-<p align="center">
-  A Claude Code plugin that displays a live statusline showing context usage, active tools, running agents, and todo progress.
-</p>
+![Claude HUD in action](claude-hud-preview-5-2.png)
 
 ---
 
