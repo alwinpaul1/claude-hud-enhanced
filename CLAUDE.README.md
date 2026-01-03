@@ -13,12 +13,15 @@ Real-time statusline showing context usage, active tools, running agents, and to
 
 **Step 2: Install the plugin**
 ```
-/plugin install claude-hud@claude-hud
+/plugin install claude-hud
 ```
 
-**Step 3: Restart Claude Code**
+**Step 3: Configure the statusline**
+```
+/claude-hud:setup
+```
 
-The statusline appears automatically below your input.
+Done. The HUD appears immediately — no restart needed.
 
 ---
 
@@ -48,24 +51,23 @@ Run this command in Claude Code:
 
 Run this command in Claude Code:
 ```
-/plugin install claude-hud@claude-hud
+/plugin install claude-hud
 ```
 
-### Step 4: Verify Installation
+### Step 4: Configure the Statusline
 
 Run this command in Claude Code:
 ```
-/plugin list
+/claude-hud:setup
 ```
 
-Confirm `claude-hud@claude-hud` appears in the output.
+This adds the statusLine configuration to the user's settings.json.
 
 ### Step 5: Inform User
 
 Tell the user:
 - Installation complete
-- They need to restart Claude Code
-- The statusline will appear automatically below their input
+- The statusline appears immediately — no restart needed
 - It shows: context usage, active tools, running agents, and todo progress
 
 ### Step 6: Ask About Starring (Optional)
@@ -215,15 +217,26 @@ Technical documentation for agents who need to understand, modify, or debug Clau
 </context_thresholds>
 
 <plugin_configuration>
-  <file>.claude-plugin/plugin.json</file>
-  <content>
+  <manifest>.claude-plugin/plugin.json</manifest>
+  <manifest_content>
+    {
+      "name": "claude-hud",
+      "description": "Real-time statusline HUD for Claude Code",
+      "version": "2.0.0",
+      "author": { "name": "Jarrod Watts", "url": "https://github.com/jarrodwatts" }
+    }
+  </manifest_content>
+  <note>The plugin.json contains metadata only. statusLine is NOT a valid plugin.json field.</note>
+
+  <statusline_config>
+    The /claude-hud:setup command adds this to ~/.claude/settings.json:
     {
       "statusLine": {
         "type": "command",
         "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/index.js"
       }
     }
-  </content>
+  </statusline_config>
   <note>CLAUDE_PLUGIN_ROOT is automatically set by Claude Code to the plugin directory.</note>
 </plugin_configuration>
 
@@ -273,11 +286,11 @@ Technical documentation for agents who need to understand, modify, or debug Clau
 
 <troubleshooting>
   <issue name="Statusline not appearing">
-    <cause>Plugin not installed or Claude Code version too old</cause>
+    <cause>Plugin not installed or statusLine not configured</cause>
     <solution>Run: /plugin marketplace add jarrodwatts/claude-hud</solution>
-    <solution>Run: /plugin install claude-hud@claude-hud</solution>
+    <solution>Run: /plugin install claude-hud</solution>
+    <solution>Run: /claude-hud:setup</solution>
     <solution>Ensure Claude Code is v1.0.80 or later</solution>
-    <solution>Restart Claude Code after installation</solution>
   </issue>
 
   <issue name="Shows [claude-hud] Initializing...">

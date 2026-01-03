@@ -9,14 +9,6 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 ## Install
 
-Paste this prompt into Claude Code for a guided install:
-
-```
-Install the "claude-hud" plugin using: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
-```
-
-Or, if you prefer human instructions:
-
 **Step 1: Add the marketplace**
 ```
 /plugin marketplace add jarrodwatts/claude-hud
@@ -24,26 +16,15 @@ Or, if you prefer human instructions:
 
 **Step 2: Install the plugin**
 ```
-/plugin install claude-hud@claude-hud
+/plugin install claude-hud
 ```
 
-**Step 3: Add statusLine to your settings**
-
-Add this to your `~/.claude/settings.json`:
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "node ~/.claude/plugins/cache/claude-hud/claude-hud/dist/index.js"
-  }
-}
+**Step 3: Configure the statusline**
+```
+/claude-hud:setup
 ```
 
-**Step 4: Restart Claude Code**
-
-The statusline will then appear below your input.
-
-
+Done! The HUD appears immediately — no restart needed.
 
 ---
 

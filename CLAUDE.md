@@ -95,7 +95,9 @@ Lines are conditionally shown:
 
 ## Plugin Configuration
 
-The plugin is configured in `.claude-plugin/plugin.json`:
+The plugin manifest is in `.claude-plugin/plugin.json` (metadata only - name, description, version, author).
+
+**StatusLine configuration** must be added to the user's `~/.claude/settings.json`:
 
 ```json
 {
@@ -105,6 +107,8 @@ The plugin is configured in `.claude-plugin/plugin.json`:
   }
 }
 ```
+
+Note: `statusLine` is NOT a valid plugin.json field. It must be configured in the user's settings.json after plugin installation.
 
 ## Dependencies
 
