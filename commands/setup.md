@@ -22,6 +22,6 @@ The HUD appears immediately - no restart needed. Updates are automatic.
 
 After successful setup, ask the user if they'd like to star the repository to support the project.
 
-If they agree, run: `gh repo star jarrodwatts/claude-hud`
+If they agree, run: `gh api -X PUT /user/starred/jarrodwatts/claude-hud`
 
 Only run the star command if they explicitly say yes.
