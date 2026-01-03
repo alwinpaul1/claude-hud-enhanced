@@ -1,6 +1,6 @@
 # Claude HUD
 
-A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress.
+A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress. Always visible below your input, zero config required.
 
 [![License](https://img.shields.io/github/license/jarrodwatts/claude-hud)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
