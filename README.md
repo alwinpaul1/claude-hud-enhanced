@@ -1,156 +1,130 @@
-# Claude HUD
+<p align="center">
+  <img src="claude-hud-preview.png" alt="Claude HUD in action" width="800">
+</p>
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud)](LICENSE)
+<h1 align="center">Claude HUD</h1>
 
-Real-time statusline HUD for Claude Code. See context usage, tool activity, agent status, and todo progress directly in your terminal.
+<p align="center">
+  <strong>See what Claude Code is doing — in real time</strong>
+</p>
 
-```
-[Opus] ████████░░ 45% | 📋 3 rules | 🔌 5 MCPs | ⏱️ 12m
-◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2
-◐ explore [haiku]: Finding auth code (2m 15s)
-▸ Fix authentication bug (2/5)
-```
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/jarrodwatts/claude-hud" alt="License"></a>
+  <a href="https://github.com/jarrodwatts/claude-hud/stargazers"><img src="https://img.shields.io/github/stars/jarrodwatts/claude-hud" alt="Stars"></a>
+  <a href="https://github.com/jarrodwatts/claude-hud/releases"><img src="https://img.shields.io/github/v/release/jarrodwatts/claude-hud" alt="Release"></a>
+</p>
 
-## Why?
+<p align="center">
+  A Claude Code plugin that displays a live statusline showing context usage, active tools, running agents, and todo progress.
+</p>
 
-When Claude shows "Thinking..." for minutes, you have no visibility into what's happening. Claude HUD gives you **X-ray vision**:
+---
 
-- **Context health** — See exactly how full your context window is (native, accurate data)
-- **Tool activity** — Watch Claude read, edit, and search files in real-time
-- **Agent tracking** — See which subagents are running and what they're doing
-- **Todo progress** — Track task completion as Claude works
+## The Problem
 
-## Installation
+When Claude shows "Thinking..." for minutes, you're flying blind. Is it stuck? Making progress? About to hit context limits?
+
+## The Solution
+
+Claude HUD gives you **X-ray vision** into Claude's work:
+
+| What You See | Why It Matters |
+|--------------|----------------|
+| **Context health** | Know exactly how full your context window is before it's too late |
+| **Tool activity** | Watch Claude read, edit, and search files as it happens |
+| **Agent tracking** | See which subagents are running and what they're doing |
+| **Todo progress** | Track task completion in real-time |
+
+---
+
+## Quick Start
 
 ```bash
 claude /plugin install github.com/jarrodwatts/claude-hud
 ```
 
-That's it. Start Claude Code as usual — the statusline appears automatically.
+That's it. Start Claude Code — the statusline appears automatically.
 
-## What You See
+---
 
-### Line 1: Session Info
-```
-[Opus] ████████░░ 45% | 📋 3 rules | 🔌 5 MCPs | ⏱️ 12m
-```
-- **Model** — Current model (Opus, Sonnet, Haiku)
-- **Context bar** — Visual progress with color coding:
-  - 🟢 Green: <70% (healthy)
-  - 🟡 Yellow: 70-85% (getting full)
-  - 🔴 Red: >85% (warning) — shows token breakdown
-  - ⚠️ COMPACT: >95% (critical)
-- **Rules count** — How many CLAUDE.md files loaded
-- **MCP count** — Connected MCP servers
-- **Hooks count** — Number of configured hooks (from settings)
-- **Duration** — Session time
+## What Each Line Shows
 
-### Line 2: Tool Activity
+### Session Info
 ```
-◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2
+[Opus 4.5] ████░░░░░░ 19% | 2 CLAUDE.md | 8 rules | 6 MCPs | 6 hooks | ⏱️ 1m
 ```
-- **Running tools** with ◐ spinner and target file
-- **Completed tools** aggregated by type with counts
+- **Model** — Current model in use
+- **Context bar** — Visual meter with color coding (green → yellow → red as it fills)
+- **Config counts** — Rules, MCPs, and hooks loaded
+- **Duration** — How long the session has been running
 
-### Line 3: Agent Status (when active)
+### Tool Activity
 ```
-◐ explore [haiku]: Finding auth code (2m 15s)
+✓ TaskOutput ×2 | ✓ mcp_context7 ×1 | ✓ Glob ×1 | ✓ Skill ×1
 ```
-- **Agent type** and model
-- **Description** of what it's doing
-- **Elapsed time**
+- **Running tools** show a spinner with the target file
+- **Completed tools** aggregate by type with counts
 
-### Line 4: Todo Progress (when todos exist)
+### Agent Status
 ```
-▸ Fix authentication bug (2/5)
+✓ Explore: Explore home directory structure (5s)
+✓ open-source-librarian: Research React hooks patterns (2s)
 ```
-- **Current task** being worked on
-- **Progress** (completed/total)
+- **Agent type** and what it's working on
+- **Elapsed time** for each agent
+
+### Todo Progress
+```
+✓ All todos complete (5/5)
+```
+- **Current task** or completion status
+- **Progress counter** (completed/total)
+
+---
 
 ## How It Works
 
-Claude HUD uses Claude Code's **statusline API** — a multi-line display that updates every ~300ms.
-
-Unlike other approaches, Claude HUD:
-- **No separate window** — Displays inline in your terminal
-- **No hooks required** — Parses the transcript directly (hooks are optional and only counted)
-- **Native data** — Gets accurate token/context info from Claude Code
-- **Works everywhere** — Any terminal, not just tmux/iTerm
-
-### Architecture
+Claude HUD uses Claude Code's native **statusline API** — no separate window, no tmux required, works in any terminal.
 
 ```
-Claude Code → stdin JSON (model, tokens, context)
-           → transcript JSONL (tools, agents, todos)
-           → claude-hud renders 4 lines
-           → Claude Code displays them
+Claude Code → stdin JSON → claude-hud → stdout → displayed in your terminal
+           ↘ transcript JSONL (tools, agents, todos)
 ```
+
+**Key features:**
+- Native token data from Claude Code (not estimated)
+- Parses the transcript for tool/agent activity
+- Updates every ~300ms
+- Zero configuration required
+
+---
 
 ## Requirements
 
 - Claude Code v1.0.80+
 - Node.js 18+ or Bun
 
-## Configuration
-
-Claude HUD works with zero configuration. Optionally customize via `~/.claude/hud/config.json`:
-
-```json
-{
-  "showRules": true,
-  "showMcps": true,
-  "showDuration": true,
-  "contextWarningThreshold": 85,
-  "contextCriticalThreshold": 95
-}
-```
+---
 
 ## Development
 
 ```bash
 git clone https://github.com/jarrodwatts/claude-hud
 cd claude-hud
-
-# Install & build
-npm ci
-npm run build
-
-# Test with sample data
-echo '{"model":{"display_name":"Opus"},"context_window":{"current_usage":{"input_tokens":45000},"context_window_size":200000}}' | node dist/index.js
-```
-
-## Testing
-
-```bash
+npm ci && npm run build
 npm test
 ```
 
-See `TESTING.md` for the full testing strategy and contribution expectations.
-
-## Contributing
-
-See `CONTRIBUTING.md` for guidelines and `CODE_OF_CONDUCT.md` for community standards.
-
-## Support
-
-See `SUPPORT.md` for support scope and contact guidance.
-
-## Maintainers
-
-See `MAINTAINERS.md`.
-
-## Plugin Release
-
-See `RELEASING.md` for the checklist to ship a new Claude Code plugin release.
-
-## License
-
-MIT
-
-## Credits
-
-Built with [Claude Code](https://claude.ai/code).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-**v2.0** — Complete rewrite from split-pane TUI to inline statusline. [See v1 for the original split-pane version](https://github.com/jarrodwatts/claude-hud/tree/v1.0.0-split-pane).
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
+<p align="center">
+  Built with <a href="https://claude.ai/code">Claude Code</a>
+</p>
