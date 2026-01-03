@@ -120,8 +120,12 @@ export class UnifiedContextTracker {
 
     try {
       const stat = fs.statSync(this.transcriptPath);
-      if (stat.mtimeMs === this.transcriptModified) return;
 
+      // Skip only if file truly unchanged (same mtime AND no new content)
+      const hasNewContent = stat.size > this.transcriptOffset;
+      if (stat.mtimeMs === this.transcriptModified && !hasNewContent) return;
+
+      // File was truncated/replaced - reset and re-read from beginning
       if (stat.size < this.transcriptOffset) {
         this.resetTranscriptState();
       }

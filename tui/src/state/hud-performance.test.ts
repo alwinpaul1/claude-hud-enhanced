@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { describe, expect, it } from 'vitest';
 import { HudStore } from './hud-store.js';
 import type { EventSource } from './hud-store.js';
@@ -40,7 +43,7 @@ describe('HudStore performance', () => {
       updates.push(Date.now());
     });
 
-    const fixturePath = resolve('test-fixtures/hud-events-stress.jsonl');
+    const fixturePath = resolve(__dirname, '../../test-fixtures/hud-events-stress.jsonl');
     const lines = readFileSync(fixturePath, 'utf-8')
       .split('\n')
       .filter((line) => line.trim().length > 0);

@@ -63,6 +63,89 @@ describe('UnifiedContextTracker', () => {
       expect(tracker.getCompactionCount()).toBe(2);
     });
 
+    it('reads new content even when mtime unchanged but file grew', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-mtime-'));
+      const transcriptPath = path.join(tmpDir, 'transcript.jsonl');
+
+      const first = {
+        type: 'assistant',
+        message: { model: 'claude-sonnet-4', usage: { input_tokens: 100, output_tokens: 50 } },
+      };
+      fs.writeFileSync(transcriptPath, `${JSON.stringify(first)}\n`, 'utf-8');
+
+      tracker.setTranscriptPath(transcriptPath);
+      tracker.processEvent(createEvent({ event: 'Stop' }));
+
+      const firstHealth = tracker.getHealth();
+      expect(firstHealth.tokens).toBe(150);
+
+      // Append new content without changing mtime (simulates rapid writes)
+      const second = {
+        type: 'assistant',
+        message: { model: 'claude-sonnet-4', usage: { input_tokens: 300, output_tokens: 200 } },
+      };
+      fs.appendFileSync(transcriptPath, `${JSON.stringify(second)}\n`, 'utf-8');
+
+      // Force mtime to stay the same (simulates filesystem granularity issue)
+      const stat = fs.statSync(transcriptPath);
+      const oldMtime = new Date(stat.mtimeMs - 1000);
+      fs.utimesSync(transcriptPath, oldMtime, oldMtime);
+
+      tracker.processEvent(createEvent({ event: 'Stop' }));
+
+      const secondHealth = tracker.getHealth();
+      // Should pick up new content based on file size, not just mtime
+      expect(secondHealth.tokens).toBe(500);
+
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('picks up new usage values after compaction via appended entries', async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-compact-'));
+      const transcriptPath = path.join(tmpDir, 'transcript.jsonl');
+
+      const preCompactUsage = {
+        type: 'assistant',
+        message: {
+          model: 'claude-sonnet-4',
+          usage: { input_tokens: 50000, output_tokens: 30000 },
+        },
+      };
+      fs.writeFileSync(transcriptPath, `${JSON.stringify(preCompactUsage)}\n`, 'utf-8');
+
+      tracker.setTranscriptPath(transcriptPath);
+      tracker.processEvent(createEvent({ event: 'Stop' }));
+
+      const beforeCompact = tracker.getHealth();
+      expect(beforeCompact.tokens).toBe(80000);
+
+      tracker.processEvent(createEvent({ event: 'PreCompact' }));
+      expect(tracker.getCompactionCount()).toBe(1);
+
+      // After compaction, Claude appends new entries with reset usage values
+      const postCompactUsage = {
+        type: 'assistant',
+        message: {
+          model: 'claude-sonnet-4',
+          usage: { input_tokens: 5000, output_tokens: 2000 },
+        },
+      };
+
+      // Ensure mtime changes for the append
+      await new Promise((r) => setTimeout(r, 10));
+      fs.appendFileSync(transcriptPath, `${JSON.stringify(postCompactUsage)}\n`, 'utf-8');
+      const now = new Date();
+      fs.utimesSync(transcriptPath, now, now);
+
+      tracker.processEvent(createEvent({ event: 'Stop' }));
+
+      const afterCompact = tracker.getHealth();
+      expect(afterCompact.tokens).toBe(7000);
+      expect(afterCompact.tokens).toBeLessThan(beforeCompact.tokens);
+
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
     it('sets transcript path from event', () => {
       const event = createEvent({
         transcriptPath: '/tmp/transcript.jsonl',
@@ -191,7 +274,7 @@ describe('UnifiedContextTracker', () => {
       }).not.toThrow();
     });
 
-    it('updates usage from appended transcript lines', () => {
+    it('updates usage from appended transcript lines', async () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-'));
       const transcriptPath = path.join(tmpDir, 'transcript.jsonl');
 
@@ -229,7 +312,12 @@ describe('UnifiedContextTracker', () => {
         },
       };
 
+      // Ensure mtime changes (filesystem granularity can be 1 second on some systems)
+      await new Promise((r) => setTimeout(r, 10));
       fs.appendFileSync(transcriptPath, `${JSON.stringify(second)}\n`, 'utf-8');
+      // Force mtime update in case append was too fast
+      const now = new Date();
+      fs.utimesSync(transcriptPath, now, now);
       tracker.processEvent(createEvent({ event: 'Stop' }));
 
       const secondHealth = tracker.getHealth();
