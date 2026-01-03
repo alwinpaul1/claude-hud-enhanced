@@ -1,8 +1,7 @@
 # Dependencies
 node_modules/
 
-# Build output (users rebuild locally)
-dist/
+# Build artifacts (dist/ is committed for plugin distribution)
 *.tsbuildinfo
 
 # Logs

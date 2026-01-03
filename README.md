@@ -9,16 +9,25 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 ## Install
 
-For humans:
-
-```bash
-claude /plugin install github.com/jarrodwatts/claude-hud
+**Step 1: Add the marketplace**
+```
+/plugin marketplace add jarrodwatts/claude-hud
 ```
 
-Or paste this into claude code:
-
+**Step 2: Install the plugin**
 ```
-Install the "claude-hud" claude code plugin using the following instructions: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
+/plugin install claude-hud@claude-hud
+```
+
+**Step 3: Restart Claude Code**
+
+The statusline appears automatically below your input.
+
+### Alternative: AI-Assisted Install
+
+Paste this into Claude Code:
+```
+Install the "claude-hud" plugin using: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
 ```
 
 ---

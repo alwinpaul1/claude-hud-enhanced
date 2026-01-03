@@ -6,11 +6,19 @@ Real-time statusline showing context usage, active tools, running agents, and to
 
 ## For Humans
 
-```bash
-claude /plugin install github.com/jarrodwatts/claude-hud
+**Step 1: Add the marketplace**
+```
+/plugin marketplace add jarrodwatts/claude-hud
 ```
 
-Then restart Claude Code. The statusline appears automatically below your input.
+**Step 2: Install the plugin**
+```
+/plugin install claude-hud@claude-hud
+```
+
+**Step 3: Restart Claude Code**
+
+The statusline appears automatically below your input.
 
 ---
 
@@ -29,21 +37,30 @@ claude --version
 
 If not installed or outdated, direct user to https://claude.ai/code
 
-### Step 2: Install the Plugin
+### Step 2: Add the Marketplace
 
-```bash
-claude /plugin install github.com/jarrodwatts/claude-hud
+Run this command in Claude Code:
+```
+/plugin marketplace add jarrodwatts/claude-hud
 ```
 
-### Step 3: Verify Installation
+### Step 3: Install the Plugin
 
-```bash
-claude /plugin list
+Run this command in Claude Code:
+```
+/plugin install claude-hud@claude-hud
 ```
 
-Confirm `claude-hud` appears in the output.
+### Step 4: Verify Installation
 
-### Step 4: Inform User
+Run this command in Claude Code:
+```
+/plugin list
+```
+
+Confirm `claude-hud@claude-hud` appears in the output.
+
+### Step 5: Inform User
 
 Tell the user:
 - Installation complete
@@ -51,7 +68,7 @@ Tell the user:
 - The statusline will appear automatically below their input
 - It shows: context usage, active tools, running agents, and todo progress
 
-### Step 5: Ask About Starring (Optional)
+### Step 6: Ask About Starring (Optional)
 
 Ask the user: "Would you like to star the repository to support the project?"
 
@@ -257,7 +274,8 @@ Technical documentation for agents who need to understand, modify, or debug Clau
 <troubleshooting>
   <issue name="Statusline not appearing">
     <cause>Plugin not installed or Claude Code version too old</cause>
-    <solution>Run: claude /plugin install github.com/jarrodwatts/claude-hud</solution>
+    <solution>Run: /plugin marketplace add jarrodwatts/claude-hud</solution>
+    <solution>Run: /plugin install claude-hud@claude-hud</solution>
     <solution>Ensure Claude Code is v1.0.80 or later</solution>
     <solution>Restart Claude Code after installation</solution>
   </issue>
