@@ -7,6 +7,14 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 ![Claude HUD in action](claude-hud-preview-5-2.png)
 
+## Install
+
+```bash
+claude /plugin install github.com/jarrodwatts/claude-hud
+```
+
+> **Using Claude Code?** Paste [CLAUDE.README.md](https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md) into your chat to have Claude install it for you.
+
 ---
 
 ## The Problem
@@ -23,16 +31,6 @@ Claude HUD gives you **X-ray vision** into Claude's work:
 | **Tool activity** | Watch Claude read, edit, and search files as it happens |
 | **Agent tracking** | See which subagents are running and what they're doing |
 | **Todo progress** | Track task completion in real-time |
-
----
-
-## Quick Start
-
-```bash
-claude /plugin install github.com/jarrodwatts/claude-hud
-```
-
-That's it. Start Claude Code — the statusline appears automatically.
 
 ---
 
