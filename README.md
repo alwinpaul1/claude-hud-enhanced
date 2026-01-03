@@ -9,11 +9,17 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 ## Install
 
+For humans:
+
 ```bash
 claude /plugin install github.com/jarrodwatts/claude-hud
 ```
 
-> **Using Claude Code?** Paste [CLAUDE.README.md](https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md) into your chat to have Claude install it for you.
+Or paste this into claude code:
+
+```
+Install the "claude-hud" plugin using the following instructions: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
+```
 
 ---
 
