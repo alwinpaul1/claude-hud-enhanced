@@ -20,9 +20,12 @@ REFRESH_FILE="$HUD_DIR/refresh.json"
 
 mkdir -p "$HUD_DIR/events"
 
+# Atomic FIFO creation: mkfifo fails if file exists, which is fine
+# We avoid rm -f to prevent TOCTOU race when multiple events fire simultaneously
 if [ ! -p "$EVENT_FIFO" ]; then
-  rm -f "$EVENT_FIFO"
-  mkfifo "$EVENT_FIFO" 2>/dev/null || true
+  # Remove any non-pipe file at this path first
+  [ -e "$EVENT_FIFO" ] && rm -f "$EVENT_FIFO"
+  mkfifo -m 600 "$EVENT_FIFO" 2>/dev/null || [ -p "$EVENT_FIFO" ] || true
 fi
 
 # Ensure refresh.json points at this session in case SessionStart didn't fire.

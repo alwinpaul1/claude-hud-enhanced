@@ -63,8 +63,9 @@ find_existing_hud() {
     rm -f "$pid_file"
   done
   # Try pgrep as fallback - but only if pane is visible
+  # Use stricter pattern to avoid matching wrong sessions
   local fallback_pid
-  fallback_pid=$(pgrep -f "tui/dist/index.js.*--session" 2>/dev/null | head -1)
+  fallback_pid=$(pgrep -f "tui/dist/index\.js.*--session[[:space:]]" 2>/dev/null | head -1)
   if [ -n "$fallback_pid" ] && [ -n "${TMUX:-}" ]; then
     if tmux list-panes -a -F '#{pane_pid}' 2>/dev/null | grep -q "^${fallback_pid}$"; then
       echo "$fallback_pid"
