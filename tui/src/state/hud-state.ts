@@ -36,6 +36,7 @@ export interface HudStateInternal extends HudState {
 }
 
 export function createInitialHudState(options: {
+  initialSessionId?: string;
   initialTranscriptPath?: string;
   context: ContextHealth;
   cost: CostEstimate;
@@ -46,6 +47,7 @@ export function createInitialHudState(options: {
     context: options.context,
     agents: [],
     sessionInfo: {
+      sessionId: options.initialSessionId || '',
       permissionMode: 'default',
       cwd: '',
       transcriptPath: options.initialTranscriptPath || '',

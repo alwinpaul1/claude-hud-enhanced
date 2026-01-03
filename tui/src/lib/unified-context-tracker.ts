@@ -58,6 +58,9 @@ export class UnifiedContextTracker {
   private sessionStart: number;
   private lastUpdate: number;
   private compactionCount: number = 0;
+  private transcriptOffset = 0;
+  private transcriptRemainder = '';
+  private transcriptUsage: TranscriptUsage | null = null;
 
   constructor() {
     this.sessionStart = Date.now();
@@ -67,6 +70,7 @@ export class UnifiedContextTracker {
   setTranscriptPath(path: string): void {
     if (this.transcriptPath !== path) {
       this.transcriptPath = path;
+      this.resetTranscriptState();
       this.readTranscript();
     }
   }
@@ -80,7 +84,7 @@ export class UnifiedContextTracker {
     this.lastUpdate = Date.now();
 
     if (event.transcriptPath && event.transcriptPath !== this.transcriptPath) {
-      this.transcriptPath = event.transcriptPath;
+      this.setTranscriptPath(event.transcriptPath);
     }
 
     if (event.event === 'PostToolUse') {
@@ -113,51 +117,77 @@ export class UnifiedContextTracker {
       const stat = fs.statSync(this.transcriptPath);
       if (stat.mtimeMs === this.transcriptModified) return;
 
-      const content = fs.readFileSync(this.transcriptPath, 'utf-8');
-      const lines = content.trim().split('\n');
+      if (stat.size < this.transcriptOffset) {
+        this.resetTranscriptState();
+      }
 
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let cacheCreationTokens = 0;
-      let cacheReadTokens = 0;
+      const content = this.readTranscriptChunk(stat.size);
+      const lines = (this.transcriptRemainder + content).split('\n');
+      this.transcriptRemainder = lines.pop() ?? '';
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        try {
-          const entry: TranscriptMessage = JSON.parse(line);
-          if (entry.type === 'assistant' && entry.message?.usage) {
-            const usage = entry.message.usage;
-            inputTokens = usage.input_tokens || 0;
-            outputTokens = usage.output_tokens || 0;
-            cacheCreationTokens = usage.cache_creation_input_tokens || 0;
-            cacheReadTokens = usage.cache_read_input_tokens || 0;
-            if (entry.message.model) {
-              this.model = entry.message.model;
-            }
-          }
-        } catch (err) {
-          logger.warn('UnifiedContextTracker', 'Failed to parse transcript line', { err });
+        this.applyTranscriptLine(line);
+      }
+
+      this.transcriptOffset = stat.size;
+      this.transcriptModified = stat.mtimeMs;
+
+      if (this.transcriptUsage) {
+        const usage = this.transcriptUsage;
+        const totalFromTranscript =
+          (usage.input_tokens || 0) +
+          (usage.output_tokens || 0) +
+          (usage.cache_creation_input_tokens || 0) +
+          (usage.cache_read_input_tokens || 0);
+
+        if (totalFromTranscript > 0) {
+          this.realTokens = totalFromTranscript;
+          this.estimatedDelta = 0;
+          this.breakdown = {
+            toolInputs: usage.input_tokens || 0,
+            toolOutputs: usage.output_tokens || 0,
+            messages:
+              (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0),
+            other: 0,
+          };
         }
       }
 
-      const totalFromTranscript =
-        inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
-
-      if (totalFromTranscript > 0) {
-        this.realTokens = totalFromTranscript;
-        this.estimatedDelta = 0;
-        this.breakdown = {
-          toolInputs: inputTokens,
-          toolOutputs: outputTokens,
-          messages: cacheCreationTokens + cacheReadTokens,
-          other: 0,
-        };
-      }
-
-      this.transcriptModified = stat.mtimeMs;
       this.recordHistory();
     } catch (err) {
       logger.debug('UnifiedContextTracker', 'Transcript not available, using estimates', { err });
+    }
+  }
+
+  private readTranscriptChunk(totalSize: number): string {
+    if (!this.transcriptPath) return '';
+    const start = this.transcriptOffset;
+    const length = Math.max(0, totalSize - start);
+    if (length === 0) return '';
+
+    const fd = fs.openSync(this.transcriptPath, 'r');
+    try {
+      const buffer = Buffer.alloc(length);
+      const bytesRead = fs.readSync(fd, buffer, 0, length, start);
+      if (bytesRead <= 0) return '';
+      return buffer.subarray(0, bytesRead).toString('utf-8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  private applyTranscriptLine(line: string): void {
+    try {
+      const entry: TranscriptMessage = JSON.parse(line);
+      if (entry.type === 'assistant' && entry.message?.usage) {
+        this.transcriptUsage = entry.message.usage;
+        if (entry.message.model) {
+          this.model = entry.message.model;
+        }
+      }
+    } catch (err) {
+      logger.warn('UnifiedContextTracker', 'Failed to parse transcript line', { err });
     }
   }
 
@@ -247,6 +277,22 @@ export class UnifiedContextTracker {
     this.sessionStart = Date.now();
     this.lastUpdate = this.sessionStart;
     this.compactionCount = 0;
+    this.resetTranscriptState();
+  }
+
+  private resetTranscriptState(): void {
+    this.transcriptOffset = 0;
+    this.transcriptRemainder = '';
+    this.transcriptUsage = null;
     this.transcriptModified = 0;
+    this.realTokens = 0;
+    this.estimatedDelta = 0;
+    this.breakdown = {
+      toolOutputs: 0,
+      toolInputs: 0,
+      messages: 0,
+      other: 0,
+    };
+    this.tokenHistory = [];
   }
 }

@@ -15,6 +15,7 @@ import type { PanelId } from './lib/hud-config.js';
 import { getHiddenPanelSet, resolvePanelOrder } from './state/hud-selectors.js';
 
 interface AppProps {
+  sessionId: string;
   fifoPath: string;
   initialTranscriptPath?: string;
 }
@@ -33,13 +34,13 @@ const STATUS_ICONS: Record<ConnectionStatus, string> = {
   error: '✗',
 };
 
-export function App({ fifoPath, initialTranscriptPath }: AppProps) {
+export function App({ sessionId, fifoPath, initialTranscriptPath }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [termRows, setTermRows] = useState(stdout?.rows || 24);
   const [visible, setVisible] = useState(true);
 
-  const state = useHudState({ fifoPath, initialTranscriptPath });
+  const state = useHudState({ fifoPath, sessionId, initialTranscriptPath });
   const sessionStart = state.context.sessionStart || state.now;
   const elapsed = useElapsedTime(sessionStart, state.now);
 
@@ -72,6 +73,8 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
   const hiddenPanels = getHiddenPanelSet(state.config);
   const panelOrder = resolvePanelOrder(state.config);
   const panelWidth = state.config?.width || 48;
+  const lastError = state.errors[state.errors.length - 1];
+  const errorSuffix = state.errors.length > 1 ? ` (+${state.errors.length - 1} more)` : '';
 
   const panels: Record<PanelId, React.ReactNode> = {
     status: (
@@ -143,6 +146,16 @@ export function App({ fifoPath, initialTranscriptPath }: AppProps) {
         <Box marginBottom={1}>
           <Text color="red">Safe mode: </Text>
           <Text dimColor>{state.safeModeReason}</Text>
+        </Box>
+      )}
+
+      {lastError && (
+        <Box marginBottom={1}>
+          <Text color="red">Event error: </Text>
+          <Text dimColor>
+            {lastError.message}
+            {errorSuffix}
+          </Text>
         </Box>
       )}
 

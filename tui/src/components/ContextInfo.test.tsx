@@ -15,8 +15,7 @@ describe('ContextInfo', () => {
       globalClaudeMd: false,
       projectClaudeMd: false,
       projectClaudeMdPath: null,
-      projectSettings: false,
-      projectSettingsRules: 0,
+      rulesCount: 0,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toBe('');
@@ -27,8 +26,7 @@ describe('ContextInfo', () => {
       globalClaudeMd: true,
       projectClaudeMd: false,
       projectClaudeMdPath: null,
-      projectSettings: false,
-      projectSettingsRules: 0,
+      rulesCount: 0,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toContain('1 CLAUDE.md');
@@ -39,8 +37,7 @@ describe('ContextInfo', () => {
       globalClaudeMd: false,
       projectClaudeMd: true,
       projectClaudeMdPath: '/path/to/CLAUDE.md',
-      projectSettings: false,
-      projectSettingsRules: 0,
+      rulesCount: 0,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toContain('1 CLAUDE.md');
@@ -51,20 +48,18 @@ describe('ContextInfo', () => {
       globalClaudeMd: true,
       projectClaudeMd: true,
       projectClaudeMdPath: '/path/to/CLAUDE.md',
-      projectSettings: false,
-      projectSettingsRules: 0,
+      rulesCount: 0,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toContain('2 CLAUDE.md');
   });
 
-  it('should show rules count when project settings exist', () => {
+  it('should show rules count when rules exist', () => {
     const contextFiles: ContextFiles = {
       globalClaudeMd: false,
       projectClaudeMd: false,
       projectClaudeMdPath: null,
-      projectSettings: true,
-      projectSettingsRules: 5,
+      rulesCount: 5,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toContain('5 rules');
@@ -75,8 +70,7 @@ describe('ContextInfo', () => {
       globalClaudeMd: true,
       projectClaudeMd: false,
       projectClaudeMdPath: null,
-      projectSettings: true,
-      projectSettingsRules: 0,
+      rulesCount: 0,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toContain('1 CLAUDE.md');
@@ -88,8 +82,7 @@ describe('ContextInfo', () => {
       globalClaudeMd: true,
       projectClaudeMd: true,
       projectClaudeMdPath: '/path/to/CLAUDE.md',
-      projectSettings: true,
-      projectSettingsRules: 10,
+      rulesCount: 10,
     };
     const { lastFrame } = render(<ContextInfo contextFiles={contextFiles} />);
     expect(lastFrame()).toContain('2 CLAUDE.md');

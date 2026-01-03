@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { UnifiedContextTracker } from './unified-context-tracker.js';
 import type { HudEvent } from './types.js';
 
@@ -186,6 +189,53 @@ describe('UnifiedContextTracker', () => {
       expect(() => {
         tracker.setTranscriptPath('/nonexistent/path.jsonl');
       }).not.toThrow();
+    });
+
+    it('updates usage from appended transcript lines', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-'));
+      const transcriptPath = path.join(tmpDir, 'transcript.jsonl');
+
+      const first = {
+        type: 'assistant',
+        message: {
+          model: 'claude-sonnet-4',
+          usage: {
+            input_tokens: 100,
+            output_tokens: 200,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 5,
+          },
+        },
+      };
+
+      fs.writeFileSync(transcriptPath, `${JSON.stringify(first)}\n`, 'utf-8');
+      tracker.setTranscriptPath(transcriptPath);
+      tracker.processEvent(createEvent({ event: 'Stop' }));
+
+      const firstHealth = tracker.getHealth();
+      expect(firstHealth.tokens).toBe(315);
+      expect(tracker.getModel()).toBe('claude-sonnet-4');
+
+      const second = {
+        type: 'assistant',
+        message: {
+          model: 'claude-sonnet-4',
+          usage: {
+            input_tokens: 300,
+            output_tokens: 400,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 15,
+          },
+        },
+      };
+
+      fs.appendFileSync(transcriptPath, `${JSON.stringify(second)}\n`, 'utf-8');
+      tracker.processEvent(createEvent({ event: 'Stop' }));
+
+      const secondHealth = tracker.getHealth();
+      expect(secondHealth.tokens).toBe(725);
+
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     });
   });
 

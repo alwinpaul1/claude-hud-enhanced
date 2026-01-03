@@ -2,6 +2,8 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+Note: The canonical changelog now lives at `docs/CHANGELOG.md`. This file is kept for legacy references.
+
 ## [0.1.0] - 2025-01-02
 
 ### Added

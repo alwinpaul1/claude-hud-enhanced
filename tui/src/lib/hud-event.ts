@@ -24,15 +24,48 @@ function readRecordOrNull(value: unknown): Record<string, unknown> | null | unde
 
 export const HUD_EVENT_SCHEMA_VERSION = 1;
 
-export function parseHudEvent(line: string): HudEvent | null {
+export type HudEventParseErrorCode = 'event_parse_failed' | 'schema_version_mismatch';
+
+export interface HudEventParseError {
+  code: HudEventParseErrorCode;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+export type HudEventParseResult =
+  | { ok: true; event: HudEvent; warning?: HudEventParseError }
+  | { ok: false; error: HudEventParseError };
+
+function buildParseError(
+  code: HudEventParseErrorCode,
+  message: string,
+  context?: Record<string, unknown>,
+): HudEventParseResult {
+  return { ok: false, error: { code, message, context } };
+}
+
+function linePreview(line: string): string {
+  if (line.length <= 200) return line;
+  return `${line.slice(0, 200)}…`;
+}
+
+export function parseHudEventResult(line: string): HudEventParseResult {
   let raw: unknown;
   try {
     raw = JSON.parse(line);
   } catch {
-    return null;
+    return buildParseError('event_parse_failed', 'Invalid JSON payload', {
+      linePreview: linePreview(line),
+      lineLength: line.length,
+    });
   }
 
-  if (!isRecord(raw)) return null;
+  if (!isRecord(raw)) {
+    return buildParseError('event_parse_failed', 'Event payload is not an object', {
+      linePreview: linePreview(line),
+      lineLength: line.length,
+    });
+  }
 
   const event = readString(raw.event);
   const session = readString(raw.session);
@@ -50,11 +83,38 @@ export function parseHudEvent(line: string): HudEvent | null {
     tool === undefined ||
     input === undefined
   ) {
-    return null;
+    return buildParseError('event_parse_failed', 'Missing required event fields', {
+      event,
+      session,
+      schemaVersion,
+    });
   }
-  if (response === undefined) return null;
-  if (schemaVersion !== HUD_EVENT_SCHEMA_VERSION) {
-    return null;
+  if (response === undefined) {
+    return buildParseError('event_parse_failed', 'Malformed response field', {
+      event,
+      session,
+      schemaVersion,
+    });
+  }
+  const schemaWarning =
+    schemaVersion > HUD_EVENT_SCHEMA_VERSION
+      ? {
+          code: 'schema_version_mismatch' as const,
+          message: `Schema version ${schemaVersion} is newer than supported ${HUD_EVENT_SCHEMA_VERSION}`,
+          context: { schemaVersion, expected: HUD_EVENT_SCHEMA_VERSION, event },
+        }
+      : undefined;
+
+  if (schemaVersion < HUD_EVENT_SCHEMA_VERSION) {
+    return buildParseError(
+      'schema_version_mismatch',
+      `Schema version ${schemaVersion} is older than supported ${HUD_EVENT_SCHEMA_VERSION}`,
+      {
+        schemaVersion,
+        expected: HUD_EVENT_SCHEMA_VERSION,
+        event,
+      },
+    );
   }
 
   const parsed: HudEvent = {
@@ -78,5 +138,10 @@ export function parseHudEvent(line: string): HudEvent | null {
   if (cwd) parsed.cwd = cwd;
   if (prompt) parsed.prompt = prompt;
 
-  return parsed;
+  return { ok: true, event: parsed, warning: schemaWarning };
+}
+
+export function parseHudEvent(line: string): HudEvent | null {
+  const result = parseHudEventResult(line);
+  return result.ok ? result.event : null;
 }

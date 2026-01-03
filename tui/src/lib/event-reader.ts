@@ -1,7 +1,7 @@
 import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { parseHudEvent } from './hud-event.js';
+import { parseHudEventResult, type HudEventParseError } from './hud-event.js';
 import { logger } from './logger.js';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -14,6 +14,8 @@ export class EventReader extends EventEmitter {
   private maxReconnectAttempts = 50;
   private status: ConnectionStatus = 'connecting';
   private lastEventTime: number = 0;
+  private lastParseErrorAt = 0;
+  private lastParseErrorKey = '';
 
   constructor(private fifoPath: string) {
     super();
@@ -57,11 +59,15 @@ export class EventReader extends EventEmitter {
 
       this.rl.on('line', (line: string) => {
         if (!line.trim()) return;
-        const event = parseHudEvent(line);
-        if (!event) {
-          logger.warn('EventReader', 'Failed to parse HUD event line', { line });
+        const parsed = parseHudEventResult(line);
+        if (!parsed.ok) {
+          this.emitParseError(parsed.error);
           return;
         }
+        if (parsed.warning) {
+          this.emitParseError(parsed.warning);
+        }
+        const event = parsed.event;
         this.lastEventTime = Date.now();
         this.emit('event', event);
       });
@@ -105,6 +111,18 @@ export class EventReader extends EventEmitter {
     this.rl = null;
     this.stream?.destroy();
     this.stream = null;
+  }
+
+  private emitParseError(error: HudEventParseError): void {
+    const now = Date.now();
+    const key = `${error.code}:${error.message}`;
+    if (this.lastParseErrorKey === key && now - this.lastParseErrorAt < 5000) {
+      return;
+    }
+    this.lastParseErrorAt = now;
+    this.lastParseErrorKey = key;
+    logger.warn('EventReader', 'Failed to parse HUD event line', error);
+    this.emit('parseError', error);
   }
 
   close(): void {

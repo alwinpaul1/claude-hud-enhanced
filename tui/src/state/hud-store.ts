@@ -5,6 +5,7 @@ import { SettingsReader } from '../lib/settings-reader.js';
 import { ContextDetector } from '../lib/context-detector.js';
 import { HudConfigReader } from '../lib/hud-config.js';
 import type { HudEvent } from '../lib/types.js';
+import type { HudEventParseError } from '../lib/hud-event.js';
 import { createInitialHudState, toPublicState } from './hud-state.js';
 import type { HudState, HudStateInternal } from './hud-state.js';
 import { reduceHudState } from './hud-reducer.js';
@@ -14,6 +15,7 @@ import { logger } from '../lib/logger.js';
 export interface EventSource {
   on(event: 'event', listener: (event: HudEvent) => void): void;
   on(event: 'status', listener: (status: ConnectionStatus) => void): void;
+  on(event: 'parseError', listener: (error: HudEventParseError) => void): void;
   getStatus(): ConnectionStatus;
   close(): void;
   switchFifo(fifoPath: string): void;
@@ -21,6 +23,7 @@ export interface EventSource {
 
 interface HudStoreOptions {
   fifoPath: string;
+  initialSessionId?: string;
   initialTranscriptPath?: string;
   clockIntervalMs?: number;
   emitIntervalMs?: number;
@@ -46,6 +49,7 @@ export class HudStore {
   private readonly emitIntervalMs: number;
   private settingsError: string | null = null;
   private configError: string | null = null;
+  private refreshing = false;
 
   constructor(options: HudStoreOptions) {
     if (options.initialTranscriptPath) {
@@ -53,6 +57,7 @@ export class HudStore {
     }
 
     this.state = createInitialHudState({
+      initialSessionId: options.initialSessionId,
       initialTranscriptPath: options.initialTranscriptPath,
       context: this.contextTracker.getHealth(),
       cost: this.costTracker.getCost(),
@@ -65,10 +70,13 @@ export class HudStore {
     this.emitIntervalMs = options.emitIntervalMs ?? 16;
     this.reader.on('event', this.handleEvent);
     this.reader.on('status', this.handleStatus);
+    this.reader.on('parseError', this.handleParseError);
 
     this.apply({ type: 'connection', status: this.reader.getStatus() });
-    this.refreshEnvironment();
-    this.settingsInterval = setInterval(() => this.refreshEnvironment(), 30000);
+    void this.refreshEnvironment();
+    this.settingsInterval = setInterval(() => {
+      void this.refreshEnvironment();
+    }, 30000);
 
     const clockIntervalMs = options.clockIntervalMs ?? 1000;
     if (clockIntervalMs > 0) {
@@ -183,40 +191,60 @@ export class HudStore {
     this.emit();
   };
 
-  private refreshEnvironment(): void {
-    const settingsResult = this.settingsReader.readWithStatus();
-    if (settingsResult.error) {
-      logger.warn('HudStore', 'Settings read failed', { error: settingsResult.error });
-      this.recordError({
-        code: 'settings_read_failed',
-        message: settingsResult.error,
-        ts: Date.now(),
-      });
-      this.settingsError = settingsResult.error;
-    } else {
-      this.settingsError = null;
-      this.apply({ type: 'settings', settings: settingsResult.data });
-    }
-
-    const configResult = this.configReader.readWithStatus();
-    if (configResult.error) {
-      logger.warn('HudStore', 'Config read failed', { error: configResult.error });
-      this.recordError({
-        code: 'config_read_failed',
-        message: configResult.error,
-        ts: Date.now(),
-      });
-      this.configError = configResult.error;
-    } else {
-      this.configError = null;
-      this.apply({ type: 'config', config: configResult.data });
-    }
-
-    const contextFiles = this.contextDetector.detect(this.lastCwd || undefined);
-    this.apply({ type: 'contextFiles', contextFiles });
-
-    this.updateSafeMode();
+  private handleParseError = (error: HudEventParseError): void => {
+    this.recordError({
+      code: error.code,
+      message: error.message,
+      ts: Date.now(),
+      context: error.context,
+    });
     this.emit();
+  };
+
+  private async refreshEnvironment(): Promise<void> {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    try {
+      const [settingsResult, configResult] = await Promise.all([
+        this.settingsReader.readWithStatusAsync(),
+        this.configReader.readWithStatusAsync(),
+      ]);
+      if (settingsResult.error) {
+        logger.warn('HudStore', 'Settings read failed', { error: settingsResult.error });
+        this.recordError({
+          code: 'settings_read_failed',
+          message: settingsResult.error,
+          ts: Date.now(),
+        });
+        this.settingsError = settingsResult.error;
+      } else {
+        this.settingsError = null;
+        this.apply({ type: 'settings', settings: settingsResult.data });
+      }
+
+      if (configResult.error) {
+        logger.warn('HudStore', 'Config read failed', { error: configResult.error });
+        this.recordError({
+          code: 'config_read_failed',
+          message: configResult.error,
+          ts: Date.now(),
+        });
+        this.configError = configResult.error;
+      } else {
+        this.configError = null;
+        this.apply({ type: 'config', config: configResult.data });
+      }
+
+      const contextFiles = this.contextDetector.detect(this.lastCwd || undefined);
+      this.apply({ type: 'contextFiles', contextFiles });
+
+      this.updateSafeMode();
+      this.emit();
+    } catch (err) {
+      logger.warn('HudStore', 'Environment refresh failed', { err });
+    } finally {
+      this.refreshing = false;
+    }
   }
 
   private tick(): void {

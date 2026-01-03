@@ -1,24 +1,96 @@
 # Claude HUD
 
-Real-time terminal dashboard for Claude Code. See context usage, tool activity, agent status, and more — all in a split pane next to your terminal.
+[![CI](https://github.com/jarrodwatts/claude-hud/actions/workflows/ci.yml/badge.svg)](https://github.com/jarrodwatts/claude-hud/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/releases)
 
-## Installation
+Real-time terminal dashboard for Claude Code. See context usage, tool activity, agent status, and more in a split pane next to your terminal.
+
+## Quickstart (2 minutes)
 
 ```bash
 claude /plugin install github.com/jarrodwatts/claude-hud
 ```
 
-That's it. The HUD appears automatically when you start Claude Code.
+Start Claude Code as usual. The HUD appears automatically.
 
-### Verify Installation
+Verify installation (optional):
 
 ```bash
-# Validate plugin structure
 claude plugin validate claude-hud
-
-# Or if installed from source
-./scripts/verify-install.sh
 ```
+
+Toggle visibility with `Ctrl+H`. Exit with `Ctrl+C`.
+
+## LLM-Paste Overview (copy into your LLM)
+
+```markdown
+Project: Claude HUD
+
+What it is:
+- A Claude Code plugin that opens a real-time terminal HUD (Heads-Up Display) in a split pane.
+- Shows context usage, tool activity, agent status, todos, git status, and cost estimation while Claude runs.
+
+Why use it:
+- Monitor token burn, compaction risk, and costs as you work.
+- See tool calls and agent activity in real time without leaving your editor/terminal.
+- Spot issues early (errors, stalls, runaway context growth).
+
+How it works (Claude Code plugin model):
+- Claude Code plugins are directories with a `.claude-plugin/plugin.json` manifest plus root-level feature folders.
+- This plugin uses `hooks/hooks.json` to subscribe to Claude Code lifecycle events.
+- Hook scripts in `scripts/` transform event payloads and stream them through a FIFO.
+- The TUI (React + Ink) reads the FIFO and renders panels in a split pane.
+
+Key components:
+- `.claude-plugin/plugin.json`: plugin manifest and metadata.
+- `hooks/hooks.json`: event subscriptions (SessionStart, PreToolUse, PostToolUse, etc).
+- `scripts/session-start.sh`: creates FIFO and launches HUD.
+- `scripts/capture-event.sh`: normalizes hook events and writes them to the FIFO.
+- `tui/src/lib/event-reader.ts`: reads FIFO, emits events with reconnect.
+- `tui/src/index.tsx`: top-level UI state and rendering.
+
+Install (recommended):
+- `claude /plugin install github.com/jarrodwatts/claude-hud`
+- Start Claude Code as normal; HUD spawns automatically.
+
+Verify:
+- `claude plugin validate claude-hud`
+- or `./scripts/verify-install.sh` (when installed from source)
+
+Requirements:
+- Claude Code (v1.0.33+)
+- Node.js 18+ or Bun
+- `jq` for hook JSON parsing
+
+Supported terminals:
+- tmux, iTerm2, Kitty, WezTerm, Zellij, Windows Terminal (WSL) for split panes.
+- Others fall back to a separate window or background process.
+
+Common troubleshooting:
+- Set `CLAUDE_HUD_DEBUG=1` and run `claude` to see debug logs.
+- Use `claude --debug hooks` to inspect hook activity.
+- See `TROUBLESHOOTING.md` for more.
+
+Summary:
+- Claude HUD is a production-ready Claude Code plugin that streams hook events into a split-pane TUI so you can see context health, tool activity, and agent status live.
+```
+
+Prefer a standalone file? See `docs/LLM.md`.
+
+## Docs
+
+- `TROUBLESHOOTING.md`
+- `CONTRIBUTING.md`
+- `docs/CHANGELOG.md`
+- `docs/FAQ.md`
+- `docs/LLM.md`
+- `docs/ARCHITECTURE.md`
+- `docs/README.md`
+- `CLAUDE.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+- `LICENSE`
 
 ## Features
 
@@ -66,6 +138,39 @@ When Claude spawns subagents:
 - **Modified Files** — files changed this session
 - **MCP Status** — connected MCP servers
 
+## How It Works
+
+Claude HUD uses Claude Code's plugin hooks to capture events:
+
+1. **SessionStart** — Spawns the HUD in a split pane
+2. **PreToolUse** — Shows tools before execution (running state)
+3. **PostToolUse** — Captures tool completion
+4. **UserPromptSubmit** — Tracks user prompts
+5. **Stop** — Detects idle state
+6. **PreCompact** — Tracks context compaction
+7. **SubagentStop** — Tracks agent completion
+8. **SessionEnd** — Cleans up
+
+Data flows through a named pipe (FIFO) to a React/Ink terminal UI.
+
+## Plugin Anatomy (Claude Code)
+
+Claude Code plugins are directories with a `.claude-plugin/plugin.json` manifest plus feature directories at the plugin root. In Claude HUD:
+- `.claude-plugin/plugin.json` declares the plugin name/version and provides the namespace.
+- `hooks/hooks.json` registers lifecycle event subscriptions.
+- `scripts/` contains the hook entrypoints that receive event payloads.
+- `tui/` contains the React/Ink HUD that renders streamed events.
+
+## Configuration
+
+- `CLAUDE_HUD_DEBUG=1` enables debug logging to stderr.
+
+## Requirements
+
+- Claude Code
+- Node.js 18+ or Bun
+- `jq` (for JSON parsing in hooks)
+
 ## Supported Terminals
 
 | Terminal | Split Support |
@@ -87,32 +192,8 @@ When Claude spawns subagents:
 | `Ctrl+H` | Toggle HUD visibility |
 | `Ctrl+C` | Exit HUD |
 
-## How It Works
+## Troubleshooting (Quick Checks)
 
-Claude HUD uses Claude Code's plugin hooks to capture events:
-
-1. **SessionStart** — Spawns the HUD in a split pane
-2. **PreToolUse** — Shows tools before execution (running state)
-3. **PostToolUse** — Captures tool completion
-4. **UserPromptSubmit** — Tracks user prompts
-5. **Stop** — Detects idle state
-6. **PreCompact** — Tracks context compaction
-7. **SubagentStop** — Tracks agent completion
-8. **SessionEnd** — Cleans up
-
-Data flows through a named pipe (FIFO) to a React/Ink terminal UI.
-
-## Requirements
-
-- Claude Code
-- Node.js 18+ or Bun
-- `jq` (for JSON parsing in hooks)
-
-## Troubleshooting
-
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and solutions.
-
-Quick checks:
 ```bash
 # Check plugin is valid
 claude plugin validate claude-hud

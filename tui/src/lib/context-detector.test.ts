@@ -6,13 +6,20 @@ import { detectContextFiles, ContextDetector } from './context-detector.js';
 
 describe('detectContextFiles', () => {
   let tmpDir: string;
+  let homeDir: string;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
+    originalHome = process.env.HOME;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-'));
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-hud-home-'));
+    process.env.HOME = homeDir;
   });
 
   afterEach(() => {
+    process.env.HOME = originalHome;
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
   it('prefers .claude/CLAUDE.md over project root', () => {
@@ -28,30 +35,18 @@ describe('detectContextFiles', () => {
     expect(result.projectClaudeMdPath).toBe(hiddenClaude);
   });
 
-  it('detects project settings permissions count', () => {
-    const settingsPath = path.join(tmpDir, '.claude', 'settings.json');
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(
-      settingsPath,
-      JSON.stringify({ permissions: { allow: ['a', 'b', 'c'] } }),
-      'utf-8',
-    );
+  it('detects rules in global and project directories', () => {
+    const globalRulesPath = path.join(homeDir, '.claude', 'rules');
+    const projectRulesPath = path.join(tmpDir, '.claude', 'rules');
+    fs.mkdirSync(globalRulesPath, { recursive: true });
+    fs.mkdirSync(projectRulesPath, { recursive: true });
+    fs.writeFileSync(path.join(globalRulesPath, 'global-1.md'), 'rule', 'utf-8');
+    fs.writeFileSync(path.join(globalRulesPath, 'global-2.md'), 'rule', 'utf-8');
+    fs.writeFileSync(path.join(projectRulesPath, 'project-1.md'), 'rule', 'utf-8');
 
     const result = detectContextFiles(tmpDir);
 
-    expect(result.projectSettings).toBe(true);
-    expect(result.projectSettingsRules).toBe(3);
-  });
-
-  it('handles settings.json without permissions field', () => {
-    const settingsPath = path.join(tmpDir, '.claude', 'settings.json');
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, JSON.stringify({ someOtherField: true }), 'utf-8');
-
-    const result = detectContextFiles(tmpDir);
-
-    expect(result.projectSettings).toBe(true);
-    expect(result.projectSettingsRules).toBe(0);
+    expect(result.rulesCount).toBe(3);
   });
 
   it('returns default values when cwd is undefined', () => {
@@ -59,7 +54,7 @@ describe('detectContextFiles', () => {
 
     expect(result.projectClaudeMd).toBe(false);
     expect(result.projectClaudeMdPath).toBeNull();
-    expect(result.projectSettings).toBe(false);
+    expect(result.rulesCount).toBe(0);
   });
 
   it('returns default values when cwd has no context files', () => {
@@ -67,8 +62,7 @@ describe('detectContextFiles', () => {
 
     expect(result.projectClaudeMd).toBe(false);
     expect(result.projectClaudeMdPath).toBeNull();
-    expect(result.projectSettings).toBe(false);
-    expect(result.projectSettingsRules).toBe(0);
+    expect(result.rulesCount).toBe(0);
   });
 });
 

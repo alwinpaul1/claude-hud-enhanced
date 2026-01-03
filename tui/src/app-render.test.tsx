@@ -48,6 +48,7 @@ const mockState: HudState = {
     },
   ],
   sessionInfo: {
+    sessionId: 's1',
     permissionMode: 'default',
     cwd: '/Users/jarrod/claude-hud',
     transcriptPath: '',
@@ -99,7 +100,7 @@ function normalizeFrame(frame: string): string {
 
 describe('App fixture rendering', () => {
   it('renders a stable HUD frame', () => {
-    const { lastFrame, unmount } = render(<App fifoPath="/tmp/test.fifo" />);
+    const { lastFrame, unmount } = render(<App sessionId="s1" fifoPath="/tmp/test.fifo" />);
     const frame = normalizeFrame(lastFrame() ?? '');
     expect(frame).toMatchSnapshot();
     unmount();

@@ -80,6 +80,7 @@ export interface ContextBreakdown {
 }
 
 export interface SessionInfo {
+  sessionId: string;
   permissionMode: string;
   cwd: string;
   transcriptPath: string;

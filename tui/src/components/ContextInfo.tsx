@@ -11,8 +11,8 @@ export const ContextInfo = memo(function ContextInfo({ contextFiles }: Props) {
     return null;
   }
 
-  const { globalClaudeMd, projectClaudeMd, projectSettings, projectSettingsRules } = contextFiles;
-  const fileCount = [globalClaudeMd, projectClaudeMd, projectSettings].filter(Boolean).length;
+  const { globalClaudeMd, projectClaudeMd, rulesCount } = contextFiles;
+  const fileCount = [globalClaudeMd, projectClaudeMd, rulesCount > 0].filter(Boolean).length;
 
   if (fileCount === 0) {
     return null;
@@ -23,8 +23,8 @@ export const ContextInfo = memo(function ContextInfo({ contextFiles }: Props) {
     const mdCount = (globalClaudeMd ? 1 : 0) + (projectClaudeMd ? 1 : 0);
     parts.push(`${mdCount} CLAUDE.md`);
   }
-  if (projectSettings && projectSettingsRules > 0) {
-    parts.push(`${projectSettingsRules} rules`);
+  if (rulesCount > 0) {
+    parts.push(`${rulesCount} rules`);
   }
 
   return (

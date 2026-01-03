@@ -42,7 +42,7 @@ describe('parseHudEvent', () => {
     expect(
       parseHudEvent(
         JSON.stringify({
-          schemaVersion: 2,
+          schemaVersion: 0,
           event: 'Stop',
           tool: null,
           input: null,

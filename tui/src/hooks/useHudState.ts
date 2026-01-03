@@ -6,13 +6,18 @@ export type { HudState };
 
 interface UseHudStateOptions {
   fifoPath: string;
+  sessionId?: string;
   initialTranscriptPath?: string;
 }
 
-export function useHudState({ fifoPath, initialTranscriptPath }: UseHudStateOptions): HudState {
+export function useHudState({
+  fifoPath,
+  sessionId,
+  initialTranscriptPath,
+}: UseHudStateOptions): HudState {
   const store = useMemo(
-    () => new HudStore({ fifoPath, initialTranscriptPath }),
-    [fifoPath, initialTranscriptPath],
+    () => new HudStore({ fifoPath, initialTranscriptPath, initialSessionId: sessionId }),
+    [fifoPath, initialTranscriptPath, sessionId],
   );
 
   useEffect(() => {

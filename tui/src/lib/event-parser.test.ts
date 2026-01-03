@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseHudEvent } from './hud-event.js';
+import { parseHudEventResult, HUD_EVENT_SCHEMA_VERSION } from './hud-event.js';
 
 describe('Event Parser', () => {
   describe('parseEvent', () => {
@@ -14,11 +14,13 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.event).toBe('PostToolUse');
-      expect(result?.tool).toBe('Read');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.event).toBe('PostToolUse');
+        expect(result.event.tool).toBe('Read');
+      }
     });
 
     it('should parse valid PreToolUse event', () => {
@@ -33,11 +35,13 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.event).toBe('PreToolUse');
-      expect(result?.toolUseId).toBe('tool-123');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.event).toBe('PreToolUse');
+        expect(result.event.toolUseId).toBe('tool-123');
+      }
     });
 
     it('should parse UserPromptSubmit event', () => {
@@ -52,11 +56,13 @@ describe('Event Parser', () => {
         prompt: 'Help me fix this bug',
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.event).toBe('UserPromptSubmit');
-      expect(result?.prompt).toBe('Help me fix this bug');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.event).toBe('UserPromptSubmit');
+        expect(result.event.prompt).toBe('Help me fix this bug');
+      }
     });
 
     it('should parse Stop event', () => {
@@ -70,10 +76,12 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.event).toBe('Stop');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.event).toBe('Stop');
+      }
     });
 
     it('should parse PreCompact event', () => {
@@ -87,10 +95,12 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.event).toBe('PreCompact');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.event).toBe('PreCompact');
+      }
     });
 
     it('should parse event with session info', () => {
@@ -107,21 +117,26 @@ describe('Event Parser', () => {
         transcriptPath: '/tmp/transcript.json',
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.permissionMode).toBe('plan');
-      expect(result?.cwd).toBe('/Users/test/project');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.permissionMode).toBe('plan');
+        expect(result.event.cwd).toBe('/Users/test/project');
+      }
     });
 
     it('should return null for malformed JSON', () => {
-      const result = parseHudEvent('not valid json');
-      expect(result).toBeNull();
+      const result = parseHudEventResult('not valid json');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('event_parse_failed');
+      }
     });
 
     it('should return null for empty line', () => {
-      const result = parseHudEvent('');
-      expect(result).toBeNull();
+      const result = parseHudEventResult('');
+      expect(result.ok).toBe(false);
     });
 
     it('should return null for missing event field', () => {
@@ -132,8 +147,8 @@ describe('Event Parser', () => {
         ts: 123,
       });
 
-      const result = parseHudEvent(line);
-      expect(result).toBeNull();
+      const result = parseHudEventResult(line);
+      expect(result.ok).toBe(false);
     });
 
     it('should return null for missing session field', () => {
@@ -144,8 +159,8 @@ describe('Event Parser', () => {
         ts: 123,
       });
 
-      const result = parseHudEvent(line);
-      expect(result).toBeNull();
+      const result = parseHudEventResult(line);
+      expect(result.ok).toBe(false);
     });
 
     it('should handle very long file paths', () => {
@@ -160,10 +175,12 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.input?.file_path).toBe(longPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.input?.file_path).toBe(longPath);
+      }
     });
 
     it('should handle very long response content', () => {
@@ -178,10 +195,12 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.response?.content).toBe(longContent);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.response?.content).toBe(longContent);
+      }
     });
 
     it('should handle unicode in content', () => {
@@ -195,10 +214,12 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.response?.content).toBe('日本語 🎉 émoji');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.response?.content).toBe('日本語 🎉 émoji');
+      }
     });
 
     it('should handle special characters in paths', () => {
@@ -212,10 +233,31 @@ describe('Event Parser', () => {
         ts: 1234567890,
       });
 
-      const result = parseHudEvent(line);
+      const result = parseHudEventResult(line);
 
-      expect(result).not.toBeNull();
-      expect(result?.input?.file_path).toBe('/path with spaces/file (1).ts');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.input?.file_path).toBe('/path with spaces/file (1).ts');
+      }
+    });
+
+    it('returns a warning for newer schema versions', () => {
+      const line = JSON.stringify({
+        schemaVersion: HUD_EVENT_SCHEMA_VERSION + 1,
+        event: 'PostToolUse',
+        tool: 'Read',
+        input: { file_path: '/test.ts' },
+        response: { content: 'file content' },
+        session: 'test-session',
+        ts: 1234567890,
+      });
+
+      const result = parseHudEventResult(line);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.warning?.code).toBe('schema_version_mismatch');
+      }
     });
   });
 });

@@ -26,22 +26,9 @@ REFRESH_FILE="$HUD_DIR/refresh.json"
 rm -f "$EVENT_FIFO"
 mkfifo "$EVENT_FIFO"
 
-if [ ! -d "$PLUGIN_ROOT/tui/node_modules" ]; then
-  cd "$PLUGIN_ROOT/tui"
-  if command -v bun &> /dev/null; then
-    bun install --silent 2>/dev/null || true
-  elif command -v npm &> /dev/null; then
-    npm install --silent 2>/dev/null || true
-  fi
-fi
-
 if [ ! -f "$PLUGIN_ROOT/tui/dist/index.js" ]; then
-  cd "$PLUGIN_ROOT/tui"
-  if command -v bun &> /dev/null; then
-    bun run build 2>/dev/null || true
-  elif command -v npm &> /dev/null; then
-    npm run build 2>/dev/null || true
-  fi
+  echo "claude-hud build missing. Run 'bun install' and 'bun run build' in $PLUGIN_ROOT/tui." >&2
+  exit 1
 fi
 
 if command -v bun &> /dev/null; then

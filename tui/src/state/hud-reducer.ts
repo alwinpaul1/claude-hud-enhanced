@@ -21,11 +21,17 @@ type HudAction =
   | { type: 'safeMode'; safeMode: boolean; reason: string | null };
 
 function updateSessionInfo(state: HudStateInternal, event: HudEvent): HudStateInternal {
-  if (event.permissionMode || event.cwd || event.transcriptPath) {
+  if (
+    event.session !== state.sessionInfo.sessionId ||
+    event.permissionMode ||
+    event.cwd ||
+    event.transcriptPath
+  ) {
     return {
       ...state,
       sessionInfo: {
         ...state.sessionInfo,
+        sessionId: event.session || state.sessionInfo.sessionId,
         permissionMode: event.permissionMode || state.sessionInfo.permissionMode,
         cwd: event.cwd || state.sessionInfo.cwd,
         transcriptPath: event.transcriptPath || state.sessionInfo.transcriptPath,

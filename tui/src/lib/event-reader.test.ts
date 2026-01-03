@@ -24,6 +24,15 @@ describe('EventReader', () => {
       }),
       'not json',
       JSON.stringify({
+        schemaVersion: 99,
+        event: 'PostToolUse',
+        tool: 'Read',
+        input: { file_path: '/tmp/test.txt' },
+        response: null,
+        session: 'test',
+        ts: Date.now() / 1000,
+      }),
+      JSON.stringify({
         schemaVersion: 1,
         event: 'UserPromptSubmit',
         tool: null,
@@ -38,14 +47,18 @@ describe('EventReader', () => {
 
     const reader = new EventReader(filePath);
     const events: Array<{ event: string }> = [];
+    const errors: Array<{ code: string }> = [];
     reader.on('event', (event) => events.push(event));
+    reader.on('parseError', (error) => errors.push(error));
 
     await wait(50);
     reader.close();
 
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events[0].event).toBe('PostToolUse');
-    expect(events[1].event).toBe('UserPromptSubmit');
+    expect(events[1].event).toBe('PostToolUse');
+    expect(events[2].event).toBe('UserPromptSubmit');
+    expect(errors.length).toBeGreaterThanOrEqual(2);
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });

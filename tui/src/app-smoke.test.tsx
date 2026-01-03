@@ -58,7 +58,7 @@ describe('HUD smoke test', () => {
     const fifoPath = join(tempDir, 'events.fifo');
     execSync(`${MKFIFO_COMMAND} ${fifoPath}`);
 
-    const { lastFrame, unmount } = render(<App fifoPath={fifoPath} />);
+    const { lastFrame, unmount } = render(<App sessionId="test-session" fifoPath={fifoPath} />);
 
     const writer = createWriteStream(fifoPath, { encoding: 'utf-8' });
     writer.write(
