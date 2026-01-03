@@ -1,5 +1,4 @@
 export interface StdinData {
-  hook_event_name?: string;
   session_id?: string;
   transcript_path?: string;
   cwd?: string;
@@ -17,9 +16,6 @@ export interface StdinData {
       cache_creation_input_tokens?: number;
       cache_read_input_tokens?: number;
     };
-  };
-  cost?: {
-    total_cost_usd?: number;
   };
 }
 

@@ -47,7 +47,8 @@ Claude Code → stdin JSON → parse → render lines → stdout → Claude Code
 - `Task` calls → agent info
 
 **From config files**:
-- MCP count from `~/.claude/.mcp.json`
+- MCP count from `~/.claude/settings.json` (mcpServers)
+- Hooks count from `~/.claude/settings.json` (hooks)
 - Rules count from CLAUDE.md files
 
 ### File Structure

@@ -42,6 +42,7 @@ That's it. Start Claude Code as usual — the statusline appears automatically.
   - ⚠️ COMPACT: >95% (critical)
 - **Rules count** — How many CLAUDE.md files loaded
 - **MCP count** — Connected MCP servers
+- **Hooks count** — Number of configured hooks (from settings)
 - **Duration** — Session time
 
 ### Line 2: Tool Activity
@@ -72,7 +73,7 @@ Claude HUD uses Claude Code's **statusline API** — a multi-line display that u
 
 Unlike other approaches, Claude HUD:
 - **No separate window** — Displays inline in your terminal
-- **No hooks needed** — Parses the transcript directly
+- **No hooks required** — Parses the transcript directly (hooks are optional and only counted)
 - **Native data** — Gets accurate token/context info from Claude Code
 - **Works everywhere** — Any terminal, not just tmux/iTerm
 
@@ -117,6 +118,14 @@ bun run build
 # Test with sample data
 echo '{"model":{"display_name":"Opus"},"context_window":{"current_usage":{"input_tokens":45000},"context_window_size":200000}}' | node dist/index.js
 ```
+
+## Testing
+
+```bash
+npm test
+```
+
+See `TESTING.md` for the full testing strategy and contribution expectations.
 
 ## License
 

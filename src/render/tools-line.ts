@@ -1,5 +1,5 @@
-import type { RenderContext, ToolEntry } from '../types.js';
-import { yellow, green, red, cyan, dim } from './colors.js';
+import type { RenderContext } from '../types.js';
+import { yellow, green, cyan, dim } from './colors.js';
 
 export function renderToolsLine(ctx: RenderContext): string | null {
   const { tools } = ctx.transcript;

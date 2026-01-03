@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test": "npm run build && node --test",
     "test:stdin": "echo '{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"current_usage\":{\"input_tokens\":45000},\"context_window_size\":200000},\"transcript_path\":\"/tmp/test.jsonl\"}' | node dist/index.js"
   },
   "keywords": ["claude-code", "statusline", "hud"],
