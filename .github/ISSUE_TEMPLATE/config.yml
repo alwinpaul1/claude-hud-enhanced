@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Troubleshooting guide
-    url: https://github.com/jarrodwatts/claude-hud/blob/main/TROUBLESHOOTING.md
-    about: Start here for common setup issues and fixes.
-  - name: Documentation
-    url: https://github.com/jarrodwatts/claude-hud#docs
-    about: Read the docs and developer guide.

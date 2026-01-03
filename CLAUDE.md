@@ -1,29 +1,19 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-Claude HUD is a Claude Code plugin that displays a real-time terminal HUD (Heads-Up Display) in a split pane. It shows context usage, tool activity, agent status, todos, git status, and cost estimation.
+Claude HUD is a Claude Code plugin that displays a real-time multi-line statusline. It shows context health, tool activity, agent status, and todo progress.
 
 ## Build Commands
 
 ```bash
-# All commands run from tui/ directory
-cd tui
-
 bun install          # Install dependencies
-bun run build        # Build TypeScript
-bun run dev          # Watch mode for development
-bun test             # Run all tests
-bun test <pattern>   # Run specific test (e.g., bun test sparkline)
- bun run replay:events -- --input ../tui/test-fixtures/hud-events.jsonl  # Replay events
- bun run profile:events -- ../tui/test-fixtures/hud-events-stress.jsonl  # Profile throughput
+bun run build        # Build TypeScript to dist/
 
-# Manual testing with a FIFO
-mkfifo /tmp/test.fifo
-bun run start -- --session test --fifo /tmp/test.fifo
-# Then in another terminal, send test events to the FIFO
+# Test with sample stdin data
+echo '{"model":{"display_name":"Opus"},"context_window":{"current_usage":{"input_tokens":45000},"context_window_size":200000}}' | node dist/index.js
 ```
 
 ## Architecture
@@ -31,82 +21,91 @@ bun run start -- --session test --fifo /tmp/test.fifo
 ### Data Flow
 
 ```
-Claude Code Hooks → capture-event.sh → FIFO → EventReader → React State → Ink Components
+Claude Code → stdin JSON → parse → render lines → stdout → Claude Code displays
+           ↘ transcript_path → parse JSONL → tools/agents/todos
 ```
 
-1. **hooks/hooks.json** - Registers shell scripts for Claude Code lifecycle events
-2. **scripts/capture-event.sh** - Transforms hook JSON into HudEvent format, writes to session FIFO
-3. **scripts/session-start.sh** - Creates FIFO, builds TUI if needed, spawns HUD in terminal split
-4. **tui/src/lib/event-reader.ts** - Reads FIFO line-by-line, parses JSON, emits events with auto-reconnect
-5. **tui/src/index.tsx** - Main App component, processes events and manages all state
+**Key insight**: The statusline is invoked every ~300ms by Claude Code. Each invocation:
+1. Receives JSON via stdin (model, context, tokens - native accurate data)
+2. Parses the transcript JSONL file for tools, agents, and todos
+3. Renders multi-line output to stdout
+4. Claude Code displays all lines
 
-### Hook Events
+### Data Sources
 
-| Event | Script | Purpose |
-|-------|--------|---------|
-| SessionStart | session-start.sh | Spawns HUD in split pane |
-| PreToolUse | capture-event.sh | Shows tool as "running" |
-| PostToolUse | capture-event.sh | Updates tool completion, tracks context/cost |
-| UserPromptSubmit | capture-event.sh | Tracks user prompts, clears idle state |
-| Stop | capture-event.sh | Sets idle state |
-| PreCompact | capture-event.sh | Increments compaction count |
-| SubagentStop | capture-event.sh | Marks agent complete |
-| SessionEnd | cleanup.sh | Kills process, removes FIFO |
+**Native from stdin JSON** (accurate, no estimation):
+- `model.display_name` - Current model
+- `context_window.current_usage` - Token counts
+- `context_window.context_window_size` - Max context
+- `transcript_path` - Path to session transcript
 
-All events sent to the FIFO include `schemaVersion: 1` (see `docs/API.md`).
+**From transcript JSONL parsing**:
+- `tool_use` blocks → tool name, input, start time
+- `tool_result` blocks → completion, duration
+- Running tools = `tool_use` without matching `tool_result`
+- `TodoWrite` calls → todo list
+- `Task` calls → agent info
 
-### Library Structure (tui/src/lib/)
+**From config files**:
+- MCP count from `~/.claude/.mcp.json`
+- Rules count from CLAUDE.md files
 
-- **types.ts** - All TypeScript interfaces (HudEvent, ToolEntry, TodoItem, ContextHealth, etc.)
-- **event-reader.ts** - FIFO reader with connection status and exponential backoff reconnect
-- **context-tracker.ts** - Estimates token usage, burn rate, compaction warnings
-- **cost-tracker.ts** - Calculates API costs based on model pricing
+### File Structure
 
-### Component Structure (tui/src/components/)
+```
+src/
+├── index.ts           # Entry point
+├── stdin.ts           # Parse Claude's JSON input
+├── transcript.ts      # Parse transcript JSONL
+├── config-reader.ts   # Read MCP/rules configs
+├── types.ts           # TypeScript interfaces
+└── render/
+    ├── index.ts       # Main render coordinator
+    ├── session-line.ts   # Line 1: model, context, rules, MCPs
+    ├── tools-line.ts     # Line 2: tool activity
+    ├── agents-line.ts    # Line 3: agent status
+    ├── todos-line.ts     # Line 4: todo progress
+    └── colors.ts         # ANSI color helpers
+```
 
-- **ContextMeter** - Token usage bar, sparkline history, burn rate
-- **ToolStream** - Live tool calls with status, duration, path truncation
-- **AgentList** - Running/completed subagents with elapsed time
-- **SessionStats** - Tool counts, lines changed, session duration
-- **GitStatus** - Branch, staged/modified/untracked counts
-- **TodoList** - Current task list from TodoWrite events
-- **ModifiedFiles** - Files changed via Edit/Write
-- **McpStatus** - Connected MCP servers
-- **Sparkline** - Unicode sparkline chart (▁▂▃▄▅▆▇█)
+### Output Format
 
-### Session Files
+```
+[Opus] ████████░░ 45% | 📋 3 rules | 🔌 5 MCPs | ⏱️ 12m
+◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2
+◐ explore [haiku]: Finding auth code (2m 15s)
+▸ Fix authentication bug (2/5)
+```
 
-Runtime files stored in `~/.claude/hud/`:
-- `events/<session_id>.fifo` - Named pipe for event streaming (session-scoped)
-- `pids/<terminal_id>.pid` - Process ID for cleanup (terminal-scoped)
-- `refresh-<terminal_id>.json` - Session state for HUD switching (terminal-scoped)
-- `logs/<session_id>.log` - Fallback output when split pane unavailable
+Lines are conditionally shown:
+- Line 1 (session): Always shown
+- Line 2 (tools): Shown if any tools used
+- Line 3 (agents): Shown only if agents active
+- Line 4 (todos): Shown only if todos exist
 
-**Terminal vs Session Scoping:**
-- Each terminal window gets ONE HUD instance (tracked by terminal ID)
-- Each Claude session has its own FIFO (for event isolation)
-- `/new` within same terminal reuses existing HUD (signals it to switch sessions)
-- Different terminal windows get separate HUDs
+### Context Thresholds
 
-Terminal IDs are derived from: tmux window ID, iTerm session ID, Kitty window ID, etc.
+| Threshold | Color | Action |
+|-----------|-------|--------|
+| <70% | Green | Normal |
+| 70-85% | Yellow | Warning |
+| >85% | Red | Show token breakdown |
+| >95% | Red | Show ⚠️ COMPACT |
 
-## HUD Configuration
+## Plugin Configuration
 
-Optional HUD config lives at `~/.claude/hud/config.json`:
+The plugin is configured in `.claude-plugin/plugin.json`:
 
 ```json
 {
-  "panelOrder": ["status", "context", "tools", "agents", "todos"],
-  "hiddenPanels": ["cost"],
-  "width": 56
+  "statusLine": {
+    "type": "command",
+    "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/index.js"
+  }
 }
 ```
 
-Panel IDs: `status`, `context`, `cost`, `contextInfo`, `tools`, `agents`, `todos`.
-
 ## Dependencies
 
-- **Runtime**: Node.js 18+ or Bun, jq (JSON parsing in hooks)
-- **TUI Framework**: React 18 + Ink 5 (terminal UI via Yoga layout)
+- **Runtime**: Node.js 18+ or Bun
 - **Build**: TypeScript 5, ES2022 target, NodeNext modules
-- **Testing**: Vitest + @testing-library/react + ink-testing-library
