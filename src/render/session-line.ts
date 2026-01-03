@@ -11,16 +11,24 @@ export function renderSessionLine(ctx: RenderContext): string {
 
   parts.push(`${cyan(`[${model}]`)} ${bar} ${getContextColor(percent)}${percent}%${RESET}`);
 
+  if (ctx.claudeMdCount > 0) {
+    parts.push(dim(`📄 ${ctx.claudeMdCount} CLAUDE.md`));
+  }
+
   if (ctx.rulesCount > 0) {
-    parts.push(dim(`📋 ${ctx.rulesCount} rules`));
+    parts.push(dim(`📜 ${ctx.rulesCount} rules`));
   }
 
   if (ctx.mcpCount > 0) {
     parts.push(dim(`🔌 ${ctx.mcpCount} MCPs`));
   }
 
+  if (ctx.hooksCount > 0) {
+    parts.push(dim(`🪝 ${ctx.hooksCount} hooks`));
+  }
+
   if (ctx.sessionDuration) {
-    parts.push(dim(`⏱️ ${ctx.sessionDuration}`));
+    parts.push(dim(`⏱️  ${ctx.sessionDuration}`));
   }
 
   let line = parts.join(' | ');

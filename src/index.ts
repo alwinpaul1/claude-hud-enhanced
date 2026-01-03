@@ -1,7 +1,7 @@
 import { readStdin } from './stdin.js';
 import { parseTranscript } from './transcript.js';
 import { render } from './render/index.js';
-import { countRules, countMcpServers } from './config-reader.js';
+import { countConfigs } from './config-reader.js';
 import type { RenderContext } from './types.js';
 
 async function main(): Promise<void> {
@@ -16,16 +16,17 @@ async function main(): Promise<void> {
     const transcriptPath = stdin.transcript_path ?? '';
     const transcript = await parseTranscript(transcriptPath);
 
-    const rulesCount = await countRules(stdin.cwd);
-    const mcpCount = await countMcpServers();
+    const { claudeMdCount, rulesCount, mcpCount, hooksCount } = await countConfigs(stdin.cwd);
 
     const sessionDuration = formatSessionDuration(transcript.sessionStart);
 
     const ctx: RenderContext = {
       stdin,
       transcript,
+      claudeMdCount,
       rulesCount,
       mcpCount,
+      hooksCount,
       sessionDuration,
     };
 

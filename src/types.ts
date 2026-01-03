@@ -60,7 +60,9 @@ export interface TranscriptData {
 export interface RenderContext {
   stdin: StdinData;
   transcript: TranscriptData;
+  claudeMdCount: number;
   rulesCount: number;
   mcpCount: number;
+  hooksCount: number;
   sessionDuration: string;
 }
