@@ -3,10 +3,8 @@ import * as readline from 'readline';
 import type { TranscriptData, ToolEntry, AgentEntry, TodoItem } from './types.js';
 
 interface TranscriptLine {
-  type?: string;
   timestamp?: string;
   message?: {
-    role?: string;
     content?: ContentBlock[];
   };
 }
@@ -17,7 +15,6 @@ interface ContentBlock {
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
-  content?: string;
   is_error?: boolean;
 }
 
@@ -117,14 +114,12 @@ function processEntry(
       if (tool) {
         tool.status = block.is_error ? 'error' : 'completed';
         tool.endTime = timestamp;
-        tool.duration = timestamp.getTime() - tool.startTime.getTime();
       }
 
       const agent = agentMap.get(block.tool_use_id);
       if (agent) {
         agent.status = 'completed';
         agent.endTime = timestamp;
-        agent.elapsed = timestamp.getTime() - agent.startTime.getTime();
       }
     }
   }

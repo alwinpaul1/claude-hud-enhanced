@@ -50,12 +50,21 @@ function countHooksInFile(filePath: string): number {
 
 function countRulesInDir(rulesDir: string): number {
   if (!fs.existsSync(rulesDir)) return 0;
+  let count = 0;
   try {
-    const files = fs.readdirSync(rulesDir);
-    return files.filter((f) => f.endsWith('.md')).length;
+    const entries = fs.readdirSync(rulesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(rulesDir, entry.name);
+      if (entry.isDirectory()) {
+        count += countRulesInDir(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        count++;
+      }
+    }
   } catch {
-    return 0;
+    // Ignore errors
   }
+  return count;
 }
 
 export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
@@ -104,7 +113,12 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
       claudeMdCount++;
     }
 
-    // {cwd}/.claude/rules/*.md
+    // {cwd}/.claude/CLAUDE.local.md
+    if (fs.existsSync(path.join(cwd, '.claude', 'CLAUDE.local.md'))) {
+      claudeMdCount++;
+    }
+
+    // {cwd}/.claude/rules/*.md (recursive)
     rulesCount += countRulesInDir(path.join(cwd, '.claude', 'rules'));
 
     // {cwd}/.mcp.json (project MCP config)
