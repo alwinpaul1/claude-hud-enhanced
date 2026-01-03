@@ -94,4 +94,5 @@ export interface CostEstimate {
   totalCost: number;
   inputTokens: number;
   outputTokens: number;
+  pricingStale?: boolean;
 }

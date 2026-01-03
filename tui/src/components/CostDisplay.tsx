@@ -50,6 +50,7 @@ export const CostDisplay = memo(function CostDisplay({ cost, model }: Props) {
       <Box>
         <Text color={cost.totalCost > 1 ? 'yellow' : 'green'}>{formatCost(cost.totalCost)}</Text>
         <Text dimColor> total</Text>
+        {cost.pricingStale && <Text color="yellow"> ⚠</Text>}
       </Box>
     </Box>
   );

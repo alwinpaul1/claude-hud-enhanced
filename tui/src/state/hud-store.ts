@@ -233,6 +233,10 @@ export class HudStore {
       } else {
         this.configError = null;
         this.apply({ type: 'config', config: configResult.data });
+        if (configResult.data?.pricing) {
+          this.costTracker.setPricing(configResult.data.pricing);
+          this.apply({ type: 'cost', cost: this.costTracker.getCost() });
+        }
       }
 
       const contextFiles = this.contextDetector.detect(this.lastCwd || undefined);

@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { logger } from './logger.js';
+import type { PricingConfig } from './cost-tracker.js';
 
 export type PanelId = 'status' | 'context' | 'cost' | 'contextInfo' | 'tools' | 'agents' | 'todos';
 
@@ -9,6 +10,7 @@ export interface HudConfig {
   panelOrder?: PanelId[];
   hiddenPanels?: PanelId[];
   width?: number;
+  pricing?: Partial<PricingConfig>;
 }
 
 export interface HudConfigReadResult {
@@ -27,15 +29,47 @@ const PANEL_IDS: PanelId[] = [
   'todos',
 ];
 
+function normalizePricing(value: unknown): Partial<PricingConfig> | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const result: Partial<PricingConfig> = {};
+
+  if (raw.sonnet && typeof raw.sonnet === 'object') {
+    const s = raw.sonnet as Record<string, unknown>;
+    if (typeof s.input === 'number' && typeof s.output === 'number') {
+      result.sonnet = { input: s.input, output: s.output };
+    }
+  }
+  if (raw.opus && typeof raw.opus === 'object') {
+    const o = raw.opus as Record<string, unknown>;
+    if (typeof o.input === 'number' && typeof o.output === 'number') {
+      result.opus = { input: o.input, output: o.output };
+    }
+  }
+  if (raw.haiku && typeof raw.haiku === 'object') {
+    const h = raw.haiku as Record<string, unknown>;
+    if (typeof h.input === 'number' && typeof h.output === 'number') {
+      result.haiku = { input: h.input, output: h.output };
+    }
+  }
+  if (typeof raw.lastUpdated === 'string') {
+    result.lastUpdated = raw.lastUpdated;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function buildHudConfig(raw: Record<string, unknown>): HudConfig {
   const panelOrder = normalizePanelList(raw.panelOrder);
   const hiddenPanels = normalizePanelList(raw.hiddenPanels);
   const width = typeof raw.width === 'number' && raw.width > 0 ? raw.width : undefined;
+  const pricing = normalizePricing(raw.pricing);
 
   return {
     panelOrder,
     hiddenPanels,
     width,
+    pricing,
   };
 }
 

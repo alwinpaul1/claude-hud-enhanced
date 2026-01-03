@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CostTracker } from './cost-tracker.js';
+import { CostTracker, isPricingStale, mergePricing } from './cost-tracker.js';
 import type { HudEvent } from './types.js';
 
 describe('CostTracker', () => {
@@ -147,5 +147,84 @@ describe('CostTracker', () => {
       expect(cost.outputTokens).toBe(0);
       expect(cost.totalCost).toBe(0);
     });
+  });
+
+  describe('setPricing', () => {
+    it('should apply custom pricing', () => {
+      tracker.setPricing({
+        sonnet: { input: 10.0, output: 50.0 },
+        lastUpdated: '2025-01-01',
+      });
+
+      tracker.processEvent({
+        event: 'PostToolUse',
+        tool: 'Read',
+        input: null,
+        response: { content: 'x'.repeat(4000) },
+        session: 'test',
+        ts: Date.now() / 1000,
+      });
+
+      const cost = tracker.getCost();
+      expect(cost.outputCost).toBeGreaterThan(0.04);
+      expect(cost.outputCost).toBeLessThan(0.06);
+    });
+
+    it('should indicate stale pricing', () => {
+      tracker.setPricing({
+        lastUpdated: '2024-01-01',
+      });
+
+      const cost = tracker.getCost();
+      expect(cost.pricingStale).toBe(true);
+    });
+
+    it('should not indicate stale for recent pricing', () => {
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 30);
+      tracker.setPricing({
+        lastUpdated: recentDate.toISOString().split('T')[0],
+      });
+
+      const cost = tracker.getCost();
+      expect(cost.pricingStale).toBe(false);
+    });
+  });
+});
+
+describe('isPricingStale', () => {
+  it('should return true for old dates', () => {
+    expect(isPricingStale('2024-01-01')).toBe(true);
+  });
+
+  it('should return false for recent dates', () => {
+    const recentDate = new Date();
+    recentDate.setDate(recentDate.getDate() - 30);
+    expect(isPricingStale(recentDate.toISOString())).toBe(false);
+  });
+});
+
+describe('mergePricing', () => {
+  const base = {
+    sonnet: { input: 3.0, output: 15.0 },
+    opus: { input: 15.0, output: 75.0 },
+    haiku: { input: 0.25, output: 1.25 },
+    lastUpdated: '2025-01-01',
+  };
+
+  it('should return base when no override', () => {
+    expect(mergePricing(base)).toBe(base);
+    expect(mergePricing(base, undefined)).toBe(base);
+  });
+
+  it('should merge partial overrides', () => {
+    const result = mergePricing(base, { sonnet: { input: 5.0, output: 25.0 } });
+    expect(result.sonnet.input).toBe(5.0);
+    expect(result.opus.input).toBe(15.0);
+  });
+
+  it('should merge lastUpdated override', () => {
+    const result = mergePricing(base, { lastUpdated: '2025-06-01' });
+    expect(result.lastUpdated).toBe('2025-06-01');
   });
 });
