@@ -4,21 +4,23 @@ description: Configure claude-hud as your statusline
 
 Add statusLine configuration to ~/.claude/settings.json.
 
-The command value must be exactly: `node $` + `{CLAUDE_PLUGIN_ROOT}` + `/dist/index.js`
+First, find the installed plugin path:
+- Look in ~/.claude/plugins/cache/claude-hud/claude-hud/ for the version folder
+- The path will be like: ~/.claude/plugins/cache/claude-hud/claude-hud/{version}/dist/index.js
 
-This creates the literal string `node ${CLAUDE_PLUGIN_ROOT}/dist/index.js` - Claude Code resolves this variable at runtime.
+Add this to settings.json (using the actual path you found):
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/index.js"
+    "command": "node ~/.claude/plugins/cache/claude-hud/claude-hud/{version}/dist/index.js"
   }
 }
 ```
 
-DO NOT resolve the variable to an absolute path. Write it exactly as shown with the dollar sign and braces.
+Replace {version} with the actual version folder name (e.g., 0.0.1).
 
 Merge with existing settings. Do not overwrite other fields.
 
-After updating, confirm success. The HUD appears immediately - no restart needed.
+The HUD appears immediately - no restart needed.

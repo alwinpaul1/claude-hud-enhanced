@@ -229,15 +229,9 @@ Technical documentation for agents who need to understand, modify, or debug Clau
   <note>The plugin.json contains metadata only. statusLine is NOT a valid plugin.json field.</note>
 
   <statusline_config>
-    The /claude-hud:setup command adds this to ~/.claude/settings.json:
-    {
-      "statusLine": {
-        "type": "command",
-        "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/index.js"
-      }
-    }
+    The /claude-hud:setup command adds statusLine to ~/.claude/settings.json pointing to the installed plugin path.
+    Re-run /claude-hud:setup after updating the plugin to update the path.
   </statusline_config>
-  <note>CLAUDE_PLUGIN_ROOT is automatically set by Claude Code to the plugin directory.</note>
 </plugin_configuration>
 
 <development>
