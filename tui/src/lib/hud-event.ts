@@ -1,4 +1,5 @@
 import type { HudEvent } from './types.js';
+import { LINE_PREVIEW_LENGTH } from './constants.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -45,8 +46,8 @@ function buildParseError(
 }
 
 function linePreview(line: string): string {
-  if (line.length <= 200) return line;
-  return `${line.slice(0, 200)}…`;
+  if (line.length <= LINE_PREVIEW_LENGTH) return line;
+  return `${line.slice(0, LINE_PREVIEW_LENGTH)}…`;
 }
 
 export function parseHudEventResult(line: string): HudEventParseResult {

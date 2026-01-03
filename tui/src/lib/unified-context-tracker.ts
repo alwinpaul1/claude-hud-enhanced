@@ -1,11 +1,16 @@
 import * as fs from 'fs';
 import type { ContextHealth, ContextBreakdown, HudEvent } from './types.js';
 import { logger } from './logger.js';
+import {
+  COMPACTION_THRESHOLD,
+  WARNING_THRESHOLD,
+  CHARS_PER_TOKEN,
+  DEFAULT_MAX_TOKENS,
+  TOKEN_HISTORY_SIZE,
+  BURN_RATE_SAMPLE_SIZE,
+} from './constants.js';
 
-const COMPACTION_THRESHOLD = 0.85;
-const WARNING_THRESHOLD = 0.7;
 const SPARKLINE_SAMPLES = 20;
-const CHARS_PER_TOKEN = 4;
 
 interface TokenSample {
   tokens: number;
@@ -28,10 +33,10 @@ interface TranscriptMessage {
 }
 
 const MODEL_CONTEXT_LIMITS: Record<string, number> = {
-  'claude-opus-4-5': 200000,
-  'claude-sonnet-4': 200000,
-  'claude-haiku-3-5': 200000,
-  default: 200000,
+  'claude-opus-4-5': DEFAULT_MAX_TOKENS,
+  'claude-sonnet-4': DEFAULT_MAX_TOKENS,
+  'claude-haiku-3-5': DEFAULT_MAX_TOKENS,
+  default: DEFAULT_MAX_TOKENS,
 };
 
 function getContextLimit(model: string | null): number {
@@ -197,8 +202,8 @@ export class UnifiedContextTracker {
       tokens: currentTokens,
       timestamp: Date.now(),
     });
-    if (this.tokenHistory.length > 100) {
-      this.tokenHistory = this.tokenHistory.slice(-50);
+    if (this.tokenHistory.length > TOKEN_HISTORY_SIZE * 2) {
+      this.tokenHistory = this.tokenHistory.slice(-TOKEN_HISTORY_SIZE);
     }
   }
 
@@ -209,7 +214,7 @@ export class UnifiedContextTracker {
   private calculateBurnRate(): number {
     if (this.tokenHistory.length < 2) return 0;
 
-    const recent = this.tokenHistory.slice(-10);
+    const recent = this.tokenHistory.slice(-BURN_RATE_SAMPLE_SIZE);
     if (recent.length < 2) return 0;
 
     const first = recent[0];

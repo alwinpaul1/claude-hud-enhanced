@@ -6,6 +6,14 @@ import type { ConnectionStatus } from '../lib/event-reader.js';
 import type { HudConfig } from '../lib/hud-config.js';
 import type { HudStateInternal } from './hud-state.js';
 import type { HudError } from './hud-errors.js';
+import {
+  MAX_TOOLS_DISPLAY,
+  MAX_AGENTS_DISPLAY,
+  MAX_AGENT_TOOLS,
+  MAX_ERRORS_DISPLAY,
+  COMMAND_TRUNCATE_LENGTH,
+  PATTERN_TRUNCATE_LENGTH,
+} from '../lib/constants.js';
 
 type HudAction =
   | { type: 'event'; event: HudEvent; now: number }
@@ -69,15 +77,15 @@ function deriveToolTarget(event: HudEvent): string {
   } | null;
 
   if (input?.file_path) return input.file_path;
-  if (input?.command) return input.command.slice(0, 40);
-  if (input?.pattern) return input.pattern.slice(0, 30);
+  if (input?.command) return input.command.slice(0, COMMAND_TRUNCATE_LENGTH);
+  if (input?.pattern) return input.pattern.slice(0, PATTERN_TRUNCATE_LENGTH);
   return '';
 }
 
 function addTool(state: HudStateInternal, entry: ToolEntry): HudStateInternal {
   return {
     ...state,
-    tools: [...state.tools.slice(-29), entry],
+    tools: [...state.tools.slice(-(MAX_TOOLS_DISPLAY - 1)), entry],
   };
 }
 
@@ -89,7 +97,7 @@ function updateRunningAgentTool(state: HudStateInternal, entry: ToolEntry): HudS
   const running = updated[runningIdx];
   updated[runningIdx] = {
     ...running,
-    tools: [...running.tools.slice(-5), entry],
+    tools: [...running.tools.slice(-(MAX_AGENT_TOOLS - 1)), entry],
   };
   return { ...state, agents: updated };
 }
@@ -106,7 +114,7 @@ function addAgent(state: HudStateInternal, event: HudEvent, now: number): HudSta
   };
   return {
     ...state,
-    agents: [...state.agents.slice(-10), agent],
+    agents: [...state.agents.slice(-(MAX_AGENTS_DISPLAY - 1)), agent],
   };
 }
 
@@ -141,7 +149,7 @@ export function reduceHudState(state: HudStateInternal, action: HudAction): HudS
     case 'tick':
       return withSessionPhase({ ...state, now: action.now });
     case 'error': {
-      const errors = [...state.errors, action.error].slice(-5);
+      const errors = [...state.errors, action.error].slice(-MAX_ERRORS_DISPLAY);
       return withSessionPhase({ ...state, errors });
     }
     case 'safeMode':
@@ -194,7 +202,7 @@ export function reduceHudState(state: HudStateInternal, action: HudAction): HudS
 
         const updatedTools = (() => {
           const idx = next.tools.findIndex((tool) => tool.id === toolUseId);
-          if (idx === -1) return [...next.tools.slice(-29), entry];
+          if (idx === -1) return [...next.tools.slice(-(MAX_TOOLS_DISPLAY - 1)), entry];
           const copy = [...next.tools];
           copy[idx] = entry;
           return copy;

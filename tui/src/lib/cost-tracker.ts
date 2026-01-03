@@ -1,4 +1,5 @@
 import type { CostEstimate, HudEvent } from './types.js';
+import { CHARS_PER_TOKEN, PRICING_STALE_DAYS } from './constants.js';
 
 export interface ModelPricing {
   input: number;
@@ -18,9 +19,6 @@ const DEFAULT_PRICING: PricingConfig = {
   haiku: { input: 0.25, output: 1.25 },
   lastUpdated: '2025-01-01',
 };
-
-const CHARS_PER_TOKEN = 4;
-const PRICING_STALE_DAYS = 90;
 
 export function isPricingStale(lastUpdated: string): boolean {
   const updateDate = new Date(lastUpdated);

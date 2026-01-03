@@ -3,6 +3,12 @@ import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { parseHudEventResult, type HudEventParseError } from './hud-event.js';
 import { logger } from './logger.js';
+import {
+  MAX_RECONNECT_DELAY_MS,
+  INITIAL_RECONNECT_DELAY_MS,
+  RECONNECT_BACKOFF_FACTOR,
+  ERROR_THROTTLE_MS,
+} from './constants.js';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -102,7 +108,10 @@ export class EventReader extends EventEmitter {
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(100 * Math.pow(1.5, this.reconnectAttempts), 5000);
+    const delay = Math.min(
+      INITIAL_RECONNECT_DELAY_MS * Math.pow(RECONNECT_BACKOFF_FACTOR, this.reconnectAttempts),
+      MAX_RECONNECT_DELAY_MS,
+    );
     setTimeout(() => this.connect(), delay);
   }
 
@@ -116,7 +125,7 @@ export class EventReader extends EventEmitter {
   private emitParseError(error: HudEventParseError): void {
     const now = Date.now();
     const key = `${error.code}:${error.message}`;
-    if (this.lastParseErrorKey === key && now - this.lastParseErrorAt < 5000) {
+    if (this.lastParseErrorKey === key && now - this.lastParseErrorAt < ERROR_THROTTLE_MS) {
       return;
     }
     this.lastParseErrorAt = now;
