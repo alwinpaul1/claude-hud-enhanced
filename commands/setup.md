@@ -16,3 +16,5 @@ Add this exact statusLine configuration to ~/.claude/settings.json:
 IMPORTANT: Use the literal string `${CLAUDE_PLUGIN_ROOT}` exactly as shown - do NOT resolve or expand it. Claude Code will resolve this variable at runtime to the correct plugin path.
 
 Merge with existing settings. Do not overwrite other fields.
+
+After updating, confirm success. The HUD appears immediately - no restart needed.
