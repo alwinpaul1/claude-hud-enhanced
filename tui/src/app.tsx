@@ -83,6 +83,7 @@ export function App({ sessionId, fifoPath, initialTranscriptPath }: AppProps) {
           settings={state.settings}
           isIdle={state.sessionInfo.isIdle}
           cwd={state.sessionInfo.cwd}
+          parseErrorCount={state.parseErrorCount}
         />
       </ErrorBoundary>
     ),

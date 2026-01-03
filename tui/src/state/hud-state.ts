@@ -22,6 +22,7 @@ export interface HudState {
   safeMode: boolean;
   safeModeReason: string | null;
   errors: HudError[];
+  parseErrorCount: number;
   settings: SettingsData | null;
   contextFiles: ContextFiles | null;
   connectionStatus: ConnectionStatus;
@@ -57,6 +58,7 @@ export function createInitialHudState(options: {
     safeMode: false,
     safeModeReason: null,
     errors: [],
+    parseErrorCount: 0,
     settings: null,
     contextFiles: null,
     connectionStatus: 'connecting',

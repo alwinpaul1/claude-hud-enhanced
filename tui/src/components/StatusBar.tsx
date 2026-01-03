@@ -7,9 +7,15 @@ interface Props {
   settings: SettingsData | null;
   isIdle: boolean;
   cwd?: string;
+  parseErrorCount?: number;
 }
 
-export const StatusBar = memo(function StatusBar({ settings, isIdle, cwd }: Props) {
+export const StatusBar = memo(function StatusBar({
+  settings,
+  isIdle,
+  cwd,
+  parseErrorCount = 0,
+}: Props) {
   const idleIndicator = isIdle ? '💤' : '⚡';
   const model = settings?.model || '?';
 
@@ -27,6 +33,12 @@ export const StatusBar = memo(function StatusBar({ settings, isIdle, cwd }: Prop
             <Text dimColor> • </Text>
             <Text dimColor>MCP:</Text>
             <Text>{settings.mcpCount}</Text>
+          </>
+        )}
+        {parseErrorCount > 0 && (
+          <>
+            <Text dimColor> • </Text>
+            <Text color="yellow">⚠ {parseErrorCount} parse errors</Text>
           </>
         )}
       </Box>

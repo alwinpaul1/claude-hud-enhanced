@@ -192,6 +192,7 @@ export class HudStore {
   };
 
   private handleParseError = (error: HudEventParseError): void => {
+    this.apply({ type: 'parseError' });
     this.recordError({
       code: error.code,
       message: error.message,

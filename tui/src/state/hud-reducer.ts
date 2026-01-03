@@ -26,6 +26,7 @@ type HudAction =
   | { type: 'model'; model: string | null }
   | { type: 'tick'; now: number }
   | { type: 'error'; error: HudError }
+  | { type: 'parseError' }
   | { type: 'safeMode'; safeMode: boolean; reason: string | null };
 
 function updateSessionInfo(state: HudStateInternal, event: HudEvent): HudStateInternal {
@@ -152,6 +153,8 @@ export function reduceHudState(state: HudStateInternal, action: HudAction): HudS
       const errors = [...state.errors, action.error].slice(-MAX_ERRORS_DISPLAY);
       return withSessionPhase({ ...state, errors });
     }
+    case 'parseError':
+      return withSessionPhase({ ...state, parseErrorCount: state.parseErrorCount + 1 });
     case 'safeMode':
       return withSessionPhase({
         ...state,
