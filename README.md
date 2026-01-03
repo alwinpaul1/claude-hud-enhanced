@@ -9,6 +9,8 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 ## Install
 
+Inside a Claude Code instance, run the following commands:
+
 **Step 1: Add the marketplace**
 ```
 /plugin marketplace add jarrodwatts/claude-hud
