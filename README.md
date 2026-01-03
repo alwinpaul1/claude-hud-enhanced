@@ -9,6 +9,14 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 ## Install
 
+Paste this prompt into Claude Code for a guided install:
+
+```
+Install the "claude-hud" plugin using: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
+```
+
+Or, if you prefer human instructions:
+
 **Step 1: Add the marketplace**
 ```
 /plugin marketplace add jarrodwatts/claude-hud
@@ -21,14 +29,9 @@ A Claude Code plugin that shows what's happening — context usage, active tools
 
 **Step 3: Restart Claude Code**
 
-The statusline appears automatically below your input.
+The statusline will then appear automatically below your input.
 
-### Alternative: AI-Assisted Install
 
-Paste this into Claude Code:
-```
-Install the "claude-hud" plugin using: https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/CLAUDE.README.md
-```
 
 ---
 
