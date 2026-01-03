@@ -2,7 +2,7 @@
 description: Configure claude-hud as your statusline
 ---
 
-Add the following statusLine configuration to the user's ~/.claude/settings.json:
+Add this exact statusLine configuration to ~/.claude/settings.json:
 
 ```json
 {
@@ -13,6 +13,6 @@ Add the following statusLine configuration to the user's ~/.claude/settings.json
 }
 ```
 
-Merge this with the existing settings.json content. Do not overwrite other fields.
+IMPORTANT: Use the literal string `${CLAUDE_PLUGIN_ROOT}` exactly as shown - do NOT resolve or expand it. Claude Code will resolve this variable at runtime to the correct plugin path.
 
-After updating, confirm the change was made successfully.
+Merge with existing settings. Do not overwrite other fields.
