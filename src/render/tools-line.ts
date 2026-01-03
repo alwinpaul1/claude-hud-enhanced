@@ -43,7 +43,7 @@ function truncatePath(path: string, maxLen: number = 20): string {
   if (path.length <= maxLen) return path;
 
   const parts = path.split('/');
-  const filename = parts.pop() ?? path;
+  const filename = parts.pop() || path;
 
   if (filename.length >= maxLen) {
     return filename.slice(0, maxLen - 3) + '...';

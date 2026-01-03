@@ -4,6 +4,7 @@ import { renderSessionLine } from '../dist/render/session-line.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
 import { renderTodosLine } from '../dist/render/todos-line.js';
+import { getContextColor } from '../dist/render/colors.js';
 
 function baseContext() {
   return {
@@ -42,6 +43,56 @@ test('renderSessionLine shows compact warning at critical threshold', () => {
   assert.ok(line.includes('COMPACT'));
 });
 
+test('renderSessionLine includes duration and formats large tokens', () => {
+  const ctx = baseContext();
+  ctx.sessionDuration = '1m';
+  ctx.stdin.context_window.context_window_size = 1100000;
+  ctx.stdin.context_window.current_usage.input_tokens = 1000000;
+  ctx.stdin.context_window.current_usage.cache_read_input_tokens = 1500;
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('⏱️'));
+  assert.ok(line.includes('1.0M'));
+  assert.ok(line.includes('2k'));
+});
+
+test('renderSessionLine handles missing input tokens and cache creation usage', () => {
+  const ctx = baseContext();
+  ctx.stdin.context_window.context_window_size = 100;
+  ctx.stdin.context_window.current_usage = {
+    cache_creation_input_tokens: 90,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('90%'));
+  assert.ok(line.includes('in: 0'));
+});
+
+test('renderSessionLine handles missing cache token fields', () => {
+  const ctx = baseContext();
+  ctx.stdin.context_window.context_window_size = 100;
+  ctx.stdin.context_window.current_usage = {
+    input_tokens: 90,
+  };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('cache: 0'));
+});
+
+test('getContextColor returns yellow for warning threshold', () => {
+  assert.equal(getContextColor(70), '\x1b[33m');
+});
+
+test('renderSessionLine includes config counts when present', () => {
+  const ctx = baseContext();
+  ctx.claudeMdCount = 1;
+  ctx.rulesCount = 2;
+  ctx.mcpCount = 3;
+  ctx.hooksCount = 4;
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('CLAUDE.md'));
+  assert.ok(line.includes('rules'));
+  assert.ok(line.includes('MCPs'));
+  assert.ok(line.includes('hooks'));
+});
+
 test('renderToolsLine renders running and completed tools', () => {
   const ctx = baseContext();
   ctx.transcript.tools = [
@@ -56,7 +107,7 @@ test('renderToolsLine renders running and completed tools', () => {
     {
       id: 'tool-2',
       name: 'Edit',
-      target: '/tmp/example.txt',
+      target: '/tmp/very/long/path/to/authentication.ts',
       status: 'running',
       startTime: new Date(0),
     },
@@ -65,6 +116,82 @@ test('renderToolsLine renders running and completed tools', () => {
   const line = renderToolsLine(ctx);
   assert.ok(line?.includes('Read'));
   assert.ok(line?.includes('Edit'));
+  assert.ok(line?.includes('.../authentication.ts'));
+});
+
+test('renderToolsLine truncates long filenames', () => {
+  const ctx = baseContext();
+  ctx.transcript.tools = [
+    {
+      id: 'tool-1',
+      name: 'Edit',
+      target: '/tmp/this-is-a-very-very-long-filename.ts',
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = renderToolsLine(ctx);
+  assert.ok(line?.includes('...'));
+  assert.ok(!line?.includes('/tmp/'));
+});
+
+test('renderToolsLine handles trailing slash paths', () => {
+  const ctx = baseContext();
+  ctx.transcript.tools = [
+    {
+      id: 'tool-1',
+      name: 'Read',
+      target: '/tmp/very/long/path/with/trailing/',
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = renderToolsLine(ctx);
+  assert.ok(line?.includes('...'));
+});
+
+test('renderToolsLine preserves short targets and handles missing targets', () => {
+  const ctx = baseContext();
+  ctx.transcript.tools = [
+    {
+      id: 'tool-1',
+      name: 'Read',
+      target: 'short.txt',
+      status: 'running',
+      startTime: new Date(0),
+    },
+    {
+      id: 'tool-2',
+      name: 'Write',
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = renderToolsLine(ctx);
+  assert.ok(line?.includes('short.txt'));
+  assert.ok(line?.includes('Write'));
+});
+
+test('renderToolsLine returns null when tools are unrecognized', () => {
+  const ctx = baseContext();
+  ctx.transcript.tools = [
+    {
+      id: 'tool-1',
+      name: 'WeirdTool',
+      status: 'unknown',
+      startTime: new Date(0),
+    },
+  ];
+
+  assert.equal(renderToolsLine(ctx), null);
+});
+
+test('renderAgentsLine returns null when no agents exist', () => {
+  const ctx = baseContext();
+  assert.equal(renderAgentsLine(ctx), null);
 });
 
 test('renderAgentsLine renders completed agents', () => {
@@ -87,6 +214,55 @@ test('renderAgentsLine renders completed agents', () => {
   assert.ok(line?.includes('haiku'));
 });
 
+test('renderAgentsLine truncates long descriptions and formats elapsed time', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'agent-1',
+      type: 'explore',
+      model: 'haiku',
+      description: 'A very long description that should be truncated in the HUD output',
+      status: 'completed',
+      startTime: new Date(0),
+      endTime: new Date(1500),
+    },
+    {
+      id: 'agent-2',
+      type: 'analyze',
+      status: 'completed',
+      startTime: new Date(0),
+      endTime: new Date(65000),
+    },
+  ];
+
+  const line = renderAgentsLine(ctx);
+  assert.ok(line?.includes('...'));
+  assert.ok(line?.includes('2s'));
+  assert.ok(line?.includes('1m'));
+});
+
+test('renderAgentsLine renders running agents with live elapsed time', () => {
+  const ctx = baseContext();
+  const originalNow = Date.now;
+  Date.now = () => 2000;
+
+  try {
+    ctx.transcript.agents = [
+      {
+        id: 'agent-1',
+        type: 'plan',
+        status: 'running',
+        startTime: new Date(0),
+      },
+    ];
+
+    const line = renderAgentsLine(ctx);
+    assert.ok(line?.includes('◐'));
+    assert.ok(line?.includes('2s'));
+  } finally {
+    Date.now = originalNow;
+  }
+});
 test('renderTodosLine handles in-progress and completed-only cases', () => {
   const ctx = baseContext();
   ctx.transcript.todos = [
@@ -97,4 +273,35 @@ test('renderTodosLine handles in-progress and completed-only cases', () => {
 
   ctx.transcript.todos = [{ content: 'First task', status: 'completed' }];
   assert.ok(renderTodosLine(ctx)?.includes('All todos complete'));
+});
+
+test('renderTodosLine returns null when no todos are in progress', () => {
+  const ctx = baseContext();
+  ctx.transcript.todos = [
+    { content: 'First task', status: 'completed' },
+    { content: 'Second task', status: 'pending' },
+  ];
+  assert.equal(renderTodosLine(ctx), null);
+});
+
+test('renderTodosLine truncates long todo content', () => {
+  const ctx = baseContext();
+  ctx.transcript.todos = [
+    {
+      content: 'This is a very long todo content that should be truncated for display',
+      status: 'in_progress',
+    },
+  ];
+  const line = renderTodosLine(ctx);
+  assert.ok(line?.includes('...'));
+});
+
+test('renderTodosLine returns null when no todos exist', () => {
+  const ctx = baseContext();
+  assert.equal(renderTodosLine(ctx), null);
+});
+
+test('renderToolsLine returns null when no tools exist', () => {
+  const ctx = baseContext();
+  assert.equal(renderToolsLine(ctx), null);
 });

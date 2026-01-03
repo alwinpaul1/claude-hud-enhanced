@@ -44,11 +44,25 @@ npm test
 
 This runs `npm run build` and then executes Node's built-in test runner.
 
+To generate coverage:
+
+```bash
+npm run test:coverage
+```
+
+To update snapshots:
+
+```bash
+npm run test:update-snapshots
+```
+
 ## CI Gate (recommended)
 
 - `npm ci`
 - `npm run build`
 - `npm test`
+
+The provided GitHub Actions workflow runs `npm run test:coverage` on Node 18 and 20.
 
 These steps should be required in PR checks to ensure new changes do not regress existing behavior.
 

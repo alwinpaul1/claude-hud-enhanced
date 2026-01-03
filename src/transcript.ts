@@ -140,7 +140,6 @@ function extractTarget(toolName: string, input?: Record<string, unknown>): strin
     case 'Bash':
       const cmd = input.command as string;
       return cmd?.slice(0, 30) + (cmd?.length > 30 ? '...' : '');
-    default:
-      return undefined;
   }
+  return undefined;
 }
