@@ -99,9 +99,9 @@ The plugin manifest is in `.claude-plugin/plugin.json` (metadata only - name, de
 
 **StatusLine configuration** must be added to the user's `~/.claude/settings.json` via `/claude-hud:setup`.
 
-The setup command configures the path to the installed plugin's dist/index.js.
+The setup command adds an auto-updating command that finds the latest installed version at runtime.
 
-Note: `statusLine` is NOT a valid plugin.json field. It must be configured in settings.json after plugin installation. Re-run `/claude-hud:setup` after updating the plugin.
+Note: `statusLine` is NOT a valid plugin.json field. It must be configured in settings.json after plugin installation. Updates are automatic - no need to re-run setup.
 
 ## Dependencies
 

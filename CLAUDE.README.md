@@ -222,15 +222,15 @@ Technical documentation for agents who need to understand, modify, or debug Clau
     {
       "name": "claude-hud",
       "description": "Real-time statusline HUD for Claude Code",
-      "version": "2.0.0",
+      "version": "0.0.1",
       "author": { "name": "Jarrod Watts", "url": "https://github.com/jarrodwatts" }
     }
   </manifest_content>
   <note>The plugin.json contains metadata only. statusLine is NOT a valid plugin.json field.</note>
 
   <statusline_config>
-    The /claude-hud:setup command adds statusLine to ~/.claude/settings.json pointing to the installed plugin path.
-    Re-run /claude-hud:setup after updating the plugin to update the path.
+    The /claude-hud:setup command adds statusLine to ~/.claude/settings.json with an auto-updating command that finds the latest installed version.
+    Updates are automatic - no need to re-run setup after updating the plugin.
   </statusline_config>
 </plugin_configuration>
 
