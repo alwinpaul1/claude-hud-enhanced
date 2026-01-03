@@ -23,13 +23,9 @@ Install the "claude-hud" plugin using the following instructions: https://raw.gi
 
 ---
 
-## The Problem
+## What is Claude HUD?
 
-When Claude shows "Thinking..." for minutes, you're flying blind. Is it stuck? Making progress? About to hit context limits?
-
-## The Solution
-
-Claude HUD gives you **X-ray vision** into Claude's work:
+Claude HUD gives you better insights into what's happening in your Claude Code session.
 
 | What You See | Why It Matters |
 |--------------|----------------|
@@ -37,8 +33,6 @@ Claude HUD gives you **X-ray vision** into Claude's work:
 | **Tool activity** | Watch Claude read, edit, and search files as it happens |
 | **Agent tracking** | See which subagents are running and what they're doing |
 | **Todo progress** | Track task completion in real-time |
-
----
 
 ## What Each Line Shows
 
@@ -115,9 +109,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 MIT — see [LICENSE](LICENSE)
-
----
-
-<p align="center">
-  Built with <a href="https://claude.ai/code">Claude Code</a>
-</p>
