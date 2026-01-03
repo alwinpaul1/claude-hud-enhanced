@@ -1,5 +1,0 @@
-{"schemaVersion":1,"event":"UserPromptSubmit","session":"fixture","ts":1,"prompt":"Hello"}
-{"schemaVersion":1,"event":"PreToolUse","tool":"Read","toolUseId":"tool-1","input":{"file_path":"README.md"},"response":null,"session":"fixture","ts":2}
-{"schemaVersion":1,"event":"PostToolUse","tool":"Read","toolUseId":"tool-1","input":null,"response":{"duration_ms":200},"session":"fixture","ts":2}
-{"schemaVersion":1,"event":"PreToolUse","tool":"TodoWrite","toolUseId":"tool-2","input":{"todos":[{"content":"Ship HUD tests","status":"in_progress"}]},"response":null,"session":"fixture","ts":3}
-{"schemaVersion":1,"event":"Stop","tool":null,"input":null,"response":null,"session":"fixture","ts":4}
