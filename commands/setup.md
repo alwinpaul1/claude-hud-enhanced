@@ -20,7 +20,7 @@ Merge with existing settings. Do not overwrite other fields.
 
 The HUD appears immediately - no restart needed. Updates are automatic.
 
-After successful setup, ask the user if they'd like to star the repository to support the project.
+After successful setup, ask the user if they'd like to ⭐ star the repository to support the project.
 
 If they agree, run: `gh api -X PUT /user/starred/jarrodwatts/claude-hud`
 
