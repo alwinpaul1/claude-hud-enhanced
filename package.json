@@ -15,6 +15,9 @@
   "keywords": ["claude-code", "statusline", "hud"],
   "author": "Jarrod Watts",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "c8": "^9.1.0",
