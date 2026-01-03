@@ -23,7 +23,7 @@ Examples of unacceptable behavior include:
 
 Community leaders are responsible for clarifying standards of acceptable behavior and may take appropriate action in response to unacceptable behavior.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the maintainer at: security@jarrodwatts.com.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the maintainer at: jarrodwttsyt@gmail.com.
 
 ## Attribution
 
