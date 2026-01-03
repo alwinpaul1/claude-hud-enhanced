@@ -1,6 +1,6 @@
 # Claude HUD
 
-A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress. Always visible below your input, zero config required.
+A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress. Always visible below your input.
 
 [![License](https://img.shields.io/github/license/jarrodwatts/claude-hud?v=2)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
@@ -27,9 +27,21 @@ Or, if you prefer human instructions:
 /plugin install claude-hud@claude-hud
 ```
 
-**Step 3: Restart Claude Code**
+**Step 3: Add statusLine to your settings**
 
-The statusline will then appear automatically below your input.
+Add this to your `~/.claude/settings.json`:
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/cache/claude-hud/claude-hud/dist/index.js"
+  }
+}
+```
+
+**Step 4: Restart Claude Code**
+
+The statusline will then appear below your input.
 
 
 
@@ -94,7 +106,6 @@ Claude Code → stdin JSON → claude-hud → stdout → displayed in your termi
 - Native token data from Claude Code (not estimated)
 - Parses the transcript for tool/agent activity
 - Updates every ~300ms
-- Zero configuration required
 
 ---
 
