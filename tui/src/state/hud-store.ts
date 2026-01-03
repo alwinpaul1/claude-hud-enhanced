@@ -49,7 +49,7 @@ export class HudStore {
   private readonly emitIntervalMs: number;
   private settingsError: string | null = null;
   private configError: string | null = null;
-  private refreshing = false;
+  private refreshPromise: Promise<void> | null = null;
 
   constructor(options: HudStoreOptions) {
     if (options.initialTranscriptPath) {
@@ -201,9 +201,17 @@ export class HudStore {
     this.emit();
   };
 
-  private async refreshEnvironment(): Promise<void> {
-    if (this.refreshing) return;
-    this.refreshing = true;
+  private refreshEnvironment(): Promise<void> {
+    if (this.refreshPromise) return this.refreshPromise;
+
+    this.refreshPromise = this.doRefreshEnvironment().finally(() => {
+      this.refreshPromise = null;
+    });
+
+    return this.refreshPromise;
+  }
+
+  private async doRefreshEnvironment(): Promise<void> {
     try {
       const [settingsResult, configResult] = await Promise.all([
         this.settingsReader.readWithStatusAsync(),
@@ -246,8 +254,6 @@ export class HudStore {
       this.emit();
     } catch (err) {
       logger.warn('HudStore', 'Environment refresh failed', { err });
-    } finally {
-      this.refreshing = false;
     }
   }
 
