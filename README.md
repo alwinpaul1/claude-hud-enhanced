@@ -112,8 +112,8 @@ git clone https://github.com/jarrodwatts/claude-hud
 cd claude-hud
 
 # Install & build
-bun install
-bun run build
+npm ci
+npm run build
 
 # Test with sample data
 echo '{"model":{"display_name":"Opus"},"context_window":{"current_usage":{"input_tokens":45000},"context_window_size":200000}}' | node dist/index.js
@@ -126,6 +126,22 @@ npm test
 ```
 
 See `TESTING.md` for the full testing strategy and contribution expectations.
+
+## Contributing
+
+See `CONTRIBUTING.md` for guidelines and `CODE_OF_CONDUCT.md` for community standards.
+
+## Support
+
+See `SUPPORT.md` for support scope and contact guidance.
+
+## Maintainers
+
+See `MAINTAINERS.md`.
+
+## Plugin Release
+
+See `RELEASING.md` for the checklist to ship a new Claude Code plugin release.
 
 ## License
 

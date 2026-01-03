@@ -9,8 +9,8 @@ Claude HUD is a Claude Code plugin that displays a real-time multi-line statusli
 ## Build Commands
 
 ```bash
-bun install          # Install dependencies
-bun run build        # Build TypeScript to dist/
+npm ci               # Install dependencies
+npm run build        # Build TypeScript to dist/
 
 # Test with sample stdin data
 echo '{"model":{"display_name":"Opus"},"context_window":{"current_usage":{"input_tokens":45000},"context_window_size":200000}}' | node dist/index.js
