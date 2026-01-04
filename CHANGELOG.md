@@ -2,15 +2,14 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [2.0.0] - 2025-01-02
+## [0.0.1] - 2025-01-04
 
-### Changed
-- Complete rewrite from split-pane TUI to inline statusline
-- New statusline renderer with multi-line output
-- Transcript-driven tool/agent/todo parsing
-- Native context usage from stdin JSON
+Initial release of Claude HUD as a Claude Code statusline plugin.
 
-### Removed
-- Hook-based capture flow
-- Split-pane UI and related components
-
+### Features
+- Real-time context usage monitoring with color-coded progress bar
+- Active tool tracking with completion counts
+- Running agent status with elapsed time
+- Todo progress display
+- Native token data from Claude Code stdin
+- Transcript parsing for tool/agent/todo activity
