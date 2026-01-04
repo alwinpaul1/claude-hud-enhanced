@@ -51,7 +51,6 @@ tmp/
 temp/
 *.tmp
 
-# Lock files (optional - keep bun.lock for reproducibility)
-# bun.lock
-package-lock.json
+# Lock files (keep package-lock.json for npm)
 yarn.lock
+bun.lock
