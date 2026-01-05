@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { RenderContext } from '../types.js';
 import { getContextPercent, getModelName } from '../stdin.js';
 import { coloredBar, cyan, dim, red, getContextColor, RESET } from './colors.js';
@@ -8,6 +9,12 @@ export function renderSessionLine(ctx: RenderContext): string {
   const bar = coloredBar(percent);
 
   const parts: string[] = [];
+
+  // Add project folder name for context
+  if (ctx.stdin.cwd) {
+    const projectName = path.basename(ctx.stdin.cwd) || ctx.stdin.cwd;
+    parts.push(cyan(`📁 ${projectName}`));
+  }
 
   parts.push(`${cyan(`[${model}]`)} ${bar} ${getContextColor(percent)}${percent}%${RESET}`);
 
