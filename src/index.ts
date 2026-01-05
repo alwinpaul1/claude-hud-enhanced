@@ -2,6 +2,7 @@ import { readStdin } from './stdin.js';
 import { parseTranscript } from './transcript.js';
 import { render } from './render/index.js';
 import { countConfigs } from './config-reader.js';
+import { getGitBranch } from './git.js';
 import type { RenderContext } from './types.js';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +10,7 @@ export type MainDeps = {
   readStdin: typeof readStdin;
   parseTranscript: typeof parseTranscript;
   countConfigs: typeof countConfigs;
+  getGitBranch: typeof getGitBranch;
   render: typeof render;
   now: () => number;
   log: (...args: unknown[]) => void;
@@ -19,6 +21,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     readStdin,
     parseTranscript,
     countConfigs,
+    getGitBranch,
     render,
     now: () => Date.now(),
     log: console.log,
@@ -38,6 +41,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
 
     const { claudeMdCount, rulesCount, mcpCount, hooksCount } = await deps.countConfigs(stdin.cwd);
 
+    const gitBranch = await deps.getGitBranch(stdin.cwd);
+
     const sessionDuration = formatSessionDuration(transcript.sessionStart, deps.now);
 
     const ctx: RenderContext = {
@@ -48,6 +53,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       mcpCount,
       hooksCount,
       sessionDuration,
+      gitBranch,
     };
 
     deps.render(ctx);
