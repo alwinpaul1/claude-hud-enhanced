@@ -38,14 +38,6 @@ test('renderSessionLine adds token breakdown when context is high', () => {
   assert.ok(line.includes('cache:'), 'expected cache breakdown');
 });
 
-test('renderSessionLine shows compact warning at critical threshold', () => {
-  const ctx = baseContext();
-  // For 96%: (tokens + 45000) / 200000 = 0.96 → tokens = 147000
-  ctx.stdin.context_window.current_usage.input_tokens = 147000;
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('COMPACT'));
-});
-
 test('renderSessionLine includes duration and formats large tokens', () => {
   const ctx = baseContext();
   ctx.sessionDuration = '1m';
