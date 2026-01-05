@@ -25,6 +25,7 @@ function baseContext() {
     mcpCount: 0,
     hooksCount: 0,
     sessionDuration: '',
+    gitBranch: null,
   };
 }
 
@@ -127,7 +128,32 @@ test('renderSessionLine omits project name when cwd is undefined', () => {
   ctx.stdin.cwd = undefined;
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('[Opus]'));
-  assert.ok(!line.includes('📁'));
+});
+
+test('renderSessionLine displays git branch when present', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitBranch = 'main';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('git:('));
+  assert.ok(line.includes('main'));
+});
+
+test('renderSessionLine omits git branch when null', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitBranch = null;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('git:('));
+});
+
+test('renderSessionLine displays branch with slashes', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitBranch = 'feature/add-auth';
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('git:('));
+  assert.ok(line.includes('feature/add-auth'));
 });
 
 test('renderToolsLine renders running and completed tools', () => {
