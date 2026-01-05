@@ -91,7 +91,6 @@ Lines are conditionally shown:
 | <70% | Green | Normal |
 | 70-85% | Yellow | Warning |
 | >85% | Red | Show token breakdown |
-| >95% | Red | Show ⚠️ COMPACT |
 
 ## Plugin Configuration
 

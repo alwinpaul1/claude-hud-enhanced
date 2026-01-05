@@ -49,10 +49,6 @@ export function renderSessionLine(ctx: RenderContext): string {
     }
   }
 
-  if (percent >= 95) {
-    line += ` ${red('⚠️ COMPACT')}`;
-  }
-
   return line;
 }
 

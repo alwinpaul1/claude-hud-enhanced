@@ -212,8 +212,7 @@ Technical documentation for agents who need to understand, modify, or debug Clau
 <context_thresholds>
   <threshold range="0-70%" color="green" meaning="Healthy" />
   <threshold range="70-85%" color="yellow" meaning="Warning" />
-  <threshold range="85-95%" color="red" meaning="Critical, shows token breakdown" />
-  <threshold range="95%+" color="red" meaning="Shows COMPACT warning" />
+  <threshold range="85%+" color="red" meaning="Critical, shows token breakdown" />
 </context_thresholds>
 
 <plugin_configuration>

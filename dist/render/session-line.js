@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { getContextPercent, getModelName } from '../stdin.js';
-import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET } from './colors.js';
+import { coloredBar, cyan, dim, magenta, yellow, getContextColor, RESET } from './colors.js';
 export function renderSessionLine(ctx) {
     const model = getModelName(ctx.stdin);
     const percent = getContextPercent(ctx.stdin);
@@ -35,9 +35,6 @@ export function renderSessionLine(ctx) {
             const cache = formatTokens((usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0));
             line += dim(` (in: ${input}, cache: ${cache})`);
         }
-    }
-    if (percent >= 95) {
-        line += ` ${red('⚠️ COMPACT')}`;
     }
     return line;
 }
