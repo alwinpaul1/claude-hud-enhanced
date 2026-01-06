@@ -2,6 +2,24 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.3] - 2025-01-06
+
+### Added
+- Display git branch name in session line (#23)
+- Display project folder name in session line (#18)
+- Dynamic platform and runtime detection in setup command (#24)
+
+### Changed
+- Remove redundant COMPACT warning at high context usage (#27)
+
+### Fixed
+- Skip auto-review for fork PRs to prevent CI failures (#25)
+
+### Dependencies
+- Bump @types/node from 20.19.27 to 25.0.3 (#2)
+
+---
+
 ## [0.0.2] - 2025-01-04
 
 ### Security
