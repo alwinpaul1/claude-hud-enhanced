@@ -3,16 +3,11 @@ import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
 import type { UsageData } from './types.js';
+import { createDebug } from './debug.js';
 
 export type { UsageData } from './types.js';
 
-// Debug logging (enabled via DEBUG=claude-hud or DEBUG=*)
-const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
-function debug(msg: string, ...args: unknown[]): void {
-  if (DEBUG) {
-    console.error(`[claude-hud:usage] ${msg}`, ...args);
-  }
-}
+const debug = createDebug('usage');
 
 interface CredentialsFile {
   claudeAiOauth?: {

@@ -253,6 +253,94 @@ test('countConfigs honors project and global config locations', async () => {
   }
 });
 
+test('countConfigs excludes disabled user-scope MCPs', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    // 3 MCPs defined in settings.json
+    await writeFile(
+      path.join(homeDir, '.claude', 'settings.json'),
+      JSON.stringify({ mcpServers: { server1: {}, server2: {}, server3: {} } }),
+      'utf8'
+    );
+    // 1 MCP disabled in ~/.claude.json
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({ disabledMcpServers: ['server2'] }),
+      'utf8'
+    );
+
+    const counts = await countConfigs();
+    assert.equal(counts.mcpCount, 2); // 3 - 1 disabled = 2
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('countConfigs excludes disabled project .mcp.json servers', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    await mkdir(path.join(projectDir, '.claude'), { recursive: true });
+
+    // 4 MCPs in .mcp.json
+    await writeFile(
+      path.join(projectDir, '.mcp.json'),
+      JSON.stringify({ mcpServers: { mcp1: {}, mcp2: {}, mcp3: {}, mcp4: {} } }),
+      'utf8'
+    );
+    // 2 disabled via disabledMcpjsonServers
+    await writeFile(
+      path.join(projectDir, '.claude', 'settings.local.json'),
+      JSON.stringify({ disabledMcpjsonServers: ['mcp2', 'mcp4'] }),
+      'utf8'
+    );
+
+    const counts = await countConfigs(projectDir);
+    assert.equal(counts.mcpCount, 2); // 4 - 2 disabled = 2
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test('countConfigs handles all MCPs disabled', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    // 2 MCPs defined
+    await writeFile(
+      path.join(homeDir, '.claude', 'settings.json'),
+      JSON.stringify({ mcpServers: { serverA: {}, serverB: {} } }),
+      'utf8'
+    );
+    // Both disabled
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({ disabledMcpServers: ['serverA', 'serverB'] }),
+      'utf8'
+    );
+
+    const counts = await countConfigs();
+    assert.equal(counts.mcpCount, 0); // All disabled
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
 test('countConfigs tolerates rule directory read errors', async () => {
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
   const originalHome = process.env.HOME;
@@ -267,6 +355,171 @@ test('countConfigs tolerates rule directory read errors', async () => {
     assert.equal(counts.rulesCount, 0);
   } finally {
     fs.chmodSync(rulesDir, 0o755);
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('countConfigs ignores non-string values in disabledMcpServers', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    // 3 MCPs defined
+    await writeFile(
+      path.join(homeDir, '.claude', 'settings.json'),
+      JSON.stringify({ mcpServers: { server1: {}, server2: {}, server3: {} } }),
+      'utf8'
+    );
+    // disabledMcpServers contains mixed types - only 'server2' is a valid string
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({ disabledMcpServers: [123, null, 'server2', { name: 'server3' }, [], true] }),
+      'utf8'
+    );
+
+    const counts = await countConfigs();
+    assert.equal(counts.mcpCount, 2); // Only 'server2' disabled, server1 and server3 remain
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('countConfigs counts same-named servers in different scopes separately', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-project-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    await mkdir(path.join(projectDir, '.claude'), { recursive: true });
+
+    // User scope: server named 'shared-server'
+    await writeFile(
+      path.join(homeDir, '.claude', 'settings.json'),
+      JSON.stringify({ mcpServers: { 'shared-server': {}, 'user-only': {} } }),
+      'utf8'
+    );
+
+    // Project scope: also has 'shared-server' (different config, same name)
+    await writeFile(
+      path.join(projectDir, '.mcp.json'),
+      JSON.stringify({ mcpServers: { 'shared-server': {}, 'project-only': {} } }),
+      'utf8'
+    );
+
+    const counts = await countConfigs(projectDir);
+    // 'shared-server' counted in BOTH scopes (user + project) = 4 total
+    assert.equal(counts.mcpCount, 4);
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test('countConfigs uses case-sensitive matching for disabled servers', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    // MCP named 'MyServer' (mixed case)
+    await writeFile(
+      path.join(homeDir, '.claude', 'settings.json'),
+      JSON.stringify({ mcpServers: { MyServer: {}, otherServer: {} } }),
+      'utf8'
+    );
+    // Try to disable with wrong case - should NOT work
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({ disabledMcpServers: ['myserver', 'MYSERVER', 'OTHERSERVER'] }),
+      'utf8'
+    );
+
+    const counts = await countConfigs();
+    // Both servers should still be enabled (case mismatch means not disabled)
+    assert.equal(counts.mcpCount, 2);
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+// Regression test for GitHub Issue #3:
+// "MCP count showing 5 when user has 6, still showing 5 when all disabled"
+// https://github.com/jarrodwatts/claude-hud/issues/3
+test('Issue #3: MCP count updates correctly when servers are disabled', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+
+    // User has 6 MCPs configured (simulating the issue reporter's setup)
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({
+        mcpServers: {
+          mcp1: { command: 'cmd1' },
+          mcp2: { command: 'cmd2' },
+          mcp3: { command: 'cmd3' },
+          mcp4: { command: 'cmd4' },
+          mcp5: { command: 'cmd5' },
+          mcp6: { command: 'cmd6' },
+        },
+      }),
+      'utf8'
+    );
+
+    // Scenario 1: No servers disabled - should show 6
+    let counts = await countConfigs();
+    assert.equal(counts.mcpCount, 6, 'Should show all 6 MCPs when none disabled');
+
+    // Scenario 2: 1 server disabled - should show 5 (this was the initial bug report state)
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({
+        mcpServers: {
+          mcp1: { command: 'cmd1' },
+          mcp2: { command: 'cmd2' },
+          mcp3: { command: 'cmd3' },
+          mcp4: { command: 'cmd4' },
+          mcp5: { command: 'cmd5' },
+          mcp6: { command: 'cmd6' },
+        },
+        disabledMcpServers: ['mcp1'],
+      }),
+      'utf8'
+    );
+    counts = await countConfigs();
+    assert.equal(counts.mcpCount, 5, 'Should show 5 MCPs when 1 is disabled');
+
+    // Scenario 3: ALL servers disabled - should show 0 (this was the main bug)
+    await writeFile(
+      path.join(homeDir, '.claude.json'),
+      JSON.stringify({
+        mcpServers: {
+          mcp1: { command: 'cmd1' },
+          mcp2: { command: 'cmd2' },
+          mcp3: { command: 'cmd3' },
+          mcp4: { command: 'cmd4' },
+          mcp5: { command: 'cmd5' },
+          mcp6: { command: 'cmd6' },
+        },
+        disabledMcpServers: ['mcp1', 'mcp2', 'mcp3', 'mcp4', 'mcp5', 'mcp6'],
+      }),
+      'utf8'
+    );
+    counts = await countConfigs();
+    assert.equal(counts.mcpCount, 0, 'Should show 0 MCPs when all are disabled');
+  } finally {
     process.env.HOME = originalHome;
     await rm(homeDir, { recursive: true, force: true });
   }
