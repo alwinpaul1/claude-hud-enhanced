@@ -51,6 +51,14 @@ Claude Code → stdin JSON → parse → render lines → stdout → Claude Code
 - Hooks count from `~/.claude/settings.json` (hooks)
 - Rules count from CLAUDE.md files
 
+**From OAuth credentials** (`~/.claude/.credentials.json`, when `display.showUsage` enabled):
+- `claudeAiOauth.accessToken` - OAuth token for API calls
+- `claudeAiOauth.subscriptionType` - User's plan (Pro, Max, Team)
+
+**From Anthropic Usage API** (`api.anthropic.com/api/oauth/usage`):
+- 5-hour and 7-day usage percentages
+- Reset timestamps (cached 60s success, 15s failure)
+
 ### File Structure
 
 ```
@@ -59,10 +67,13 @@ src/
 ├── stdin.ts           # Parse Claude's JSON input
 ├── transcript.ts      # Parse transcript JSONL
 ├── config-reader.ts   # Read MCP/rules configs
+├── config.ts          # Load/validate user config
+├── git.ts             # Git status (branch, dirty, ahead/behind)
+├── usage-api.ts       # Fetch usage from Anthropic API
 ├── types.ts           # TypeScript interfaces
 └── render/
     ├── index.ts       # Main render coordinator
-    ├── session-line.ts   # Line 1: model, context, rules, MCPs
+    ├── session-line.ts   # Line 1: model, context, project, git, usage
     ├── tools-line.ts     # Line 2: tool activity
     ├── agents-line.ts    # Line 3: agent status
     ├── todos-line.ts     # Line 4: todo progress
@@ -72,7 +83,7 @@ src/
 ### Output Format
 
 ```
-[Opus] ████████░░ 45% | 📋 3 rules | 🔌 5 MCPs | ⏱️ 12m
+[Opus | Pro] █████░░░░░ 45% | my-project git:(main) | 2 CLAUDE.md | 5h: 25% | ⏱️ 5m
 ◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2
 ◐ explore [haiku]: Finding auth code (2m 15s)
 ▸ Fix authentication bug (2/5)

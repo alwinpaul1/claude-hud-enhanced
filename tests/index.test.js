@@ -37,6 +37,7 @@ test('main logs an error when dependencies throw', async () => {
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitBranch: async () => null,
+    getUsage: async () => null,
     render: () => {},
     now: () => Date.now(),
     log: (...args) => logs.push(args.join(' ')),
@@ -54,6 +55,7 @@ test('main logs unknown error for non-Error throws', async () => {
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitBranch: async () => null,
+    getUsage: async () => null,
     render: () => {},
     now: () => Date.now(),
     log: (...args) => logs.push(args.join(' ')),
@@ -97,6 +99,7 @@ test('main executes the happy path with default dependencies', async () => {
       parseTranscript: async () => ({ tools: [], agents: [], todos: [], sessionStart: new Date(0) }),
       countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
       getGitBranch: async () => null,
+      getUsage: async () => null,
       render: (ctx) => {
         renderedContext = ctx;
       },
@@ -108,7 +111,7 @@ test('main executes the happy path with default dependencies', async () => {
   assert.equal(renderedContext?.sessionDuration, '1m');
 });
 
-test('main includes git branch in render context', async () => {
+test('main includes git status in render context', async () => {
   let renderedContext;
 
   await main({
@@ -119,11 +122,46 @@ test('main includes git branch in render context', async () => {
     }),
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => 'feature/test',
+    getGitStatus: async () => ({ branch: 'feature/test', isDirty: false, ahead: 0, behind: 0 }),
+    getUsage: async () => null,
+    loadConfig: async () => ({
+      layout: 'default',
+      pathLevels: 1,
+      gitStatus: { enabled: true, showDirty: true, showAheadBehind: false },
+      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showTools: true, showAgents: true, showTodos: true },
+    }),
     render: (ctx) => {
       renderedContext = ctx;
     },
   });
 
-  assert.equal(renderedContext?.gitBranch, 'feature/test');
+  assert.equal(renderedContext?.gitStatus?.branch, 'feature/test');
+});
+
+test('main includes usageData in render context', async () => {
+  let renderedContext;
+  const mockUsageData = {
+    planName: 'Max',
+    fiveHour: 50,
+    sevenDay: 25,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    limitReached: false,
+  };
+
+  await main({
+    readStdin: async () => ({
+      model: { display_name: 'Opus' },
+      context_window: { context_window_size: 100, current_usage: { input_tokens: 10 } },
+    }),
+    parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
+    countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
+    getGitBranch: async () => null,
+    getUsage: async () => mockUsageData,
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.deepEqual(renderedContext?.usageData, mockUsageData);
 });

@@ -1,6 +1,6 @@
 {
   "name": "claude-hud",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Real-time statusline HUD for Claude Code",
   "type": "module",
   "main": "dist/index.js",
@@ -12,7 +12,11 @@
     "test:update-snapshots": "UPDATE_SNAPSHOTS=1 npm test",
     "test:stdin": "echo '{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"current_usage\":{\"input_tokens\":45000},\"context_window_size\":200000},\"transcript_path\":\"/tmp/test.jsonl\"}' | node dist/index.js"
   },
-  "keywords": ["claude-code", "statusline", "hud"],
+  "keywords": [
+    "claude-code",
+    "statusline",
+    "hud"
+  ],
   "author": "Jarrod Watts",
   "license": "MIT",
   "engines": {
