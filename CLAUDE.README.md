@@ -159,7 +159,21 @@ Technical documentation for agents who need to understand, modify, or debug Clau
     </file>
     <file name="config-reader.ts" purpose="Count configuration items">
       Counts CLAUDE.md files, rules, MCP servers, and hooks.
-      Searches cwd, ancestors, and ~/.claude/ directories.
+      Searches cwd, ~/.claude/, and project .claude/ directories.
+    </file>
+    <file name="config.ts" purpose="Load and validate user configuration">
+      Reads config.json from ~/.claude/plugins/claude-hud/.
+      Validates and merges user settings with defaults.
+      Exports HudConfig interface and loadConfig function.
+    </file>
+    <file name="git.ts" purpose="Git repository status">
+      Gets branch name, dirty state, and ahead/behind counts.
+      Uses execFile with array args for safe command execution.
+    </file>
+    <file name="usage-api.ts" purpose="Fetch usage from Anthropic API">
+      Reads OAuth credentials from ~/.claude/.credentials.json.
+      Calls api.anthropic.com/api/oauth/usage endpoint (opt-in).
+      Caches results (60s success, 15s failure).
     </file>
     <file name="types.ts" purpose="TypeScript interfaces">
       StdinData, ToolEntry, AgentEntry, TodoItem, TranscriptData, RenderContext.
@@ -172,7 +186,7 @@ Technical documentation for agents who need to understand, modify, or debug Clau
       Conditionally shows lines based on data presence.
     </file>
     <file name="session-line.ts" purpose="Line 1: Session info">
-      Renders: [Model] ████░░ 45% | 2 CLAUDE.md | 8 rules | 6 MCPs | 6 hooks | ⏱️ 12m
+      Renders: [Model | Plan] █████░░░░░ 45% | project git:(branch) | 2 CLAUDE.md | 5h: 25% | ⏱️ 5m
       Context bar colors: green (&lt;70%), yellow (70-85%), red (&gt;85%).
     </file>
     <file name="tools-line.ts" purpose="Line 2: Tool activity">
@@ -196,7 +210,7 @@ Technical documentation for agents who need to understand, modify, or debug Clau
 
 <output_format>
   <line number="1" name="session" always_shown="true">
-    [Model] ████████░░ 45% | 2 CLAUDE.md | 8 rules | 6 MCPs | 6 hooks | ⏱️ 12m
+    [Model | Plan] █████░░░░░ 45% | project git:(branch) | 2 CLAUDE.md | 5h: 25% | ⏱️ 5m
   </line>
   <line number="2" name="tools" shown_if="any tools used">
     ◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2

@@ -2,6 +2,28 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.4] - 2026-01-07
+
+### Added
+- Configuration system via `~/.claude/plugins/claude-hud/config.json`
+- Interactive `/claude-hud:configure` skill for in-Claude configuration
+- Usage API integration showing 5h/7d rate limits (Pro/Max/Team)
+- Git status with dirty indicator and ahead/behind counts
+- Configurable path levels (1-3 directory segments)
+- Layout options: default and separators
+- Display toggles for all HUD elements
+
+### Fixed
+- Git status spacing: `main*↑2↓1` → `main* ↑2 ↓1`
+- Root path rendering: show `/` instead of empty
+- Windows path normalization
+
+### Credits
+- Config system, layouts, path levels, git toggle by @Tsopic (#32)
+- Usage API, configure skill, bug fixes by @melon-hub (#34)
+
+---
+
 ## [0.0.3] - 2025-01-06
 
 ### Added
