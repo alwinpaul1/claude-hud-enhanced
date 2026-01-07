@@ -2,13 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
-// Debug logging (enabled via DEBUG=claude-hud or DEBUG=*)
-const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
-function debug(msg, ...args) {
-    if (DEBUG) {
-        console.error(`[claude-hud:usage] ${msg}`, ...args);
-    }
-}
+import { createDebug } from './debug.js';
+const debug = createDebug('usage');
 // File-based cache (HUD runs as new process each render, so in-memory cache won't persist)
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const CACHE_FAILURE_TTL_MS = 15_000; // 15 seconds for failed requests
