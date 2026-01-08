@@ -15,7 +15,15 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
    ```bash
    ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1
    ```
-   If empty, the plugin is not installed. Tell user to install via marketplace first.
+   If empty, the plugin is not installed. **On Linux only** (if `uname -s` returns "Linux"), check for cross-device filesystem issue:
+   ```bash
+   [ "$(df --output=source ~/.claude /tmp 2>/dev/null | tail -2 | uniq | wc -l)" = "2" ] && echo "CROSS_DEVICE"
+   ```
+   If this outputs `CROSS_DEVICE`, explain that `/tmp` and `~/.claude` are on different filesystems, which causes `EXDEV: cross-device link not permitted` during installation. Provide the fix:
+   ```bash
+   mkdir -p ~/.cache/tmp && TMPDIR=~/.cache/tmp /plugin install claude-hud
+   ```
+   After they run this, re-check the plugin path and continue setup. For non-Linux systems (macOS, etc.), simply tell user to install via marketplace first.
 
 2. Get runtime absolute path (prefer bun for performance, fallback to node):
    ```bash
