@@ -1,7 +1,9 @@
 import type { RenderContext } from '../types.js';
 import { isLimitReached } from '../types.js';
-import { getContextPercent, getModelName } from '../stdin.js';
+import { getContextPercent, getBufferedPercent, getModelName } from '../stdin.js';
 import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET } from './colors.js';
+
+const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
 
 /**
  * Renders the full session line (model + context bar + project + git + counts + usage + duration).
@@ -9,7 +11,16 @@ import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET } f
  */
 export function renderSessionLine(ctx: RenderContext): string {
   const model = getModelName(ctx.stdin);
-  const percent = getContextPercent(ctx.stdin);
+
+  const rawPercent = getContextPercent(ctx.stdin);
+  const bufferedPercent = getBufferedPercent(ctx.stdin);
+  const autocompactMode = ctx.config?.display?.autocompactBuffer ?? 'enabled';
+  const percent = autocompactMode === 'disabled' ? rawPercent : bufferedPercent;
+
+  if (DEBUG && autocompactMode === 'disabled') {
+    console.error(`[claude-hud:context] autocompactBuffer=disabled, showing raw ${rawPercent}% (buffered would be ${bufferedPercent}%)`);
+  }
+
   const bar = coloredBar(percent);
 
   const parts: string[] = [];

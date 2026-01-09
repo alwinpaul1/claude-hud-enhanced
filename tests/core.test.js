@@ -6,17 +6,35 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseTranscript } from '../dist/transcript.js';
 import { countConfigs } from '../dist/config-reader.js';
-import { getContextPercent, getModelName } from '../dist/stdin.js';
+import { getContextPercent, getBufferedPercent, getModelName } from '../dist/stdin.js';
 import * as fs from 'node:fs';
 
 test('getContextPercent returns 0 when data is missing', () => {
   assert.equal(getContextPercent({}), 0);
   assert.equal(getContextPercent({ context_window: { context_window_size: 0 } }), 0);
+  assert.equal(getBufferedPercent({}), 0);
+  assert.equal(getBufferedPercent({ context_window: { context_window_size: 0 } }), 0);
 });
 
-test('getContextPercent includes cache tokens and autocompact buffer', () => {
-  // For 50%: (tokens + 45000) / 200000 = 0.5 → tokens = 55000
+test('getContextPercent returns raw percentage without buffer', () => {
+  // 55000 / 200000 = 27.5% → rounds to 28%
   const percent = getContextPercent({
+    context_window: {
+      context_window_size: 200000,
+      current_usage: {
+        input_tokens: 30000,
+        cache_creation_input_tokens: 12500,
+        cache_read_input_tokens: 12500,
+      },
+    },
+  });
+
+  assert.equal(percent, 28);
+});
+
+test('getBufferedPercent includes 22.5% buffer', () => {
+  // 55000 / 200000 = 27.5%, + 22.5% buffer = 50%
+  const percent = getBufferedPercent({
     context_window: {
       context_window_size: 200000,
       current_usage: {
@@ -31,7 +49,7 @@ test('getContextPercent includes cache tokens and autocompact buffer', () => {
 });
 
 test('getContextPercent handles missing input tokens', () => {
-  // For 25%: (tokens + 45000) / 200000 = 0.25 → tokens = 5000
+  // 5000 / 200000 = 2.5% → rounds to 3%
   const percent = getContextPercent({
     context_window: {
       context_window_size: 200000,
@@ -42,7 +60,28 @@ test('getContextPercent handles missing input tokens', () => {
     },
   });
 
-  assert.equal(percent, 25);
+  assert.equal(percent, 3);
+});
+
+test('getBufferedPercent scales to larger context windows', () => {
+  // Test with 1M context window: 45000 tokens + (1000000 * 0.225) buffer
+  // Raw: 45000 / 1000000 = 4.5% → 5%
+  // Buffered: (45000 + 225000) / 1000000 = 27% → 27%
+  const rawPercent = getContextPercent({
+    context_window: {
+      context_window_size: 1000000,
+      current_usage: { input_tokens: 45000 },
+    },
+  });
+  const bufferedPercent = getBufferedPercent({
+    context_window: {
+      context_window_size: 1000000,
+      current_usage: { input_tokens: 45000 },
+    },
+  });
+
+  assert.equal(rawPercent, 5);
+  assert.equal(bufferedPercent, 27);
 });
 
 test('getModelName prefers display name, then id, then fallback', () => {

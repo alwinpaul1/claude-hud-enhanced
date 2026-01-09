@@ -2,6 +2,20 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Context percentage now uses percentage-based buffer (22.5%) instead of hardcoded 45k tokens
+  - Scales correctly for enterprise context windows (>200k)
+- Add `display.autocompactBuffer` config option (`'enabled'` | `'disabled'`, default: `'enabled'`)
+  - `'enabled'`: Shows buffered % (matches `/context` when autocompact ON) - **default**
+  - `'disabled'`: Shows raw % (matches `/context` when autocompact OFF)
+
+### Credits
+- Ideas from [#30](https://github.com/jarrodwatts/claude-hud/pull/30) ([@r-firpo](https://github.com/r-firpo)), [#43](https://github.com/jarrodwatts/claude-hud/pull/43) ([@yansircc](https://github.com/yansircc)), [#49](https://github.com/jarrodwatts/claude-hud/pull/49) ([@StephenJoshii](https://github.com/StephenJoshii)) informed the final solution
+
+---
+
 ## [0.0.4] - 2026-01-07
 
 ### Added

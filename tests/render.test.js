@@ -31,7 +31,7 @@ function baseContext() {
       layout: 'default',
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false },
-      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true },
+      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true, autocompactBuffer: 'enabled' },
     },
   };
 }
@@ -496,5 +496,25 @@ test('renderSessionLine hides usage when showUsage config is false (hybrid toggl
   const line = renderSessionLine(ctx);
   assert.ok(!line.includes('5h:'), 'should not show usage when showUsage is false');
   assert.ok(!line.includes('Pro'), 'should not show plan name when showUsage is false');
+});
+
+test('renderSessionLine uses buffered percent when autocompactBuffer is enabled', () => {
+  const ctx = baseContext();
+  // 10000 tokens / 200000 = 5% raw, + 22.5% buffer = 28% buffered (rounded)
+  ctx.stdin.context_window.current_usage.input_tokens = 10000;
+  ctx.config.display.autocompactBuffer = 'enabled';
+  const line = renderSessionLine(ctx);
+  // Should show ~28% (buffered), not 5% (raw)
+  assert.ok(line.includes('28%'), `expected buffered percent 28%, got: ${line}`);
+});
+
+test('renderSessionLine uses raw percent when autocompactBuffer is disabled', () => {
+  const ctx = baseContext();
+  // 10000 tokens / 200000 = 5% raw
+  ctx.stdin.context_window.current_usage.input_tokens = 10000;
+  ctx.config.display.autocompactBuffer = 'disabled';
+  const line = renderSessionLine(ctx);
+  // Should show 5% (raw), not 28% (buffered)
+  assert.ok(line.includes('5%'), `expected raw percent 5%, got: ${line}`);
 });
 

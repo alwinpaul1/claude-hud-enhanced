@@ -111,23 +111,27 @@ describe('gitStatus configuration', () => {
 
 // Display configuration tests
 describe('display configuration', () => {
-  test('all display options are booleans', () => {
-    const displayOptions = Object.values(DEFAULT_CONFIG.display);
-    displayOptions.forEach(value => {
+  test('all boolean display options are booleans', () => {
+    const { autocompactBuffer, ...booleanOptions } = DEFAULT_CONFIG.display;
+    Object.values(booleanOptions).forEach(value => {
       assert.equal(typeof value, 'boolean');
     });
   });
 
-  test('all display options default to true', () => {
-    const displayOptions = Object.values(DEFAULT_CONFIG.display);
-    displayOptions.forEach(value => {
+  test('all boolean display options default to true', () => {
+    const { autocompactBuffer, ...booleanOptions } = DEFAULT_CONFIG.display;
+    Object.values(booleanOptions).forEach(value => {
       assert.equal(value, true);
     });
   });
 
-  test('has exactly 9 display options', () => {
+  test('autocompactBuffer defaults to enabled', () => {
+    assert.equal(DEFAULT_CONFIG.display.autocompactBuffer, 'enabled');
+  });
+
+  test('has exactly 10 display options', () => {
     const optionCount = Object.keys(DEFAULT_CONFIG.display).length;
-    assert.equal(optionCount, 9);
+    assert.equal(optionCount, 10);
   });
 });
 
@@ -154,6 +158,7 @@ describe('loadConfig behavior', () => {
     assert.ok('showDuration' in config.display);
     assert.ok('showTokenBreakdown' in config.display);
     assert.ok('showUsage' in config.display);
+    assert.ok('autocompactBuffer' in config.display);
     assert.ok('showTools' in config.display);
     assert.ok('showAgents' in config.display);
     assert.ok('showTodos' in config.display);
