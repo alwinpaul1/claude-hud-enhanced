@@ -1,4 +1,5 @@
 export type LayoutType = 'default' | 'separators';
+export type AutocompactBufferMode = 'enabled' | 'disabled';
 export interface HudConfig {
     layout: LayoutType;
     pathLevels: 1 | 2 | 3;
@@ -17,6 +18,7 @@ export interface HudConfig {
         showTools: boolean;
         showAgents: boolean;
         showTodos: boolean;
+        autocompactBuffer: AutocompactBufferMode;
     };
 }
 export declare const DEFAULT_CONFIG: HudConfig;

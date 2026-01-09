@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG = {
         showTools: true,
         showAgents: true,
         showTodos: true,
+        autocompactBuffer: 'enabled',
     },
 };
 export function getConfigPath() {
@@ -30,6 +31,9 @@ function validatePathLevels(value) {
 }
 function validateLayout(value) {
     return value === 'default' || value === 'separators';
+}
+function validateAutocompactBuffer(value) {
+    return value === 'enabled' || value === 'disabled';
 }
 function mergeConfig(userConfig) {
     const layout = validateLayout(userConfig.layout)
@@ -77,6 +81,9 @@ function mergeConfig(userConfig) {
         showTodos: typeof userConfig.display?.showTodos === 'boolean'
             ? userConfig.display.showTodos
             : DEFAULT_CONFIG.display.showTodos,
+        autocompactBuffer: validateAutocompactBuffer(userConfig.display?.autocompactBuffer)
+            ? userConfig.display.autocompactBuffer
+            : DEFAULT_CONFIG.display.autocompactBuffer,
     };
     return { layout, pathLevels, gitStatus, display };
 }
