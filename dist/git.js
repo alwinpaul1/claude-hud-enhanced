@@ -24,7 +24,7 @@ export async function getGitStatus(cwd) {
         // Check for dirty state (uncommitted changes)
         let isDirty = false;
         try {
-            const { stdout: statusOut } = await execFileAsync('git', ['status', '--porcelain'], { cwd, timeout: 1000, encoding: 'utf8' });
+            const { stdout: statusOut } = await execFileAsync('git', ['--no-optional-locks', 'status', '--porcelain'], { cwd, timeout: 1000, encoding: 'utf8' });
             isDirty = statusOut.trim().length > 0;
         }
         catch {
