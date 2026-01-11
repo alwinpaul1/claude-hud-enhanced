@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { render } from '../dist/render/index.js';
 import { renderSessionLine } from '../dist/render/session-line.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
@@ -516,5 +517,42 @@ test('renderSessionLine uses raw percent when autocompactBuffer is disabled', ()
   const line = renderSessionLine(ctx);
   // Should show 5% (raw), not 28% (buffered)
   assert.ok(line.includes('5%'), `expected raw percent 5%, got: ${line}`);
+});
+
+test('render adds separator line when layout is separators and activity exists', () => {
+  const ctx = baseContext();
+  ctx.config.layout = 'separators';
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
+  ];
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (line) => logs.push(line);
+  try {
+    render(ctx);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.ok(logs.length >= 2, 'should have at least 2 lines');
+  assert.ok(logs.some(l => l.includes('─')), 'should include separator character');
+});
+
+test('render omits separator when layout is separators but no activity', () => {
+  const ctx = baseContext();
+  ctx.config.layout = 'separators';
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (line) => logs.push(line);
+  try {
+    render(ctx);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(logs.length, 1, 'should only have session line');
+  assert.ok(!logs.some(l => l.includes('─')), 'should not include separator');
 });
 
