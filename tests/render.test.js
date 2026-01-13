@@ -439,7 +439,7 @@ test('renderSessionLine shows 5hr reset countdown', () => {
 test('renderSessionLine displays limit reached warning', () => {
   const ctx = baseContext();
   const fiveHourReset = new Date(Date.now() + 3600000); // 1 hour from now
-  const sevenDayReset = new Date(Date.now() + 259200000); // 3 days (72h) from now
+  const sevenDayReset = new Date(Date.now() + 259200000); // 3 days from now
   ctx.usageData = {
     planName: 'Pro',
     fiveHour: 100,
@@ -452,8 +452,8 @@ test('renderSessionLine displays limit reached warning', () => {
   assert.ok(line.includes('1h'), 'should show 5h reset countdown');
   assert.ok(line.includes('7d:'), 'should always show 7d usage');
   assert.ok(line.includes('45%'), 'should include 7d percentage');
-  // 7d reset shows as hours (72h) or days (3d) depending on formatTimeToReset
-  assert.ok(line.includes('72h') || line.includes('3d'), 'should include 7d reset countdown');
+  // 7d reset shows as "Resets Day HH:MM AM/PM"
+  assert.ok(line.includes('Resets'), 'should include 7d reset date/time');
 });
 
 test('renderSessionLine displays -- for null usage values', () => {
