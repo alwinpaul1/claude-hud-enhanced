@@ -28,7 +28,8 @@ test('CLI renders expected output for a basic transcript', async () => {
       model: { display_name: 'Opus' },
       context_window: {
         context_window_size: 200000,
-        current_usage: { input_tokens: 45000 },
+        used_percentage: 45,  // Use API percentage for deterministic output
+        current_usage: { input_tokens: 90000 },
       },
       transcript_path: fixturePath,
       cwd: projectDir,

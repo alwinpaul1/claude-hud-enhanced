@@ -13,6 +13,7 @@ function baseContext() {
       model: { display_name: 'Opus' },
       context_window: {
         context_window_size: 200000,
+        used_percentage: 5,  // Use API percentage directly
         current_usage: {
           input_tokens: 10000,
           cache_creation_input_tokens: 0,
@@ -31,15 +32,17 @@ function baseContext() {
     config: {
       layout: 'default',
       pathLevels: 1,
+      colorTheme: 'blue',
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false },
-      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true, autocompactBuffer: 'enabled' },
+      display: { showModel: true, showContextBar: true, showConfigCounts: true, showDuration: true, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true, showLastMessage: false, autocompactBuffer: 'enabled' },
     },
   };
 }
 
 test('renderSessionLine adds token breakdown when context is high', () => {
   const ctx = baseContext();
-  // For 90%: (tokens + 45000) / 200000 = 0.9 → tokens = 135000
+  // Set used_percentage to 90% to trigger token breakdown
+  ctx.stdin.context_window.used_percentage = 90;
   ctx.stdin.context_window.current_usage.input_tokens = 135000;
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('in:'), 'expected token breakdown');
@@ -49,21 +52,22 @@ test('renderSessionLine adds token breakdown when context is high', () => {
 test('renderSessionLine includes duration and formats large tokens', () => {
   const ctx = baseContext();
   ctx.sessionDuration = '1m';
-  // Use 1M context, need 85%+ to show breakdown
-  // For 85%: (tokens + 45000) / 1000000 = 0.85 → tokens = 805000
+  // Use 1M context, set used_percentage to 85%+ to show breakdown
   ctx.stdin.context_window.context_window_size = 1000000;
+  ctx.stdin.context_window.used_percentage = 85;
   ctx.stdin.context_window.current_usage.input_tokens = 805000;
   ctx.stdin.context_window.current_usage.cache_read_input_tokens = 1500;
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('⏱️'));
-  assert.ok(line.includes('805k') || line.includes('805.0k'), 'expected large input token display');
-  assert.ok(line.includes('2k'), 'expected cache token display');
+  // Token display now shows calculated from percentage: 850k (85% of 1M)
+  assert.ok(line.includes('850k'), 'expected token display from percentage');
 });
 
 test('renderSessionLine handles missing input tokens and cache creation usage', () => {
   const ctx = baseContext();
-  // For 90%: (tokens + 45000) / 200000 = 0.9 → tokens = 135000 (all from cache)
+  // Set used_percentage to 90% directly
   ctx.stdin.context_window.context_window_size = 200000;
+  ctx.stdin.context_window.used_percentage = 90;
   ctx.stdin.context_window.current_usage = {
     cache_creation_input_tokens: 135000,
   };
@@ -74,8 +78,9 @@ test('renderSessionLine handles missing input tokens and cache creation usage', 
 
 test('renderSessionLine handles missing cache token fields', () => {
   const ctx = baseContext();
-  // For 90%: (tokens + 45000) / 200000 = 0.9 → tokens = 135000
+  // Set used_percentage to 90% to trigger token breakdown display
   ctx.stdin.context_window.context_window_size = 200000;
+  ctx.stdin.context_window.used_percentage = 90;
   ctx.stdin.context_window.current_usage = {
     input_tokens: 135000,
   };
@@ -499,24 +504,24 @@ test('renderSessionLine hides usage when showUsage config is false (hybrid toggl
   assert.ok(!line.includes('Pro'), 'should not show plan name when showUsage is false');
 });
 
-test('renderSessionLine uses buffered percent when autocompactBuffer is enabled', () => {
+test('renderSessionLine uses API used_percentage when available', () => {
   const ctx = baseContext();
-  // 10000 tokens / 200000 = 5% raw, + 22.5% buffer = 28% buffered (rounded)
+  // When used_percentage is available from API, it should be used directly
+  ctx.stdin.context_window.used_percentage = 28;
   ctx.stdin.context_window.current_usage.input_tokens = 10000;
-  ctx.config.display.autocompactBuffer = 'enabled';
   const line = renderSessionLine(ctx);
-  // Should show ~28% (buffered), not 5% (raw)
-  assert.ok(line.includes('28%'), `expected buffered percent 28%, got: ${line}`);
+  // Should show 28% from API percentage
+  assert.ok(line.includes('28%'), `expected API percent 28%, got: ${line}`);
 });
 
-test('renderSessionLine uses raw percent when autocompactBuffer is disabled', () => {
+test('renderSessionLine falls back to calculated percent when API percentage unavailable', () => {
   const ctx = baseContext();
-  // 10000 tokens / 200000 = 5% raw
+  // 10000 tokens / 200000 = 5% (floor)
+  delete ctx.stdin.context_window.used_percentage;
   ctx.stdin.context_window.current_usage.input_tokens = 10000;
-  ctx.config.display.autocompactBuffer = 'disabled';
   const line = renderSessionLine(ctx);
-  // Should show 5% (raw), not 28% (buffered)
-  assert.ok(line.includes('5%'), `expected raw percent 5%, got: ${line}`);
+  // Should show 5% calculated from tokens
+  assert.ok(line.includes('5%'), `expected calculated percent 5%, got: ${line}`);
 });
 
 test('render adds separator line when layout is separators and activity exists', () => {

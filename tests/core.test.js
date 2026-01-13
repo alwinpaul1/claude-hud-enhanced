@@ -17,7 +17,7 @@ test('getContextPercent returns 0 when data is missing', () => {
 });
 
 test('getContextPercent returns raw percentage without buffer', () => {
-  // 55000 / 200000 = 27.5% → rounds to 28%
+  // 55000 / 200000 = 27.5% → rounds to 27% (floor)
   const percent = getContextPercent({
     context_window: {
       context_window_size: 200000,
@@ -29,7 +29,22 @@ test('getContextPercent returns raw percentage without buffer', () => {
     },
   });
 
-  assert.equal(percent, 28);
+  assert.equal(percent, 27);
+});
+
+test('getContextPercent prefers used_percentage from API when available', () => {
+  // When used_percentage is provided, it should be used directly
+  const percent = getContextPercent({
+    context_window: {
+      context_window_size: 200000,
+      used_percentage: 45.7,
+      current_usage: {
+        input_tokens: 30000,
+      },
+    },
+  });
+
+  assert.equal(percent, 45); // floor of 45.7
 });
 
 test('getBufferedPercent includes 22.5% buffer', () => {
@@ -49,7 +64,7 @@ test('getBufferedPercent includes 22.5% buffer', () => {
 });
 
 test('getContextPercent handles missing input tokens', () => {
-  // 5000 / 200000 = 2.5% → rounds to 3%
+  // 5000 / 200000 = 2.5% → rounds to 2% (floor)
   const percent = getContextPercent({
     context_window: {
       context_window_size: 200000,
@@ -60,12 +75,12 @@ test('getContextPercent handles missing input tokens', () => {
     },
   });
 
-  assert.equal(percent, 3);
+  assert.equal(percent, 2);
 });
 
 test('getBufferedPercent scales to larger context windows', () => {
   // Test with 1M context window: 45000 tokens + (1000000 * 0.225) buffer
-  // Raw: 45000 / 1000000 = 4.5% → 5%
+  // Raw: 45000 / 1000000 = 4.5% → 4% (floor)
   // Buffered: (45000 + 225000) / 1000000 = 27% → 27%
   const rawPercent = getContextPercent({
     context_window: {
@@ -80,7 +95,7 @@ test('getBufferedPercent scales to larger context windows', () => {
     },
   });
 
-  assert.equal(rawPercent, 5);
+  assert.equal(rawPercent, 4);
   assert.equal(bufferedPercent, 27);
 });
 
