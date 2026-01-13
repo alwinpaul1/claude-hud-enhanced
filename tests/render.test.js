@@ -449,11 +449,9 @@ test('renderSessionLine displays limit reached warning', () => {
   };
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('5h limit'), 'should show 5h limit warning');
-  assert.ok(line.includes('1h'), 'should show 5h reset countdown');
+  assert.ok(line.includes('Resets'), 'should show reset time');
   assert.ok(line.includes('7d:'), 'should always show 7d usage');
   assert.ok(line.includes('45%'), 'should include 7d percentage');
-  // 7d reset shows as "Resets Day HH:MM AM/PM"
-  assert.ok(line.includes('Resets'), 'should include 7d reset date/time');
 });
 
 test('renderSessionLine displays -- for null usage values', () => {

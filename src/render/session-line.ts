@@ -102,15 +102,12 @@ export function renderSessionLine(ctx: RenderContext): string {
     if (ctx.usageData.apiUnavailable) {
       parts.push(yellow(`usage: ⚠`));
     } else if (isLimitReached(ctx.usageData)) {
-      // Show which limit is reached with both countdown AND reset time
+      // Show which limit is reached with reset time
       const fiveHourReached = ctx.usageData.fiveHour === 100;
       let fiveHourResetDisplay = '';
       if (fiveHourReached && ctx.usageData.fiveHourResetAt) {
-        const countdown = ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt);
         const resetTime = formatResetTimeOnly(ctx.usageData.fiveHourResetAt);
-        fiveHourResetDisplay = countdown && resetTime 
-          ? ` (${countdown}, Resets ${resetTime})`
-          : countdown ? ` (${countdown})` : '';
+        fiveHourResetDisplay = resetTime ? ` Resets ${resetTime}` : '';
       }
       
       // Always show 7-day usage with reset date/time alongside the limit reached warning
