@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
-import type { UsageData } from './types.js';
+import type { UsageData, ModelQuota, MaxPlanInfo, CompactionInfo } from './types.js';
 import { createDebug } from './debug.js';
 
 export type { UsageData } from './types.js';
@@ -18,6 +18,21 @@ interface CredentialsFile {
     expiresAt?: number;  // Unix millisecond timestamp
     scopes?: string[];
   };
+  oauthAccount?: {
+    organizationUuid?: string;
+    accountId?: string;
+  };
+}
+
+interface ModelQuotaResponse {
+  model_id?: string;
+  display_name?: string;
+  weekly_hours_used?: number;
+  weekly_hours_limit?: number;
+  tokens_used?: number;
+  tokens_limit?: number;
+  utilization?: number;
+  resets_at?: string;
 }
 
 interface UsageApiResponse {
@@ -29,6 +44,11 @@ interface UsageApiResponse {
     utilization?: number;
     resets_at?: string;
   };
+  // Enhanced 2026 fields
+  model_quotas?: ModelQuotaResponse[];
+  max_plan_type?: string;  // 'max5' or 'max20'
+  compaction_buffer?: number;  // Percentage (80 or 90)
+  tokens_per_window?: number;
 }
 
 // File-based cache (HUD runs as new process each render, so in-memory cache won't persist)
@@ -91,13 +111,15 @@ function writeCache(homeDir: string, data: UsageData, timestamp: number): void {
 // Dependency injection for testing
 export type UsageApiDeps = {
   homeDir: () => string;
-  fetchApi: (accessToken: string) => Promise<UsageApiResponse | null>;
+  fetchApi: (accessToken: string, organizationUuid?: string) => Promise<UsageApiResponse | null>;
+  fetchUsageLimits: (accessToken: string, organizationUuid?: string) => Promise<UsageApiResponse | null>;
   now: () => number;
 };
 
 const defaultDeps: UsageApiDeps = {
   homeDir: () => os.homedir(),
   fetchApi: fetchUsageApi,
+  fetchUsageLimits: fetchUsageLimitsApi,
   now: () => Date.now(),
 };
 
@@ -108,6 +130,8 @@ const defaultDeps: UsageApiDeps = {
  *
  * Uses file-based cache since HUD runs as a new process each render (~300ms).
  * Cache TTL: 60s for success, 15s for failures.
+ * 
+ * Enhanced (2026): Also fetches model quotas, max plan info, and compaction settings.
  */
 export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<UsageData | null> {
   const deps = { ...defaultDeps, ...overrides };
@@ -117,6 +141,13 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
   // Check file-based cache first
   const cached = readCache(homeDir, now);
   if (cached) {
+    // Update time-to-reset countdowns (these change every render)
+    if (cached.fiveHourResetAt) {
+      cached.fiveHourResetIn = formatTimeToReset(cached.fiveHourResetAt, now);
+    }
+    if (cached.sevenDayResetAt) {
+      cached.sevenDayResetIn = formatTimeToReset(cached.sevenDayResetAt, now);
+    }
     return cached;
   }
 
@@ -126,19 +157,27 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
       return null;
     }
 
-    const { accessToken, subscriptionType } = credentials;
+    const { accessToken, subscriptionType, organizationUuid, rateLimitTier } = credentials;
 
-    // Determine plan name from subscriptionType
-    const planName = getPlanName(subscriptionType);
+    // Determine plan name from subscriptionType (pass true since we have OAuth token)
+    const planName = getPlanName(subscriptionType, true);
     if (!planName) {
       // API user, no usage limits to show
+      debug('No plan name determined, likely API user');
       return null;
     }
 
-    // Fetch usage from API
-    const apiResponse = await deps.fetchApi(accessToken);
-    if (!apiResponse) {
-      // API call failed, cache the failure to prevent retry storms
+    // Fetch usage from both APIs in parallel for comprehensive data
+    const [apiResponse, usageLimitsResponse] = await Promise.all([
+      deps.fetchApi(accessToken, organizationUuid),
+      deps.fetchUsageLimits(accessToken, organizationUuid),
+    ]);
+
+    // Merge responses, preferring the more detailed one
+    const mergedResponse = mergeApiResponses(apiResponse, usageLimitsResponse);
+
+    if (!mergedResponse) {
+      // Both API calls failed, cache the failure to prevent retry storms
       const failureResult: UsageData = {
         planName,
         fiveHour: null,
@@ -153,11 +192,16 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
 
     // Parse response - API returns 0-100 percentage directly
     // Clamp to 0-100 and handle NaN/Infinity
-    const fiveHour = parseUtilization(apiResponse.five_hour?.utilization);
-    const sevenDay = parseUtilization(apiResponse.seven_day?.utilization);
+    const fiveHour = parseUtilization(mergedResponse.five_hour?.utilization);
+    const sevenDay = parseUtilization(mergedResponse.seven_day?.utilization);
 
-    const fiveHourResetAt = parseDate(apiResponse.five_hour?.resets_at);
-    const sevenDayResetAt = parseDate(apiResponse.seven_day?.resets_at);
+    const fiveHourResetAt = parseDate(mergedResponse.five_hour?.resets_at);
+    const sevenDayResetAt = parseDate(mergedResponse.seven_day?.resets_at);
+
+    // Parse enhanced 2026 features
+    const modelQuotas = parseModelQuotas(mergedResponse.model_quotas);
+    const maxPlanInfo = parseMaxPlanInfo(mergedResponse.max_plan_type, mergedResponse.tokens_per_window, rateLimitTier);
+    const compactionInfo = parseCompactionInfo(mergedResponse.compaction_buffer);
 
     const result: UsageData = {
       planName,
@@ -165,6 +209,14 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
       sevenDay,
       fiveHourResetAt,
       sevenDayResetAt,
+      // Enhanced data
+      modelQuotas: modelQuotas.length > 0 ? modelQuotas : undefined,
+      maxPlanInfo: maxPlanInfo.tier ? maxPlanInfo : undefined,
+      compactionInfo: compactionInfo.isEnabled ? compactionInfo : undefined,
+      organizationUuid,
+      // Time-to-reset countdowns
+      fiveHourResetIn: fiveHourResetAt ? formatTimeToReset(fiveHourResetAt, now) : undefined,
+      sevenDayResetIn: sevenDayResetAt ? formatTimeToReset(sevenDayResetAt, now) : undefined,
     };
 
     // Write to file cache
@@ -177,45 +229,214 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
   }
 }
 
-function readCredentials(homeDir: string, now: number): { accessToken: string; subscriptionType: string } | null {
-  const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
-
-  if (!fs.existsSync(credentialsPath)) {
-    return null;
-  }
-
-  try {
-    const content = fs.readFileSync(credentialsPath, 'utf8');
-    const data: CredentialsFile = JSON.parse(content);
-
-    const accessToken = data.claudeAiOauth?.accessToken;
-    const subscriptionType = data.claudeAiOauth?.subscriptionType ?? '';
-
-    if (!accessToken) {
-      return null;
-    }
-
-    // Check if token is expired (expiresAt is Unix ms timestamp)
-    // Use != null to handle expiresAt=0 correctly (would be expired)
-    const expiresAt = data.claudeAiOauth?.expiresAt;
-    if (expiresAt != null && expiresAt <= now) {
-      return null;
-    }
-
-    return { accessToken, subscriptionType };
-  } catch (error) {
-    debug('Failed to read credentials:', error);
-    return null;
-  }
+/** Merge responses from both API endpoints */
+function mergeApiResponses(
+  primary: UsageApiResponse | null,
+  secondary: UsageApiResponse | null
+): UsageApiResponse | null {
+  if (!primary && !secondary) return null;
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+  
+  return {
+    five_hour: primary.five_hour ?? secondary.five_hour,
+    seven_day: primary.seven_day ?? secondary.seven_day,
+    model_quotas: primary.model_quotas ?? secondary.model_quotas,
+    max_plan_type: primary.max_plan_type ?? secondary.max_plan_type,
+    compaction_buffer: primary.compaction_buffer ?? secondary.compaction_buffer,
+    tokens_per_window: primary.tokens_per_window ?? secondary.tokens_per_window,
+  };
 }
 
-function getPlanName(subscriptionType: string): string | null {
+/** Parse model quotas from API response */
+function parseModelQuotas(quotas?: ModelQuotaResponse[]): ModelQuota[] {
+  if (!quotas || !Array.isArray(quotas)) return [];
+  
+  return quotas.map(q => ({
+    modelId: q.model_id ?? 'unknown',
+    displayName: q.display_name ?? q.model_id ?? 'Unknown Model',
+    weeklyHoursUsed: q.weekly_hours_used ?? null,
+    weeklyHoursLimit: q.weekly_hours_limit ?? null,
+    tokensUsed: q.tokens_used ?? null,
+    tokensLimit: q.tokens_limit ?? null,
+    utilization: parseUtilization(q.utilization),
+    resetsAt: parseDate(q.resets_at),
+  }));
+}
+
+/** Parse Max plan tier information */
+function parseMaxPlanInfo(
+  maxPlanType?: string,
+  tokensPerWindow?: number,
+  rateLimitTier?: string
+): MaxPlanInfo {
+  let tier: 'Max5' | 'Max20' | null = null;
+  let calculatedTokens: number | null = null;
+  
+  // Check explicit max_plan_type first
+  if (maxPlanType) {
+    const lower = maxPlanType.toLowerCase();
+    if (lower.includes('max20') || lower === '20') {
+      tier = 'Max20';
+      calculatedTokens = tokensPerWindow ?? 220_000;
+    } else if (lower.includes('max5') || lower === '5') {
+      tier = 'Max5';
+      calculatedTokens = tokensPerWindow ?? 88_000;
+    }
+  }
+  
+  // Fallback to rateLimitTier from credentials
+  if (!tier && rateLimitTier) {
+    const lower = rateLimitTier.toLowerCase();
+    if (lower.includes('max20') || lower.includes('tier_20')) {
+      tier = 'Max20';
+      calculatedTokens = 220_000;
+    } else if (lower.includes('max5') || lower.includes('tier_5')) {
+      tier = 'Max5';
+      calculatedTokens = 88_000;
+    }
+  }
+  
+  return {
+    tier,
+    tokensPerWindow: calculatedTokens,
+    isActive: tier !== null,
+  };
+}
+
+/** Parse compaction buffer settings */
+function parseCompactionInfo(bufferPercent?: number): CompactionInfo {
+  if (bufferPercent == null || !Number.isFinite(bufferPercent)) {
+    // Default to 80% if not specified (common default)
+    return { bufferPercent: 80, isEnabled: false };
+  }
+  
+  return {
+    bufferPercent: Math.round(Math.max(50, Math.min(100, bufferPercent))),
+    isEnabled: true,
+  };
+}
+
+/** Format time remaining until reset as human-readable string */
+function formatTimeToReset(resetAt: Date, now: number): string {
+  const diffMs = resetAt.getTime() - now;
+  if (diffMs <= 0) return 'now';
+  
+  const totalMins = Math.ceil(diffMs / 60000);
+  
+  if (totalMins < 60) {
+    return `${totalMins}m`;
+  }
+  
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  
+  if (hours < 24) {
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+  
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+interface CredentialsResult {
+  accessToken: string;
+  subscriptionType: string;
+  organizationUuid?: string;
+  rateLimitTier?: string;
+}
+
+/**
+ * Read credentials from macOS Keychain using security command
+ * This is where Claude Code stores credentials on macOS
+ */
+function readKeychainCredentials(): CredentialsFile | null {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+  
+  try {
+    const { execSync } = require('child_process');
+    const user = process.env.USER || os.userInfo().username;
+    const result = execSync(
+      `security find-generic-password -a "${user}" -s "Claude Code-credentials" -w 2>/dev/null`,
+      { encoding: 'utf8', timeout: 2000 }
+    ).trim();
+    
+    if (result) {
+      const data: CredentialsFile = JSON.parse(result);
+      debug('Read credentials from macOS Keychain');
+      return data;
+    }
+  } catch (error) {
+    debug('Keychain read failed (expected on non-macOS or if not stored):', error);
+  }
+  return null;
+}
+
+function readCredentials(homeDir: string, now: number): CredentialsResult | null {
+  const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
+  
+  let data: CredentialsFile | null = null;
+
+  // Try file first
+  if (fs.existsSync(credentialsPath)) {
+    try {
+      const content = fs.readFileSync(credentialsPath, 'utf8');
+      data = JSON.parse(content);
+      debug('Read credentials from file:', credentialsPath);
+    } catch (error) {
+      debug('Failed to read credentials file:', error);
+    }
+  }
+  
+  // Fallback to macOS Keychain if file doesn't exist or is invalid
+  if (!data || !data.claudeAiOauth?.accessToken) {
+    data = readKeychainCredentials();
+  }
+  
+  if (!data) {
+    debug('No credentials found in file or Keychain');
+    return null;
+  }
+
+  const accessToken = data.claudeAiOauth?.accessToken;
+  const subscriptionType = data.claudeAiOauth?.subscriptionType ?? '';
+  const organizationUuid = data.oauthAccount?.organizationUuid;
+  const rateLimitTier = data.claudeAiOauth?.rateLimitTier;
+
+  if (!accessToken) {
+    debug('No access token in credentials');
+    return null;
+  }
+
+  // Check if token is expired (expiresAt is Unix ms timestamp)
+  // Use != null to handle expiresAt=0 correctly (would be expired)
+  const expiresAt = data.claudeAiOauth?.expiresAt;
+  if (expiresAt != null && expiresAt <= now) {
+    debug('Access token expired at:', new Date(expiresAt));
+    return null;
+  }
+
+  debug('Credentials loaded, subscriptionType:', subscriptionType || '(not set)');
+  return { accessToken, subscriptionType, organizationUuid, rateLimitTier };
+}
+
+function getPlanName(subscriptionType: string, hasOAuthToken: boolean = false): string | null {
   const lower = subscriptionType.toLowerCase();
   if (lower.includes('max')) return 'Max';
   if (lower.includes('pro')) return 'Pro';
   if (lower.includes('team')) return 'Team';
-  // API users don't have subscriptionType or have 'api'
-  if (!subscriptionType || lower.includes('api')) return null;
+  // API users have 'api' in their subscriptionType
+  if (lower.includes('api')) return null;
+  // If we have OAuth credentials but no subscription type, assume Pro (most common)
+  // This happens when credentials are stored in Keychain without full metadata
+  if (!subscriptionType && hasOAuthToken) {
+    debug('No subscriptionType but has OAuth token, defaulting to Pro');
+    return 'Pro';
+  }
+  if (!subscriptionType) return null;
   // Unknown subscription type - show it capitalized
   return subscriptionType.charAt(0).toUpperCase() + subscriptionType.slice(1);
 }
@@ -239,17 +460,24 @@ function parseDate(dateStr: string | undefined): Date | null {
   return date;
 }
 
-function fetchUsageApi(accessToken: string): Promise<UsageApiResponse | null> {
+/** Fetch from the original Anthropic OAuth usage endpoint */
+function fetchUsageApi(accessToken: string, organizationUuid?: string): Promise<UsageApiResponse | null> {
   return new Promise((resolve) => {
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${accessToken}`,
+      'anthropic-beta': 'oauth-2025-04-20',
+      'User-Agent': 'claude-hud-enhanced/1.0',
+    };
+    
+    if (organizationUuid) {
+      headers['x-organization-uuid'] = organizationUuid;
+    }
+
     const options = {
       hostname: 'api.anthropic.com',
       path: '/api/oauth/usage',
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': 'claude-hud/1.0',
-      },
+      headers,
       timeout: 5000,
     };
 
@@ -262,27 +490,91 @@ function fetchUsageApi(accessToken: string): Promise<UsageApiResponse | null> {
 
       res.on('end', () => {
         if (res.statusCode !== 200) {
-          debug('API returned non-200 status:', res.statusCode);
+          debug('Anthropic API returned non-200 status:', res.statusCode);
           resolve(null);
           return;
         }
 
         try {
           const parsed: UsageApiResponse = JSON.parse(data);
+          debug('Anthropic API response:', parsed);
           resolve(parsed);
         } catch (error) {
-          debug('Failed to parse API response:', error);
+          debug('Failed to parse Anthropic API response:', error);
           resolve(null);
         }
       });
     });
 
     req.on('error', (error) => {
-      debug('API request error:', error);
+      debug('Anthropic API request error:', error);
       resolve(null);
     });
     req.on('timeout', () => {
-      debug('API request timeout');
+      debug('Anthropic API request timeout');
+      req.destroy();
+      resolve(null);
+    });
+
+    req.end();
+  });
+}
+
+/** 
+ * Fetch from the Claude.ai usage_limits endpoint (enhanced 2026 data)
+ * This endpoint provides model quotas, max plan info, and compaction settings
+ */
+function fetchUsageLimitsApi(accessToken: string, organizationUuid?: string): Promise<UsageApiResponse | null> {
+  return new Promise((resolve) => {
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'claude-hud-enhanced/1.0',
+    };
+    
+    if (organizationUuid) {
+      headers['x-organization-uuid'] = organizationUuid;
+    }
+
+    const options = {
+      hostname: 'api.claude.ai',
+      path: '/api/v1/usage_limits',
+      method: 'GET',
+      headers,
+      timeout: 5000,
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+
+      res.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
+
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          debug('Claude.ai usage_limits API returned non-200 status:', res.statusCode, data);
+          resolve(null);
+          return;
+        }
+
+        try {
+          const parsed: UsageApiResponse = JSON.parse(data);
+          debug('Claude.ai usage_limits response:', parsed);
+          resolve(parsed);
+        } catch (error) {
+          debug('Failed to parse Claude.ai usage_limits response:', error);
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      debug('Claude.ai usage_limits request error:', error);
+      resolve(null);
+    });
+    req.on('timeout', () => {
+      debug('Claude.ai usage_limits request timeout');
       req.destroy();
       resolve(null);
     });
