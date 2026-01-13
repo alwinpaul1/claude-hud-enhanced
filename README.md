@@ -1,24 +1,26 @@
-# Claude HUD
+# Claude HUD Enhanced
 
-A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress. Always visible below your input.
+An enhanced Claude Code plugin that shows what's happening — context usage, active tools, running agents, todo progress, **and detailed usage limits with time-to-reset countdowns**. Always visible below your input.
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud?v=2)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
+[![License](https://img.shields.io/github/license/alwinpaul1/claude-hud-enhanced?v=2)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/alwinpaul1/claude-hud-enhanced)](https://github.com/alwinpaul1/claude-hud-enhanced/stargazers)
 
 ![Claude HUD in action](claude-hud-preview-5-2.png)
 
 ## Install
 
-Inside a Claude Code instance, run the following commands:
+### Option 1: From GitHub (Recommended)
 
-**Step 1: Add the marketplace**
+Inside a Claude Code instance, run:
+
+**Step 1: Add the enhanced marketplace**
 ```
-/plugin marketplace add jarrodwatts/claude-hud
+/plugin marketplace add alwinpaul1/claude-hud-enhanced
 ```
 
 **Step 2: Install the plugin**
 ```
-/plugin install claude-hud
+/plugin install claude-hud-enhanced
 ```
 
 **Step 3: Configure the statusline**
@@ -26,13 +28,34 @@ Inside a Claude Code instance, run the following commands:
 /claude-hud:setup
 ```
 
+### Option 2: Manual Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/alwinpaul1/claude-hud-enhanced.git ~/.claude/plugins/claude-hud-enhanced
+
+# Install dependencies and build
+cd ~/.claude/plugins/claude-hud-enhanced
+npm install && npm run build
+```
+
+Then add to your `~/.claude/settings.json`:
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/claude-hud-enhanced/dist/index.js"
+  }
+}
+```
+
 Done! The HUD appears immediately — no restart needed.
 
 ---
 
-## What is Claude HUD?
+## What is Claude HUD Enhanced?
 
-Claude HUD gives you better insights into what's happening in your Claude Code session.
+Claude HUD Enhanced gives you better insights into what's happening in your Claude Code session, with **additional features** for tracking usage limits.
 
 | What You See | Why It Matters |
 |--------------|----------------|
@@ -41,21 +64,42 @@ Claude HUD gives you better insights into what's happening in your Claude Code s
 | **Tool activity** | Watch Claude read, edit, and search files as it happens |
 | **Agent tracking** | See which subagents are running and what they're doing |
 | **Todo progress** | Track task completion in real-time |
+| **5h & 7d usage** | Always see both rate limits with time-to-reset countdowns |
+| **Model quotas** | Track Opus 4.5 and other compute-intensive model limits |
+| **Max tier info** | See Max5/Max20 tier with tokens-per-window |
+
+### Enhanced Features (vs Original)
+
+| Feature | Original | Enhanced |
+|---------|----------|----------|
+| 7-day usage | Only shown when ≥80% | **Always visible** |
+| Reset countdown | Basic time | **Live countdown** (e.g., "2h 15m") |
+| Credential source | File only | **File + macOS Keychain** |
+| Model quotas | ❌ | ✅ Shows Opus 4.5 limits |
+| Max tier detection | ❌ | ✅ Max5/Max20 with tokens/window |
 
 ## What Each Line Shows
 
 ### Session Info
 ```
-[Opus | Pro] █████░░░░░ 45% | my-project git:(main) | 2 CLAUDE.md | 5h: 25% | ⏱️ 5m
+[Opus 4.5 | Pro] █████░░░░░ 45% 90k/200k | my-project git:(main) | 5h: 25% (3h 28m) | 7d: 51% | ⏱️ 5m
 ```
 - **Model** — Current model in use (shown first)
 - **Plan name** — Your subscription tier (Pro, Max, Team) when usage enabled
 - **Context bar** — Visual meter with color coding (green → yellow → red as it fills)
+- **Token count** — Current/total tokens (e.g., `90k/200k`)
 - **Project path** — Configurable 1-3 directory levels (default: 1)
 - **Git branch** — Current branch name (configurable on/off)
-- **Config counts** — CLAUDE.md files, rules, MCPs, and hooks loaded
-- **Usage limits** — 5-hour rate limit percentage (opt-in, Pro/Max/Team only)
+- **5h usage** — 5-hour rate limit with **time-to-reset countdown**
+- **7d usage** — 7-day rate limit (always visible)
 - **Duration** — How long the session has been running
+
+### When Limit is Reached
+```
+[Opus 4.5 | Pro] ░░░░░░░░░░ 0% 0/200k | my-project git:(main) | ⚠ 5h limit (2h 6m) | 7d: 51% | ⏱️ 1h 48m
+```
+- Shows warning with countdown until reset
+- 7-day usage always visible alongside
 
 ### Tool Activity
 ```
@@ -148,10 +192,20 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud/conf
 
 Usage display is **enabled by default** for Claude Pro, Max, and Team subscribers. It shows your rate limit consumption directly in the HUD.
 
-When enabled, you'll see your 5-hour usage percentage. The 7-day percentage appears when above 80%:
+**Enhanced behavior:** Both 5-hour AND 7-day usage are **always visible** with live countdowns:
 
 ```
-[Opus | Pro] █████░░░░░ 45% | my-project | 5h: 25% | 7d: 85%
+[Opus 4.5 | Pro] █████░░░░░ 45% 90k/200k | my-project | 5h: 25% (3h 28m) | 7d: 51% (2d 5h) | ⏱️ 5m
+```
+
+**When limit is reached:**
+```
+[Opus 4.5 | Pro] ░░░░░░░░░░ 0% | my-project | ⚠ 5h limit (2h 6m) | 7d: 51%
+```
+
+**Max tier detection** (Max5 = 88k tokens/window, Max20 = 220k tokens/window):
+```
+[Opus 4.5 | Max] █████░░░░░ 45% | my-project | 5h: 25% | 7d: 51% | Max20 220k/win
 ```
 
 To disable usage display, set `display.showUsage` to `false` in your config.
@@ -160,9 +214,14 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 - Claude Pro, Max, or Team subscription (not available for API users)
 - OAuth credentials from Claude Code (created automatically when you log in)
 
+**Credential Sources (Enhanced):**
+- `~/.claude/.credentials.json` (file-based)
+- **macOS Keychain** (automatic fallback) — reads from "Claude Code-credentials"
+
 **Troubleshooting:** If usage doesn't appear:
 - Ensure you're logged in with a Pro/Max/Team account (not API key)
 - Check `display.showUsage` is not set to `false` in config
+- On macOS, credentials may be in Keychain (this is supported automatically)
 - API users see no usage display (they have pay-per-token, not rate limits)
 
 ### Layout Options
@@ -246,13 +305,26 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 ## Development
 
 ```bash
-git clone https://github.com/jarrodwatts/claude-hud
-cd claude-hud
+git clone https://github.com/alwinpaul1/claude-hud-enhanced
+cd claude-hud-enhanced
 npm ci && npm run build
 npm test
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## Credits
+
+This is an enhanced fork of [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud). 
+
+**Enhancements by [@alwinpaul1](https://github.com/alwinpaul1):**
+- macOS Keychain credential support
+- Always-visible 7-day usage limits
+- Live time-to-reset countdowns
+- Model quota tracking (Opus 4.5, etc.)
+- Max5/Max20 tier detection
 
 ---
 
@@ -264,4 +336,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jarrodwatts/claude-hud&type=Date)](https://star-history.com/#jarrodwatts/claude-hud&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=alwinpaul1/claude-hud-enhanced&type=Date)](https://star-history.com/#alwinpaul1/claude-hud-enhanced&Date)
