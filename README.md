@@ -50,7 +50,7 @@ Claude HUD Enhanced gives you better insights into what's happening in your Clau
 | Feature | Original | Enhanced |
 |---------|----------|----------|
 | 7-day usage | Only shown when ≥80% | **Always visible** |
-| 5h reset | Basic time | **Live countdown** (e.g., "2h 15m") |
+| 5h limit reached | Basic countdown | **Reset time** (e.g., "Resets 8:32 PM") |
 | 7d reset | Not shown | **Date/time** (e.g., "Resets Fri 12:30 PM") |
 | Credential source | File only | **File + macOS Keychain** |
 | Model quotas | ❌ | ✅ Shows Opus 4.5 limits |
@@ -68,15 +68,15 @@ Claude HUD Enhanced gives you better insights into what's happening in your Clau
 - **Token count** — Current/total tokens (e.g., `90k/200k`)
 - **Project path** — Configurable 1-3 directory levels (default: 1)
 - **Git branch** — Current branch name (configurable on/off)
-- **5h usage** — 5-hour rate limit with **countdown** (e.g., "3h 28m")
+- **5h usage** — 5-hour rate limit with **countdown** (e.g., "3h 28m"), or reset time when limit reached
 - **7d usage** — 7-day rate limit with **reset date/time** (e.g., "Resets Fri 12:30 PM")
 - **Duration** — How long the session has been running
 
 ### When Limit is Reached
 ```
-[Opus 4.5 | Pro] ░░░░░░░░░░ 0% 0/200k | my-project git:(main) | ⚠ 5h limit (2h 6m) | 7d: 51% (Resets Fri 12:30 PM) | ⏱️ 1h 48m
+[Opus 4.5 | Pro] ░░░░░░░░░░ 0% 0/200k | my-project git:(main) | ⚠ 5h limit Resets 8:32 PM | 7d: 51% (Resets Fri 12:30 PM) | ⏱️ 1h 48m
 ```
-- Shows warning with countdown until 5h reset
+- Shows warning with reset time for 5h limit
 - 7-day usage with reset date/time always visible alongside
 
 ### Tool Activity
@@ -171,8 +171,8 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud/conf
 Usage display is **enabled by default** for Claude Pro, Max, and Team subscribers. It shows your rate limit consumption directly in the HUD.
 
 **Enhanced behavior:** Both 5-hour AND 7-day usage are **always visible**:
-- **5h reset** — Shows countdown (e.g., "3h 28m")
-- **7d reset** — Shows date/time (e.g., "Resets Fri 12:30 PM")
+- **5h** — Shows countdown (e.g., "3h 28m") or reset time when limit reached
+- **7d** — Shows date/time (e.g., "Resets Fri 12:30 PM")
 
 ```
 [Opus 4.5 | Pro] █████░░░░░ 45% 90k/200k | my-project | 5h: 25% (3h 28m) | 7d: 51% (Resets Fri 12:30 PM) | ⏱️ 5m
@@ -180,7 +180,7 @@ Usage display is **enabled by default** for Claude Pro, Max, and Team subscriber
 
 **When limit is reached:**
 ```
-[Opus 4.5 | Pro] ░░░░░░░░░░ 0% | my-project | ⚠ 5h limit (2h 6m) | 7d: 51% (Resets Fri 12:30 PM)
+[Opus 4.5 | Pro] ░░░░░░░░░░ 0% | my-project | ⚠ 5h limit Resets 8:32 PM | 7d: 51% (Resets Fri 12:30 PM)
 ```
 
 **Max tier detection** (Max5 = 88k tokens/window, Max20 = 220k tokens/window):
