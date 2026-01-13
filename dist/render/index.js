@@ -2,7 +2,8 @@ import { renderSessionLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
 import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
-import { dim, RESET } from './colors.js';
+import { renderLastMessageLine } from './last-message-line.js';
+import { dim, RESET, setTheme } from './colors.js';
 // Strip ANSI codes to get visual length
 function visualLength(str) {
     // eslint-disable-next-line no-control-regex
@@ -12,6 +13,10 @@ function makeSeparator(length) {
     return dim('─'.repeat(Math.max(length, 20)));
 }
 export function render(ctx) {
+    // Set the color theme from config
+    if (ctx.config?.colorTheme) {
+        setTheme(ctx.config.colorTheme);
+    }
     const layout = ctx.config?.layout ?? 'default';
     const lines = [];
     const display = ctx.config?.display;
@@ -33,6 +38,13 @@ export function render(ctx) {
         const todosLine = renderTodosLine(ctx);
         if (todosLine) {
             activityLines.push(todosLine);
+        }
+    }
+    // Add last user message line (only if explicitly enabled)
+    if (display?.showLastMessage === true) {
+        const lastMessageLine = renderLastMessageLine(ctx);
+        if (lastMessageLine) {
+            activityLines.push(lastMessageLine);
         }
     }
     // Both layouts use the same session line (model + project + counts + etc)

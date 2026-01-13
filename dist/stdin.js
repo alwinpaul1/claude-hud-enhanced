@@ -26,12 +26,29 @@ function getTotalTokens(stdin) {
         (usage?.cache_read_input_tokens ?? 0));
 }
 export function getContextPercent(stdin) {
+    // Use used_percentage directly from API if available (matches /context command)
+    const usedPct = stdin.context_window?.used_percentage;
+    if (usedPct !== undefined && usedPct !== null) {
+        return Math.min(100, Math.floor(usedPct));
+    }
+    // Fallback to calculating from tokens
     const size = stdin.context_window?.context_window_size;
     if (!size || size <= 0) {
         return 0;
     }
     const totalTokens = getTotalTokens(stdin);
-    return Math.min(100, Math.round((totalTokens / size) * 100));
+    return Math.min(100, Math.floor((totalTokens / size) * 100));
+}
+// Get used tokens - calculated from percentage when available to match /context
+export function getUsedTokens(stdin) {
+    const size = stdin.context_window?.context_window_size ?? 200000;
+    const usedPct = stdin.context_window?.used_percentage;
+    // If percentage is available, calculate tokens from it (matches /context)
+    if (usedPct !== undefined && usedPct !== null) {
+        return Math.floor(size * usedPct / 100);
+    }
+    // Fallback to direct token count
+    return getTotalTokens(stdin);
 }
 export function getBufferedPercent(stdin) {
     const size = stdin.context_window?.context_window_size;
