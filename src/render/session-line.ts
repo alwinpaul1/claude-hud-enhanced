@@ -108,10 +108,10 @@ export function renderSessionLine(ctx: RenderContext): string {
         ? ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt)
         : null;
       
-      // Always show 7-day usage with reset countdown alongside the limit reached warning
+      // Always show 7-day usage with reset date/time alongside the limit reached warning
       let sevenDayDisplay = '';
       if (ctx.usageData.sevenDay !== null) {
-        const sevenDayReset = ctx.usageData.sevenDayResetIn ?? formatResetTime(ctx.usageData.sevenDayResetAt);
+        const sevenDayReset = formatResetDateTime(ctx.usageData.sevenDayResetAt);
         sevenDayDisplay = sevenDayReset
           ? ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)} (${sevenDayReset})`
           : ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`;
@@ -126,11 +126,11 @@ export function renderSessionLine(ctx: RenderContext): string {
         ? `5h: ${fiveHourDisplay} (${fiveHourReset})`
         : `5h: ${fiveHourDisplay}`;
 
-      // Always show 7-day usage if available
+      // Always show 7-day usage if available with reset date/time
       const sevenDay = ctx.usageData.sevenDay;
       if (sevenDay !== null) {
         const sevenDayDisplay = formatUsagePercent(sevenDay);
-        const sevenDayReset = ctx.usageData.sevenDayResetIn ?? formatResetTime(ctx.usageData.sevenDayResetAt);
+        const sevenDayReset = formatResetDateTime(ctx.usageData.sevenDayResetAt);
         const sevenDayPart = sevenDayReset
           ? `7d: ${sevenDayDisplay} (${sevenDayReset})`
           : `7d: ${sevenDayDisplay}`;
@@ -218,6 +218,32 @@ function formatResetTime(resetAt: Date | null): string {
   }
   
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/**
+ * Format reset time as readable date/time: "Resets Fri 12:29 PM"
+ * Used for 7-day weekly reset display
+ */
+function formatResetDateTime(resetAt: Date | null): string {
+  if (!resetAt) return '';
+  
+  const now = new Date();
+  if (resetAt.getTime() <= now.getTime()) return '';
+  
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayName = days[resetAt.getDay()];
+  
+  let hours = resetAt.getHours();
+  const mins = resetAt.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  // Convert to 12-hour format
+  hours = hours % 12;
+  hours = hours ? hours : 12; // 0 should be 12
+  
+  const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
+  
+  return `Resets ${dayName} ${hours}:${minsStr} ${ampm}`;
 }
 
 /**
