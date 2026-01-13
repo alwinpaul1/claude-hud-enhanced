@@ -102,11 +102,16 @@ export function renderSessionLine(ctx: RenderContext): string {
     if (ctx.usageData.apiUnavailable) {
       parts.push(yellow(`usage: ⚠`));
     } else if (isLimitReached(ctx.usageData)) {
-      // Show which limit is reached and the 7-day status with reset times
+      // Show which limit is reached with both countdown AND reset time
       const fiveHourReached = ctx.usageData.fiveHour === 100;
-      const fiveHourResetTime = fiveHourReached
-        ? ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt)
-        : null;
+      let fiveHourResetDisplay = '';
+      if (fiveHourReached && ctx.usageData.fiveHourResetAt) {
+        const countdown = ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt);
+        const resetTime = formatResetTimeOnly(ctx.usageData.fiveHourResetAt);
+        fiveHourResetDisplay = countdown && resetTime 
+          ? ` (${countdown}, Resets ${resetTime})`
+          : countdown ? ` (${countdown})` : '';
+      }
       
       // Always show 7-day usage with reset date/time alongside the limit reached warning
       let sevenDayDisplay = '';
@@ -117,7 +122,7 @@ export function renderSessionLine(ctx: RenderContext): string {
           : ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`;
       }
       
-      parts.push(red(`⚠ 5h limit${fiveHourResetTime ? ` (${fiveHourResetTime})` : ''}`) + sevenDayDisplay);
+      parts.push(red(`⚠ 5h limit${fiveHourResetDisplay}`) + sevenDayDisplay);
     } else {
       // Build usage display with time-to-reset countdown
       const fiveHourDisplay = formatUsagePercent(ctx.usageData.fiveHour);
@@ -244,6 +249,29 @@ function formatResetDateTime(resetAt: Date | null): string {
   const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
   
   return `Resets ${dayName} ${hours}:${minsStr} ${ampm}`;
+}
+
+/**
+ * Format reset time as just time: "2:30 PM"
+ * Used for 5-hour reset display (same day, so no need for day name)
+ */
+function formatResetTimeOnly(resetAt: Date | null): string {
+  if (!resetAt) return '';
+  
+  const now = new Date();
+  if (resetAt.getTime() <= now.getTime()) return '';
+  
+  let hours = resetAt.getHours();
+  const mins = resetAt.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  // Convert to 12-hour format
+  hours = hours % 12;
+  hours = hours ? hours : 12; // 0 should be 12
+  
+  const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
+  
+  return `${hours}:${minsStr} ${ampm}`;
 }
 
 /**
