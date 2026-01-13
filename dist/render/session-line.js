@@ -83,16 +83,20 @@ export function renderSessionLine(ctx) {
             parts.push(yellow(`usage: ⚠`));
         }
         else if (isLimitReached(ctx.usageData)) {
-            // Show which limit is reached and the 7-day status
+            // Show which limit is reached and the 7-day status with reset times
             const fiveHourReached = ctx.usageData.fiveHour === 100;
-            const resetTime = fiveHourReached
+            const fiveHourResetTime = fiveHourReached
                 ? ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt)
-                : ctx.usageData.sevenDayResetIn ?? formatResetTime(ctx.usageData.sevenDayResetAt);
-            // Always show 7-day usage alongside the limit reached warning
-            const sevenDayDisplay = ctx.usageData.sevenDay !== null
-                ? ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`
-                : '';
-            parts.push(red(`⚠ 5h limit${resetTime ? ` (${resetTime})` : ''}`) + sevenDayDisplay);
+                : null;
+            // Always show 7-day usage with reset countdown alongside the limit reached warning
+            let sevenDayDisplay = '';
+            if (ctx.usageData.sevenDay !== null) {
+                const sevenDayReset = ctx.usageData.sevenDayResetIn ?? formatResetTime(ctx.usageData.sevenDayResetAt);
+                sevenDayDisplay = sevenDayReset
+                    ? ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)} (${sevenDayReset})`
+                    : ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`;
+            }
+            parts.push(red(`⚠ 5h limit${fiveHourResetTime ? ` (${fiveHourResetTime})` : ''}`) + sevenDayDisplay);
         }
         else {
             // Build usage display with time-to-reset countdown
@@ -176,6 +180,12 @@ function formatResetTime(resetAt) {
         return `${diffMins}m`;
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
+    // Handle days for longer durations (7-day reset)
+    if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        const remainingHours = hours % 24;
+        return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+    }
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 /**
