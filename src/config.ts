@@ -6,9 +6,12 @@ export type LayoutType = 'default' | 'separators';
 
 export type AutocompactBufferMode = 'enabled' | 'disabled';
 
+export type ColorTheme = 'gray' | 'orange' | 'blue' | 'teal' | 'green' | 'lavender' | 'rose' | 'gold' | 'slate' | 'cyan';
+
 export interface HudConfig {
   layout: LayoutType;
   pathLevels: 1 | 2 | 3;
+  colorTheme: ColorTheme;
   gitStatus: {
     enabled: boolean;
     showDirty: boolean;
@@ -24,6 +27,7 @@ export interface HudConfig {
     showTools: boolean;
     showAgents: boolean;
     showTodos: boolean;
+    showLastMessage: boolean;
     autocompactBuffer: AutocompactBufferMode;
   };
 }
@@ -31,6 +35,7 @@ export interface HudConfig {
 export const DEFAULT_CONFIG: HudConfig = {
   layout: 'default',
   pathLevels: 1,
+  colorTheme: 'blue',
   gitStatus: {
     enabled: true,
     showDirty: true,
@@ -46,6 +51,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showTools: true,
     showAgents: true,
     showTodos: true,
+    showLastMessage: false,
     autocompactBuffer: 'enabled',
   },
 };
@@ -67,6 +73,10 @@ function validateAutocompactBuffer(value: unknown): value is AutocompactBufferMo
   return value === 'enabled' || value === 'disabled';
 }
 
+function validateColorTheme(value: unknown): value is ColorTheme {
+  return ['gray', 'orange', 'blue', 'teal', 'green', 'lavender', 'rose', 'gold', 'slate', 'cyan'].includes(value as string);
+}
+
 function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
   const layout = validateLayout(userConfig.layout)
     ? userConfig.layout
@@ -75,6 +85,10 @@ function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
   const pathLevels = validatePathLevels(userConfig.pathLevels)
     ? userConfig.pathLevels
     : DEFAULT_CONFIG.pathLevels;
+
+  const colorTheme = validateColorTheme(userConfig.colorTheme)
+    ? userConfig.colorTheme
+    : DEFAULT_CONFIG.colorTheme;
 
   const gitStatus = {
     enabled: typeof userConfig.gitStatus?.enabled === 'boolean'
@@ -116,12 +130,15 @@ function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showTodos: typeof userConfig.display?.showTodos === 'boolean'
       ? userConfig.display.showTodos
       : DEFAULT_CONFIG.display.showTodos,
+    showLastMessage: typeof userConfig.display?.showLastMessage === 'boolean'
+      ? userConfig.display.showLastMessage
+      : DEFAULT_CONFIG.display.showLastMessage,
     autocompactBuffer: validateAutocompactBuffer(userConfig.display?.autocompactBuffer)
       ? userConfig.display.autocompactBuffer
       : DEFAULT_CONFIG.display.autocompactBuffer,
   };
 
-  return { layout, pathLevels, gitStatus, display };
+  return { layout, pathLevels, colorTheme, gitStatus, display };
 }
 
 export async function loadConfig(): Promise<HudConfig> {

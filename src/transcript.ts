@@ -3,9 +3,10 @@ import * as readline from 'readline';
 import type { TranscriptData, ToolEntry, AgentEntry, TodoItem } from './types.js';
 
 interface TranscriptLine {
+  type?: string;  // 'user' or 'assistant'
   timestamp?: string;
   message?: {
-    content?: ContentBlock[];
+    content?: ContentBlock[] | string;
   };
 }
 
@@ -13,6 +14,7 @@ interface ContentBlock {
   type: string;
   id?: string;
   name?: string;
+  text?: string;  // For text content blocks
   input?: Record<string, unknown>;
   tool_use_id?: string;
   is_error?: boolean;
@@ -32,6 +34,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   const toolMap = new Map<string, ToolEntry>();
   const agentMap = new Map<string, AgentEntry>();
   let latestTodos: TodoItem[] = [];
+  const userMessages: string[] = [];
 
   try {
     const fileStream = fs.createReadStream(transcriptPath);
@@ -46,6 +49,14 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
       try {
         const entry = JSON.parse(line) as TranscriptLine;
         processEntry(entry, toolMap, agentMap, latestTodos, result);
+
+        // Extract user messages
+        if (entry.type === 'user' && entry.message?.content) {
+          const msgText = extractUserText(entry.message.content);
+          if (msgText && !isUnhelpfulMessage(msgText)) {
+            userMessages.push(msgText);
+          }
+        }
       } catch {
         // Skip malformed lines
       }
@@ -58,7 +69,38 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   result.agents = Array.from(agentMap.values()).slice(-10);
   result.todos = latestTodos;
 
+  // Get the last user message
+  if (userMessages.length > 0) {
+    result.lastUserMessage = userMessages[userMessages.length - 1];
+  }
+
   return result;
+}
+
+function extractUserText(content: ContentBlock[] | string): string {
+  if (typeof content === 'string') {
+    return content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  if (Array.isArray(content)) {
+    const textParts: string[] = [];
+    for (const block of content) {
+      if (block.type === 'text' && block.text) {
+        textParts.push(block.text);
+      }
+    }
+    return textParts.join(' ').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  return '';
+}
+
+function isUnhelpfulMessage(msg: string): boolean {
+  return (
+    msg.startsWith('[Request interrupted') ||
+    msg.startsWith('[Request cancelled') ||
+    msg === ''
+  );
 }
 
 function processEntry(

@@ -10,6 +10,8 @@ export interface StdinData {
   };
   context_window?: {
     context_window_size?: number;
+    used_percentage?: number;      // Direct percentage from API
+    remaining_percentage?: number; // Direct percentage from API
     current_usage?: {
       input_tokens?: number;
       cache_creation_input_tokens?: number;
@@ -67,6 +69,7 @@ export interface TranscriptData {
   agents: AgentEntry[];
   todos: TodoItem[];
   sessionStart?: Date;
+  lastUserMessage?: string;  // User's most recent text message
 }
 
 export interface RenderContext {
