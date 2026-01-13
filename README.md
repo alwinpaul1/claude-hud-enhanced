@@ -9,9 +9,7 @@ An enhanced Claude Code plugin that shows what's happening — context usage, ac
 
 ## Install
 
-### Option 1: From GitHub (Recommended)
-
-Inside a Claude Code instance, run:
+Inside a Claude Code instance, run the following commands:
 
 **Step 1: Add the enhanced marketplace**
 ```
@@ -26,27 +24,6 @@ Inside a Claude Code instance, run:
 **Step 3: Configure the statusline**
 ```
 /claude-hud:setup
-```
-
-### Option 2: Manual Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/alwinpaul1/claude-hud-enhanced.git ~/.claude/plugins/claude-hud-enhanced
-
-# Install dependencies and build
-cd ~/.claude/plugins/claude-hud-enhanced
-npm install && npm run build
-```
-
-Then add to your `~/.claude/settings.json`:
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "node ~/.claude/plugins/claude-hud-enhanced/dist/index.js"
-  }
-}
 ```
 
 Done! The HUD appears immediately — no restart needed.
