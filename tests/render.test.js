@@ -390,7 +390,7 @@ test('renderSessionLine displays plan name in model bracket', () => {
   assert.ok(line.includes('Max'), 'should include plan name');
 });
 
-test('renderSessionLine displays usage percentages (7d hidden when low)', () => {
+test('renderSessionLine displays usage percentages (7d always shown)', () => {
   const ctx = baseContext();
   ctx.usageData = {
     planName: 'Pro',
@@ -401,8 +401,9 @@ test('renderSessionLine displays usage percentages (7d hidden when low)', () => 
   };
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('5h:'), 'should include 5h label');
-  assert.ok(!line.includes('7d:'), 'should NOT include 7d when below 80%');
+  assert.ok(line.includes('7d:'), 'should ALWAYS include 7d (enhanced behavior)');
   assert.ok(line.includes('6%'), 'should include 5h percentage');
+  assert.ok(line.includes('13%'), 'should include 7d percentage');
 });
 
 test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
@@ -446,8 +447,10 @@ test('renderSessionLine displays limit reached warning', () => {
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('Limit reached'), 'should show limit reached');
-  assert.ok(line.includes('resets'), 'should show reset time');
+  assert.ok(line.includes('5h limit'), 'should show 5h limit warning');
+  assert.ok(line.includes('1h'), 'should show reset countdown');
+  assert.ok(line.includes('7d:'), 'should always show 7d usage');
+  assert.ok(line.includes('45%'), 'should include 7d percentage');
 });
 
 test('renderSessionLine displays -- for null usage values', () => {
