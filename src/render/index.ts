@@ -3,7 +3,8 @@ import { renderSessionLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
 import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
-import { dim, RESET } from './colors.js';
+import { renderLastMessageLine } from './last-message-line.js';
+import { dim, RESET, setTheme } from './colors.js';
 
 // Strip ANSI codes to get visual length
 function visualLength(str: string): number {
@@ -16,6 +17,11 @@ function makeSeparator(length: number): string {
 }
 
 export function render(ctx: RenderContext): void {
+  // Set the color theme from config
+  if (ctx.config?.colorTheme) {
+    setTheme(ctx.config.colorTheme);
+  }
+
   const layout = ctx.config?.layout ?? 'default';
   const lines: string[] = [];
   const display = ctx.config?.display;
@@ -41,6 +47,14 @@ export function render(ctx: RenderContext): void {
     const todosLine = renderTodosLine(ctx);
     if (todosLine) {
       activityLines.push(todosLine);
+    }
+  }
+
+  // Add last user message line (only if explicitly enabled)
+  if (display?.showLastMessage === true) {
+    const lastMessageLine = renderLastMessageLine(ctx);
+    if (lastMessageLine) {
+      activityLines.push(lastMessageLine);
     }
   }
 

@@ -1,3 +1,5 @@
+import type { ColorTheme } from '../config.js';
+
 export const RESET = '\x1b[0m';
 
 const DIM = '\x1b[2m';
@@ -6,6 +8,35 @@ const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
 const MAGENTA = '\x1b[35m';
 const CYAN = '\x1b[36m';
+
+// Color theme accent colors (256-color mode)
+const THEME_COLORS: Record<ColorTheme, string> = {
+  gray: '\x1b[38;5;245m',
+  orange: '\x1b[38;5;173m',
+  blue: '\x1b[38;5;74m',
+  teal: '\x1b[38;5;66m',
+  green: '\x1b[38;5;71m',
+  lavender: '\x1b[38;5;139m',
+  rose: '\x1b[38;5;132m',
+  gold: '\x1b[38;5;136m',
+  slate: '\x1b[38;5;60m',
+  cyan: '\x1b[38;5;37m',
+};
+
+// Current active theme (can be set at runtime)
+let activeTheme: ColorTheme = 'blue';
+
+export function setTheme(theme: ColorTheme): void {
+  activeTheme = theme;
+}
+
+export function getTheme(): ColorTheme {
+  return activeTheme;
+}
+
+export function accent(text: string): string {
+  return `${THEME_COLORS[activeTheme]}${text}${RESET}`;
+}
 
 export function green(text: string): string {
   return `${GREEN}${text}${RESET}`;
@@ -42,4 +73,12 @@ export function coloredBar(percent: number, width: number = 10): string {
   const empty = width - filled;
   const color = getContextColor(percent);
   return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+}
+
+// Themed bar using the accent color
+export function themedBar(percent: number, width: number = 10): string {
+  const filled = Math.round((percent / 100) * width);
+  const empty = width - filled;
+  const accentColor = THEME_COLORS[activeTheme];
+  return `${accentColor}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
 }

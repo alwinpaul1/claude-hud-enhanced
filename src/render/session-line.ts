@@ -1,7 +1,7 @@
 import type { RenderContext } from '../types.js';
 import { isLimitReached } from '../types.js';
-import { getContextPercent, getBufferedPercent, getModelName } from '../stdin.js';
-import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET } from './colors.js';
+import { getContextPercent, getModelName, getUsedTokens } from '../stdin.js';
+import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET, accent } from './colors.js';
 
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
 
@@ -12,16 +12,7 @@ const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG ===
 export function renderSessionLine(ctx: RenderContext): string {
   const model = getModelName(ctx.stdin);
 
-  const rawPercent = getContextPercent(ctx.stdin);
-  const bufferedPercent = getBufferedPercent(ctx.stdin);
-  const autocompactMode = ctx.config?.display?.autocompactBuffer ?? 'enabled';
-  const percent = autocompactMode === 'disabled' ? rawPercent : bufferedPercent;
-
-  if (DEBUG && autocompactMode === 'disabled') {
-    console.error(`[claude-hud:context] autocompactBuffer=disabled, showing raw ${rawPercent}% (buffered would be ${bufferedPercent}%)`);
-  }
-
-  const bar = coloredBar(percent);
+  const percent = getContextPercent(ctx.stdin);
 
   const parts: string[] = [];
   const display = ctx.config?.display;
@@ -30,16 +21,19 @@ export function renderSessionLine(ctx: RenderContext): string {
   // Plan name only shows if showUsage is enabled (respects hybrid toggle)
   const showPlanName = display?.showUsage !== false && ctx.usageData?.planName;
 
-  if (display?.showModel !== false && display?.showContextBar !== false) {
+  // Calculate used tokens and total tokens for display with colored progress bar
+  // Use getUsedTokens which matches /context command calculation
+  const totalTokens = getUsedTokens(ctx.stdin);
+  const contextSize = ctx.stdin.context_window?.context_window_size ?? 0;
+  const bar = coloredBar(percent);
+  const tokenDisplay = `${getContextColor(percent)}${formatTokens(totalTokens)}/${formatTokens(contextSize)}${RESET}`;
+  const percentDisplay = `${getContextColor(percent)}${percent}%${RESET}`;
+
+  if (display?.showModel !== false) {
     const modelDisplay = showPlanName ? `${model} | ${ctx.usageData!.planName}` : model;
-    parts.push(`${cyan(`[${modelDisplay}]`)} ${bar} ${getContextColor(percent)}${percent}%${RESET}`);
-  } else if (display?.showModel !== false) {
-    const modelDisplay = showPlanName ? `${model} | ${ctx.usageData!.planName}` : model;
-    parts.push(`${cyan(`[${modelDisplay}]`)} ${getContextColor(percent)}${percent}%${RESET}`);
-  } else if (display?.showContextBar !== false) {
-    parts.push(`${bar} ${getContextColor(percent)}${percent}%${RESET}`);
+    parts.push(`${accent(`[${modelDisplay}]`)} ${bar} ${percentDisplay} ${tokenDisplay}`);
   } else {
-    parts.push(`${getContextColor(percent)}${percent}%${RESET}`);
+    parts.push(`${bar} ${percentDisplay} ${tokenDisplay}`);
   }
 
   // Project path (SECOND)
