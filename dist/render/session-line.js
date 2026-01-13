@@ -1,7 +1,10 @@
-import { isLimitReached } from '../types.js';
+import { isLimitReached, getMostRestrictiveQuota } from '../types.js';
 import { getContextPercent, getModelName, getUsedTokens } from '../stdin.js';
 import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET, accent } from './colors.js';
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
+// ANSI color codes for enhanced display
+const ORANGE = '\x1b[38;5;208m'; // For warnings
+const BLUE = '\x1b[38;5;39m'; // For info
 /**
  * Renders the full session line (model + context bar + project + git + counts + usage + duration).
  * Used for default and separators layouts.
@@ -80,25 +83,53 @@ export function renderSessionLine(ctx) {
             parts.push(yellow(`usage: ⚠`));
         }
         else if (isLimitReached(ctx.usageData)) {
-            const resetTime = ctx.usageData.fiveHour === 100
-                ? formatResetTime(ctx.usageData.fiveHourResetAt)
-                : formatResetTime(ctx.usageData.sevenDayResetAt);
-            parts.push(red(`⚠ Limit reached${resetTime ? ` (resets ${resetTime})` : ''}`));
+            // Show which limit is reached and the 7-day status
+            const fiveHourReached = ctx.usageData.fiveHour === 100;
+            const resetTime = fiveHourReached
+                ? ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt)
+                : ctx.usageData.sevenDayResetIn ?? formatResetTime(ctx.usageData.sevenDayResetAt);
+            // Always show 7-day usage alongside the limit reached warning
+            const sevenDayDisplay = ctx.usageData.sevenDay !== null
+                ? ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`
+                : '';
+            parts.push(red(`⚠ 5h limit${resetTime ? ` (${resetTime})` : ''}`) + sevenDayDisplay);
         }
         else {
+            // Build usage display with time-to-reset countdown
             const fiveHourDisplay = formatUsagePercent(ctx.usageData.fiveHour);
-            const fiveHourReset = formatResetTime(ctx.usageData.fiveHourResetAt);
+            const fiveHourReset = ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt);
             const fiveHourPart = fiveHourReset
                 ? `5h: ${fiveHourDisplay} (${fiveHourReset})`
                 : `5h: ${fiveHourDisplay}`;
+            // Always show 7-day usage if available
             const sevenDay = ctx.usageData.sevenDay;
-            if (sevenDay !== null && sevenDay >= 80) {
+            if (sevenDay !== null) {
                 const sevenDayDisplay = formatUsagePercent(sevenDay);
-                parts.push(`${fiveHourPart} | 7d: ${sevenDayDisplay}`);
+                const sevenDayReset = ctx.usageData.sevenDayResetIn ?? formatResetTime(ctx.usageData.sevenDayResetAt);
+                const sevenDayPart = sevenDayReset
+                    ? `7d: ${sevenDayDisplay} (${sevenDayReset})`
+                    : `7d: ${sevenDayDisplay}`;
+                parts.push(`${fiveHourPart} | ${sevenDayPart}`);
             }
             else {
                 parts.push(fiveHourPart);
             }
+        }
+        // Show Max plan tier if available (Max5 = 88k, Max20 = 220k tokens/window)
+        if (ctx.usageData.maxPlanInfo?.tier) {
+            const tierInfo = ctx.usageData.maxPlanInfo;
+            const tokens = tierInfo.tokensPerWindow ? formatTokens(tierInfo.tokensPerWindow) : '';
+            parts.push(dim(`${BLUE}${tierInfo.tier}${RESET}${tokens ? dim(` ${tokens}/win`) : ''}`));
+        }
+        // Show model-specific quotas if any are > 50% utilized
+        const modelQuota = getMostRestrictiveQuota(ctx.usageData);
+        if (modelQuota && modelQuota.utilization !== null && modelQuota.utilization >= 50) {
+            const quotaDisplay = formatModelQuota(modelQuota);
+            parts.push(quotaDisplay);
+        }
+        // Show compaction buffer threshold if different from default
+        if (ctx.usageData.compactionInfo?.isEnabled && ctx.usageData.compactionInfo.bufferPercent !== 80) {
+            parts.push(dim(`compact@${ctx.usageData.compactionInfo.bufferPercent}%`));
         }
     }
     // Session duration
@@ -146,5 +177,24 @@ function formatResetTime(resetAt) {
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+/**
+ * Format model-specific quota display
+ * Shows model name, utilization, and weekly hours if available
+ */
+function formatModelQuota(quota) {
+    const util = quota.utilization ?? 0;
+    const color = getContextColor(util);
+    // Short name for display
+    const shortName = quota.displayName
+        .replace('Claude ', '')
+        .replace(' ', '')
+        .substring(0, 8);
+    let display = `${color}${shortName}: ${util}%${RESET}`;
+    // Add weekly hours if available (compute-intensive models like Opus 4.5)
+    if (quota.weeklyHoursUsed !== null && quota.weeklyHoursLimit !== null) {
+        display += dim(` (${quota.weeklyHoursUsed}/${quota.weeklyHoursLimit}h/wk)`);
+    }
+    return display;
 }
 //# sourceMappingURL=session-line.js.map
