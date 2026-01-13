@@ -4,6 +4,7 @@ import * as os from 'node:os';
 export const DEFAULT_CONFIG = {
     layout: 'default',
     pathLevels: 1,
+    colorTheme: 'blue',
     gitStatus: {
         enabled: true,
         showDirty: true,
@@ -19,6 +20,7 @@ export const DEFAULT_CONFIG = {
         showTools: true,
         showAgents: true,
         showTodos: true,
+        showLastMessage: false,
         autocompactBuffer: 'enabled',
     },
 };
@@ -35,6 +37,9 @@ function validateLayout(value) {
 function validateAutocompactBuffer(value) {
     return value === 'enabled' || value === 'disabled';
 }
+function validateColorTheme(value) {
+    return ['gray', 'orange', 'blue', 'teal', 'green', 'lavender', 'rose', 'gold', 'slate', 'cyan'].includes(value);
+}
 function mergeConfig(userConfig) {
     const layout = validateLayout(userConfig.layout)
         ? userConfig.layout
@@ -42,6 +47,9 @@ function mergeConfig(userConfig) {
     const pathLevels = validatePathLevels(userConfig.pathLevels)
         ? userConfig.pathLevels
         : DEFAULT_CONFIG.pathLevels;
+    const colorTheme = validateColorTheme(userConfig.colorTheme)
+        ? userConfig.colorTheme
+        : DEFAULT_CONFIG.colorTheme;
     const gitStatus = {
         enabled: typeof userConfig.gitStatus?.enabled === 'boolean'
             ? userConfig.gitStatus.enabled
@@ -81,11 +89,14 @@ function mergeConfig(userConfig) {
         showTodos: typeof userConfig.display?.showTodos === 'boolean'
             ? userConfig.display.showTodos
             : DEFAULT_CONFIG.display.showTodos,
+        showLastMessage: typeof userConfig.display?.showLastMessage === 'boolean'
+            ? userConfig.display.showLastMessage
+            : DEFAULT_CONFIG.display.showLastMessage,
         autocompactBuffer: validateAutocompactBuffer(userConfig.display?.autocompactBuffer)
             ? userConfig.display.autocompactBuffer
             : DEFAULT_CONFIG.display.autocompactBuffer,
     };
-    return { layout, pathLevels, gitStatus, display };
+    return { layout, pathLevels, colorTheme, gitStatus, display };
 }
 export async function loadConfig() {
     const configPath = getConfigPath();

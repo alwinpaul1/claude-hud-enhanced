@@ -9,6 +9,8 @@ export interface StdinData {
     };
     context_window?: {
         context_window_size?: number;
+        used_percentage?: number;
+        remaining_percentage?: number;
         current_usage?: {
             input_tokens?: number;
             cache_creation_input_tokens?: number;
@@ -57,6 +59,7 @@ export interface TranscriptData {
     agents: AgentEntry[];
     todos: TodoItem[];
     sessionStart?: Date;
+    lastUserMessage?: string;
 }
 export interface RenderContext {
     stdin: StdinData;

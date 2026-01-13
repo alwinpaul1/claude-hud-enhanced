@@ -1,8 +1,10 @@
 export type LayoutType = 'default' | 'separators';
 export type AutocompactBufferMode = 'enabled' | 'disabled';
+export type ColorTheme = 'gray' | 'orange' | 'blue' | 'teal' | 'green' | 'lavender' | 'rose' | 'gold' | 'slate' | 'cyan';
 export interface HudConfig {
     layout: LayoutType;
     pathLevels: 1 | 2 | 3;
+    colorTheme: ColorTheme;
     gitStatus: {
         enabled: boolean;
         showDirty: boolean;
@@ -18,6 +20,7 @@ export interface HudConfig {
         showTools: boolean;
         showAgents: boolean;
         showTodos: boolean;
+        showLastMessage: boolean;
         autocompactBuffer: AutocompactBufferMode;
     };
 }

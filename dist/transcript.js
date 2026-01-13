@@ -12,6 +12,7 @@ export async function parseTranscript(transcriptPath) {
     const toolMap = new Map();
     const agentMap = new Map();
     let latestTodos = [];
+    const userMessages = [];
     try {
         const fileStream = fs.createReadStream(transcriptPath);
         const rl = readline.createInterface({
@@ -24,6 +25,13 @@ export async function parseTranscript(transcriptPath) {
             try {
                 const entry = JSON.parse(line);
                 processEntry(entry, toolMap, agentMap, latestTodos, result);
+                // Extract user messages
+                if (entry.type === 'user' && entry.message?.content) {
+                    const msgText = extractUserText(entry.message.content);
+                    if (msgText && !isUnhelpfulMessage(msgText)) {
+                        userMessages.push(msgText);
+                    }
+                }
             }
             catch {
                 // Skip malformed lines
@@ -36,7 +44,31 @@ export async function parseTranscript(transcriptPath) {
     result.tools = Array.from(toolMap.values()).slice(-20);
     result.agents = Array.from(agentMap.values()).slice(-10);
     result.todos = latestTodos;
+    // Get the last user message
+    if (userMessages.length > 0) {
+        result.lastUserMessage = userMessages[userMessages.length - 1];
+    }
     return result;
+}
+function extractUserText(content) {
+    if (typeof content === 'string') {
+        return content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    if (Array.isArray(content)) {
+        const textParts = [];
+        for (const block of content) {
+            if (block.type === 'text' && block.text) {
+                textParts.push(block.text);
+            }
+        }
+        return textParts.join(' ').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    return '';
+}
+function isUnhelpfulMessage(msg) {
+    return (msg.startsWith('[Request interrupted') ||
+        msg.startsWith('[Request cancelled') ||
+        msg === '');
 }
 function processEntry(entry, toolMap, agentMap, latestTodos, result) {
     const timestamp = entry.timestamp ? new Date(entry.timestamp) : new Date();
