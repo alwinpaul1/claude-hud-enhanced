@@ -7,6 +7,7 @@ import { getUsage } from './usage-api.js';
 import { loadConfig } from './config.js';
 import type { RenderContext } from './types.js';
 import { fileURLToPath } from 'node:url';
+import { realpathSync } from 'node:fs';
 
 export type MainDeps = {
   readStdin: typeof readStdin;
@@ -94,6 +95,15 @@ export function formatSessionDuration(sessionStart?: Date, now: () => number = (
   return `${hours}h ${remainingMins}m`;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const scriptPath = fileURLToPath(import.meta.url);
+const argvPath = process.argv[1];
+const isSamePath = (a: string, b: string): boolean => {
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return a === b;
+  }
+};
+if (argvPath && isSamePath(argvPath, scriptPath)) {
   void main();
 }
