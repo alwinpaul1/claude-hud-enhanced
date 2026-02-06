@@ -2,7 +2,13 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [Unreleased]
+## [0.0.5] - 2026-02-06
+
+### Fixed
+- Fix all command references from `claude-hud` to `claude-hud-enhanced` across docs
+  - Resolves "Unknown skill: claude-hud:setup" error during installation
+  - Updated config paths to `~/.claude/plugins/claude-hud-enhanced/`
+  - Updated repo URLs in CLAUDE.README.md
 
 ### Changed
 - Context percentage now uses percentage-based buffer (22.5%) instead of hardcoded 45k tokens
