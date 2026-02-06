@@ -1,7 +1,7 @@
 {
   "name": "claude-hud-enhanced",
   "description": "Enhanced real-time statusline HUD for Claude Code - color themes, accurate token display, context health, tool activity, agent tracking, and todo progress",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "author": {
     "name": "Alwin Paul",
     "url": "https://github.com/alwinpaul1"
