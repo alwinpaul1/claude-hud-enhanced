@@ -19,8 +19,8 @@ All notable changes to Claude HUD will be documented in this file.
 ## [0.0.4] - 2026-01-07
 
 ### Added
-- Configuration system via `~/.claude/plugins/claude-hud/config.json`
-- Interactive `/claude-hud:configure` skill for in-Claude configuration
+- Configuration system via `~/.claude/plugins/claude-hud-enhanced/config.json`
+- Interactive `/claude-hud-enhanced:configure` skill for in-Claude configuration
 - Usage API integration showing 5h/7d rate limits (Pro/Max/Team)
 - Git status with dirty indicator and ahead/behind counts
 - Configurable path levels (1-3 directory segments)

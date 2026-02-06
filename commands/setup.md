@@ -99,7 +99,7 @@ If a write fails with `File has been unexpectedly modified`, re-read the file an
 }
 ```
 
-**Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud:setup` to verify the plugin is still installed.
+**Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud-enhanced:setup` to verify the plugin is still installed.
 
 ## Step 4: Verify With User
 
