@@ -1,13 +1,13 @@
 {
-  "name": "claude-hud",
-  "description": "Real-time statusline HUD for Claude Code - context health, tool activity, agent tracking, and todo progress",
+  "name": "claude-hud-enhanced",
+  "description": "Enhanced real-time statusline HUD for Claude Code - color themes, accurate token display, context health, tool activity, agent tracking, and todo progress",
   "version": "0.0.4",
   "author": {
-    "name": "Jarrod Watts",
-    "url": "https://github.com/jarrodwatts"
+    "name": "Alwin Paul",
+    "url": "https://github.com/alwinpaul1"
   },
-  "homepage": "https://github.com/jarrodwatts/claude-hud",
-  "repository": "https://github.com/jarrodwatts/claude-hud",
+  "homepage": "https://github.com/alwinpaul1/claude-hud-enhanced",
+  "repository": "https://github.com/alwinpaul1/claude-hud-enhanced",
   "license": "MIT",
-  "keywords": ["hud", "monitoring", "statusline", "context", "tools", "agents", "todos", "claude-code"]
+  "keywords": ["hud", "monitoring", "statusline", "context", "tools", "agents", "todos", "claude-code", "themes"]
 }
