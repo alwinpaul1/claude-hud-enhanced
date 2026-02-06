@@ -376,7 +376,7 @@ test('renderToolsLine returns null when no tools exist', () => {
 });
 
 // Usage display tests
-test('renderSessionLine displays plan name in model bracket', () => {
+test('renderSessionLine displays model name without plan name', () => {
   const ctx = baseContext();
   ctx.usageData = {
     planName: 'Max',
@@ -387,7 +387,7 @@ test('renderSessionLine displays plan name in model bracket', () => {
   };
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('Opus'), 'should include model name');
-  assert.ok(line.includes('Max'), 'should include plan name');
+  assert.ok(!line.includes('Max'), 'should not include plan name');
 });
 
 test('renderSessionLine displays usage percentages (7d always shown)', () => {
