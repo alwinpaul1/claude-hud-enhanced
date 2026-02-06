@@ -17,7 +17,7 @@
     "statusline",
     "hud"
   ],
-  "author": "Jarrod Watts",
+  "author": "Alwin Paul",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
