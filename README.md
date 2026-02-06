@@ -23,7 +23,7 @@ Inside a Claude Code instance, run the following commands:
 
 **Step 3: Configure the statusline**
 ```
-/claude-hud:setup
+/claude-hud-enhanced:setup
 ```
 
 Done! The HUD appears immediately — no restart needed.
@@ -124,7 +124,7 @@ Claude Code → stdin JSON → claude-hud → stdout → displayed in your termi
 Customize your HUD anytime:
 
 ```
-/claude-hud:configure
+/claude-hud-enhanced:configure
 ```
 
 The guided flow walks you through customization — no manual editing needed:
@@ -145,7 +145,7 @@ After choosing a preset, you can turn individual elements on or off.
 
 ### Manual Configuration
 
-You can also edit the config file directly at `~/.claude/plugins/claude-hud/config.json`.
+You can also edit the config file directly at `~/.claude/plugins/claude-hud-enhanced/config.json`.
 
 ### Options
 
@@ -263,7 +263,7 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 **Config not applying?**
 - Check for JSON syntax errors: invalid JSON silently falls back to defaults
 - Ensure valid values: `pathLevels` must be 1, 2, or 3; `layout` must be `default` or `separators`
-- Delete config and run `/claude-hud:configure` to regenerate
+- Delete config and run `/claude-hud-enhanced:configure` to regenerate
 
 **Git status missing?**
 - Verify you're in a git repository
