@@ -2,6 +2,13 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.6] - 2026-02-09
+
+### Changed
+- Version bump
+
+---
+
 ## [0.0.5] - 2026-02-06
 
 ### Fixed
