@@ -2,9 +2,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 export const DEFAULT_CONFIG = {
-    lineLayout: 'expanded',
-    showSeparators: false,
+    layout: 'default',
     pathLevels: 1,
+    colorTheme: 'blue',
     gitStatus: {
         enabled: true,
         showDirty: true,
@@ -14,20 +14,21 @@ export const DEFAULT_CONFIG = {
     display: {
         showModel: true,
         showContextBar: true,
-        contextValue: 'percent',
-        showConfigCounts: false,
-        showDuration: false,
-        showSpeed: false,
+        showConfigCounts: true,
+        showDuration: true,
         showTokenBreakdown: true,
         showUsage: true,
+        showTools: true,
+        showAgents: true,
+        showTodos: true,
+        showLastMessage: false,
+        showSpeed: false,
+        contextValue: 'percent',
         usageBarEnabled: true,
-        showTools: false,
-        showAgents: false,
-        showTodos: false,
-        autocompactBuffer: 'enabled',
         usageThreshold: 0,
         sevenDayThreshold: 80,
         environmentThreshold: 0,
+        autocompactBuffer: 'enabled',
     },
 };
 export function getConfigPath() {
@@ -37,105 +38,93 @@ export function getConfigPath() {
 function validatePathLevels(value) {
     return value === 1 || value === 2 || value === 3;
 }
-function validateLineLayout(value) {
-    return value === 'compact' || value === 'expanded';
+function validateLayout(value) {
+    return value === 'default' || value === 'separators';
 }
 function validateAutocompactBuffer(value) {
     return value === 'enabled' || value === 'disabled';
 }
-function validateContextValue(value) {
-    return value === 'percent' || value === 'tokens';
-}
-function migrateConfig(userConfig) {
-    const migrated = { ...userConfig };
-    if ('layout' in userConfig && !('lineLayout' in userConfig)) {
-        if (userConfig.layout === 'separators') {
-            migrated.lineLayout = 'compact';
-            migrated.showSeparators = true;
-        }
-        else {
-            migrated.lineLayout = 'compact';
-            migrated.showSeparators = false;
-        }
-        delete migrated.layout;
-    }
-    return migrated;
-}
-function validateThreshold(value, max = 100) {
-    if (typeof value !== 'number')
-        return 0;
-    return Math.max(0, Math.min(max, value));
+function validateColorTheme(value) {
+    return ['gray', 'orange', 'blue', 'teal', 'green', 'lavender', 'rose', 'gold', 'slate', 'cyan'].includes(value);
 }
 function mergeConfig(userConfig) {
-    const migrated = migrateConfig(userConfig);
-    const lineLayout = validateLineLayout(migrated.lineLayout)
-        ? migrated.lineLayout
-        : DEFAULT_CONFIG.lineLayout;
-    const showSeparators = typeof migrated.showSeparators === 'boolean'
-        ? migrated.showSeparators
-        : DEFAULT_CONFIG.showSeparators;
-    const pathLevels = validatePathLevels(migrated.pathLevels)
-        ? migrated.pathLevels
+    const layout = validateLayout(userConfig.layout)
+        ? userConfig.layout
+        : DEFAULT_CONFIG.layout;
+    const pathLevels = validatePathLevels(userConfig.pathLevels)
+        ? userConfig.pathLevels
         : DEFAULT_CONFIG.pathLevels;
+    const colorTheme = validateColorTheme(userConfig.colorTheme)
+        ? userConfig.colorTheme
+        : DEFAULT_CONFIG.colorTheme;
     const gitStatus = {
-        enabled: typeof migrated.gitStatus?.enabled === 'boolean'
-            ? migrated.gitStatus.enabled
+        enabled: typeof userConfig.gitStatus?.enabled === 'boolean'
+            ? userConfig.gitStatus.enabled
             : DEFAULT_CONFIG.gitStatus.enabled,
-        showDirty: typeof migrated.gitStatus?.showDirty === 'boolean'
-            ? migrated.gitStatus.showDirty
+        showDirty: typeof userConfig.gitStatus?.showDirty === 'boolean'
+            ? userConfig.gitStatus.showDirty
             : DEFAULT_CONFIG.gitStatus.showDirty,
-        showAheadBehind: typeof migrated.gitStatus?.showAheadBehind === 'boolean'
-            ? migrated.gitStatus.showAheadBehind
+        showAheadBehind: typeof userConfig.gitStatus?.showAheadBehind === 'boolean'
+            ? userConfig.gitStatus.showAheadBehind
             : DEFAULT_CONFIG.gitStatus.showAheadBehind,
-        showFileStats: typeof migrated.gitStatus?.showFileStats === 'boolean'
-            ? migrated.gitStatus.showFileStats
+        showFileStats: typeof userConfig.gitStatus?.showFileStats === 'boolean'
+            ? userConfig.gitStatus.showFileStats
             : DEFAULT_CONFIG.gitStatus.showFileStats,
     };
     const display = {
-        showModel: typeof migrated.display?.showModel === 'boolean'
-            ? migrated.display.showModel
+        showModel: typeof userConfig.display?.showModel === 'boolean'
+            ? userConfig.display.showModel
             : DEFAULT_CONFIG.display.showModel,
-        showContextBar: typeof migrated.display?.showContextBar === 'boolean'
-            ? migrated.display.showContextBar
+        showContextBar: typeof userConfig.display?.showContextBar === 'boolean'
+            ? userConfig.display.showContextBar
             : DEFAULT_CONFIG.display.showContextBar,
-        contextValue: validateContextValue(migrated.display?.contextValue)
-            ? migrated.display.contextValue
-            : DEFAULT_CONFIG.display.contextValue,
-        showConfigCounts: typeof migrated.display?.showConfigCounts === 'boolean'
-            ? migrated.display.showConfigCounts
+        showConfigCounts: typeof userConfig.display?.showConfigCounts === 'boolean'
+            ? userConfig.display.showConfigCounts
             : DEFAULT_CONFIG.display.showConfigCounts,
-        showDuration: typeof migrated.display?.showDuration === 'boolean'
-            ? migrated.display.showDuration
+        showDuration: typeof userConfig.display?.showDuration === 'boolean'
+            ? userConfig.display.showDuration
             : DEFAULT_CONFIG.display.showDuration,
-        showSpeed: typeof migrated.display?.showSpeed === 'boolean'
-            ? migrated.display.showSpeed
-            : DEFAULT_CONFIG.display.showSpeed,
-        showTokenBreakdown: typeof migrated.display?.showTokenBreakdown === 'boolean'
-            ? migrated.display.showTokenBreakdown
+        showTokenBreakdown: typeof userConfig.display?.showTokenBreakdown === 'boolean'
+            ? userConfig.display.showTokenBreakdown
             : DEFAULT_CONFIG.display.showTokenBreakdown,
-        showUsage: typeof migrated.display?.showUsage === 'boolean'
-            ? migrated.display.showUsage
+        showUsage: typeof userConfig.display?.showUsage === 'boolean'
+            ? userConfig.display.showUsage
             : DEFAULT_CONFIG.display.showUsage,
-        usageBarEnabled: typeof migrated.display?.usageBarEnabled === 'boolean'
-            ? migrated.display.usageBarEnabled
-            : DEFAULT_CONFIG.display.usageBarEnabled,
-        showTools: typeof migrated.display?.showTools === 'boolean'
-            ? migrated.display.showTools
+        showTools: typeof userConfig.display?.showTools === 'boolean'
+            ? userConfig.display.showTools
             : DEFAULT_CONFIG.display.showTools,
-        showAgents: typeof migrated.display?.showAgents === 'boolean'
-            ? migrated.display.showAgents
+        showAgents: typeof userConfig.display?.showAgents === 'boolean'
+            ? userConfig.display.showAgents
             : DEFAULT_CONFIG.display.showAgents,
-        showTodos: typeof migrated.display?.showTodos === 'boolean'
-            ? migrated.display.showTodos
+        showTodos: typeof userConfig.display?.showTodos === 'boolean'
+            ? userConfig.display.showTodos
             : DEFAULT_CONFIG.display.showTodos,
-        autocompactBuffer: validateAutocompactBuffer(migrated.display?.autocompactBuffer)
-            ? migrated.display.autocompactBuffer
+        showLastMessage: typeof userConfig.display?.showLastMessage === 'boolean'
+            ? userConfig.display.showLastMessage
+            : DEFAULT_CONFIG.display.showLastMessage,
+        showSpeed: typeof userConfig.display?.showSpeed === 'boolean'
+            ? userConfig.display.showSpeed
+            : DEFAULT_CONFIG.display.showSpeed,
+        contextValue: userConfig.display?.contextValue === 'tokens'
+            ? 'tokens'
+            : DEFAULT_CONFIG.display.contextValue,
+        usageBarEnabled: typeof userConfig.display?.usageBarEnabled === 'boolean'
+            ? userConfig.display.usageBarEnabled
+            : DEFAULT_CONFIG.display.usageBarEnabled,
+        usageThreshold: typeof userConfig.display?.usageThreshold === 'number'
+            ? userConfig.display.usageThreshold
+            : DEFAULT_CONFIG.display.usageThreshold,
+        sevenDayThreshold: typeof userConfig.display?.sevenDayThreshold === 'number'
+            ? userConfig.display.sevenDayThreshold
+            : DEFAULT_CONFIG.display.sevenDayThreshold,
+        environmentThreshold: typeof userConfig.display?.environmentThreshold === 'number'
+            ? userConfig.display.environmentThreshold
+            : DEFAULT_CONFIG.display.environmentThreshold,
+        autocompactBuffer: validateAutocompactBuffer(userConfig.display?.autocompactBuffer)
+            ? userConfig.display.autocompactBuffer
             : DEFAULT_CONFIG.display.autocompactBuffer,
-        usageThreshold: validateThreshold(migrated.display?.usageThreshold, 100),
-        sevenDayThreshold: validateThreshold(migrated.display?.sevenDayThreshold, 100),
-        environmentThreshold: validateThreshold(migrated.display?.environmentThreshold, 100),
     };
-    return { lineLayout, showSeparators, pathLevels, gitStatus, display };
+    return { layout, pathLevels, colorTheme, gitStatus, display };
 }
 export async function loadConfig() {
     const configPath = getConfigPath();

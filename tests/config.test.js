@@ -10,12 +10,9 @@ test('loadConfig returns valid config structure', async () => {
   // pathLevels must be 1, 2, or 3
   assert.ok([1, 2, 3].includes(config.pathLevels), 'pathLevels should be 1, 2, or 3');
 
-  // lineLayout must be valid
-  const validLineLayouts = ['compact', 'expanded'];
-  assert.ok(validLineLayouts.includes(config.lineLayout), 'lineLayout should be valid');
-
-  // showSeparators must be boolean
-  assert.equal(typeof config.showSeparators, 'boolean', 'showSeparators should be boolean');
+  // layout must be valid
+  const validLayouts = ['default', 'separators'];
+  assert.ok(validLayouts.includes(config.layout), 'layout should be valid');
 
   // gitStatus object with expected properties
   assert.equal(typeof config.gitStatus, 'object');

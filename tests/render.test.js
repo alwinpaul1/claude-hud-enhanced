@@ -29,12 +29,13 @@ function baseContext() {
     gitStatus: null,
     usageData: null,
     config: {
-      lineLayout: 'compact',
-      showSeparators: false,
+      layout: 'default',
       pathLevels: 1,
+      colorTheme: 'blue',
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false },
-      display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageBarEnabled: false, showTools: true, showAgents: true, showTodos: true, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
+      display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageBarEnabled: false, showTools: true, showAgents: true, showTodos: true, showLastMessage: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
     },
+    extraLabel: null,
   };
 }
 
@@ -484,8 +485,8 @@ test('renderSessionLine displays limit reached warning', () => {
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('Limit reached'), 'should show limit reached');
-  assert.ok(line.includes('resets'), 'should show reset time');
+  assert.ok(line.includes('5h limit'), 'should show 5h limit reached');
+  assert.ok(line.includes('Resets') || line.includes('resets'), 'should show reset time');
 });
 
 test('renderSessionLine displays -- for null usage values', () => {
@@ -566,7 +567,7 @@ test('renderSessionLine uses raw percent when autocompactBuffer is disabled', ()
 
 test('render adds separator line when showSeparators is true and activity exists', () => {
   const ctx = baseContext();
-  ctx.config.showSeparators = true;
+  ctx.config.layout = 'separators';
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
   ];
@@ -586,7 +587,7 @@ test('render adds separator line when showSeparators is true and activity exists
 
 test('render omits separator when showSeparators is true but no activity', () => {
   const ctx = baseContext();
-  ctx.config.showSeparators = true;
+  ctx.config.layout = 'separators';
 
   const logs = [];
   const originalLog = console.log;

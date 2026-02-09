@@ -1,10 +1,10 @@
-export type LineLayoutType = 'compact' | 'expanded';
+export type LayoutType = 'default' | 'separators';
 export type AutocompactBufferMode = 'enabled' | 'disabled';
-export type ContextValueMode = 'percent' | 'tokens';
+export type ColorTheme = 'gray' | 'orange' | 'blue' | 'teal' | 'green' | 'lavender' | 'rose' | 'gold' | 'slate' | 'cyan';
 export interface HudConfig {
-    lineLayout: LineLayoutType;
-    showSeparators: boolean;
+    layout: LayoutType;
     pathLevels: 1 | 2 | 3;
+    colorTheme: ColorTheme;
     gitStatus: {
         enabled: boolean;
         showDirty: boolean;
@@ -14,20 +14,21 @@ export interface HudConfig {
     display: {
         showModel: boolean;
         showContextBar: boolean;
-        contextValue: ContextValueMode;
         showConfigCounts: boolean;
         showDuration: boolean;
-        showSpeed: boolean;
         showTokenBreakdown: boolean;
         showUsage: boolean;
-        usageBarEnabled: boolean;
         showTools: boolean;
         showAgents: boolean;
         showTodos: boolean;
-        autocompactBuffer: AutocompactBufferMode;
+        showLastMessage: boolean;
+        showSpeed: boolean;
+        contextValue: 'percent' | 'tokens';
+        usageBarEnabled: boolean;
         usageThreshold: number;
         sevenDayThreshold: number;
         environmentThreshold: number;
+        autocompactBuffer: AutocompactBufferMode;
     };
 }
 export declare const DEFAULT_CONFIG: HudConfig;

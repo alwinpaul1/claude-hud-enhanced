@@ -1,8 +1,9 @@
-import { isLimitReached } from '../types.js';
+import { isLimitReached, getMostRestrictiveQuota } from '../types.js';
 import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, getTotalTokens } from '../stdin.js';
 import { getOutputSpeed } from '../speed-tracker.js';
 import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, quotaBar, RESET } from './colors.js';
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
+const BLUE = '\x1b[94m';
 /**
  * Renders the full session line (model + context bar + project + git + counts + usage + duration).
  * Used for compact layout mode.
@@ -113,10 +114,22 @@ export function renderSessionLine(ctx) {
             parts.push(yellow(`usage: ⚠${errorHint}`));
         }
         else if (isLimitReached(ctx.usageData)) {
-            const resetTime = ctx.usageData.fiveHour === 100
-                ? formatResetTime(ctx.usageData.fiveHourResetAt)
-                : formatResetTime(ctx.usageData.sevenDayResetAt);
-            parts.push(red(`⚠ Limit reached${resetTime ? ` (resets ${resetTime})` : ''}`));
+            // Show which limit is reached with readable reset time
+            const fiveHourReached = ctx.usageData.fiveHour === 100;
+            let fiveHourResetDisplay = '';
+            if (fiveHourReached && ctx.usageData.fiveHourResetAt) {
+                const resetTime = formatResetTimeOnly(ctx.usageData.fiveHourResetAt);
+                fiveHourResetDisplay = resetTime ? ` Resets ${resetTime}` : '';
+            }
+            // Always show 7-day usage with reset date/time alongside the limit reached warning
+            let sevenDayDisplay = '';
+            if (ctx.usageData.sevenDay !== null) {
+                const sevenDayReset = formatResetDateTime(ctx.usageData.sevenDayResetAt);
+                sevenDayDisplay = sevenDayReset
+                    ? ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)} (${sevenDayReset})`
+                    : ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`;
+            }
+            parts.push(red(`⚠ 5h limit${fiveHourResetDisplay}`) + sevenDayDisplay);
         }
         else {
             const usageThreshold = display?.usageThreshold ?? 0;
@@ -124,25 +137,29 @@ export function renderSessionLine(ctx) {
             const sevenDay = ctx.usageData.sevenDay;
             const effectiveUsage = Math.max(fiveHour ?? 0, sevenDay ?? 0);
             if (effectiveUsage >= usageThreshold) {
+                // Build usage display with countdown and readable reset times
                 const fiveHourDisplay = formatUsagePercent(fiveHour);
-                const fiveHourReset = formatResetTime(ctx.usageData.fiveHourResetAt);
+                const fiveHourReset = ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt);
                 const usageBarEnabled = display?.usageBarEnabled ?? true;
                 const fiveHourPart = usageBarEnabled
                     ? (fiveHourReset
-                        ? `${quotaBar(fiveHour ?? 0)} ${fiveHourDisplay} (${fiveHourReset} / 5h)`
+                        ? `${quotaBar(fiveHour ?? 0)} ${fiveHourDisplay} (${fiveHourReset})`
                         : `${quotaBar(fiveHour ?? 0)} ${fiveHourDisplay}`)
                     : (fiveHourReset
                         ? `5h: ${fiveHourDisplay} (${fiveHourReset})`
                         : `5h: ${fiveHourDisplay}`);
+                // Always show 7-day usage if available with readable reset date/time
                 const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
                 if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
                     const sevenDayDisplay = formatUsagePercent(sevenDay);
-                    const sevenDayReset = formatResetTime(ctx.usageData.sevenDayResetAt);
+                    const sevenDayReset = formatResetDateTime(ctx.usageData.sevenDayResetAt);
                     const sevenDayPart = usageBarEnabled
                         ? (sevenDayReset
-                            ? `${quotaBar(sevenDay)} ${sevenDayDisplay} (${sevenDayReset} / 7d)`
+                            ? `${quotaBar(sevenDay)} ${sevenDayDisplay} (${sevenDayReset})`
                             : `${quotaBar(sevenDay)} ${sevenDayDisplay}`)
-                        : `7d: ${sevenDayDisplay}`;
+                        : (sevenDayReset
+                            ? `7d: ${sevenDayDisplay} (${sevenDayReset})`
+                            : `7d: ${sevenDayDisplay}`);
                     parts.push(`${fiveHourPart} | ${sevenDayPart}`);
                 }
                 else {
@@ -150,14 +167,31 @@ export function renderSessionLine(ctx) {
                 }
             }
         }
+        // Show Max plan tier if available (Max5 = 88k, Max20 = 220k tokens/window)
+        if (ctx.usageData.maxPlanInfo?.tier) {
+            const tierInfo = ctx.usageData.maxPlanInfo;
+            const tokens = tierInfo.tokensPerWindow ? formatTokens(tierInfo.tokensPerWindow) : '';
+            parts.push(dim(`${BLUE}${tierInfo.tier}${RESET}${tokens ? dim(` ${tokens}/win`) : ''}`));
+        }
+        // Show model-specific quotas if any are > 50% utilized
+        const modelQuota = getMostRestrictiveQuota(ctx.usageData);
+        if (modelQuota && modelQuota.utilization !== null && modelQuota.utilization >= 50) {
+            const quotaDisplay = formatModelQuota(modelQuota);
+            parts.push(quotaDisplay);
+        }
+        // Show compaction buffer threshold if different from default
+        if (ctx.usageData.compactionInfo?.isEnabled && ctx.usageData.compactionInfo.bufferPercent !== 80) {
+            parts.push(dim(`compact@${ctx.usageData.compactionInfo.bufferPercent}%`));
+        }
     }
-    // Session duration
+    // Output speed
     if (display?.showSpeed) {
         const speed = getOutputSpeed(ctx.stdin);
         if (speed !== null) {
             parts.push(dim(`out: ${speed.toFixed(1)} tok/s`));
         }
     }
+    // Session duration
     if (display?.showDuration !== false && ctx.sessionDuration) {
         parts.push(dim(`⏱️  ${ctx.sessionDuration}`));
     }
@@ -223,6 +257,71 @@ function formatResetTime(resetAt) {
         return `${diffMins}m`;
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
+    // Handle days for longer durations (7-day reset)
+    if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        const remainingHours = hours % 24;
+        return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+    }
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+/**
+ * Format reset time as readable date/time: "Resets Fri 12:29 PM"
+ * Used for 7-day weekly reset display
+ */
+function formatResetDateTime(resetAt) {
+    if (!resetAt)
+        return '';
+    const now = new Date();
+    if (resetAt.getTime() <= now.getTime())
+        return '';
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayName = days[resetAt.getDay()];
+    let hours = resetAt.getHours();
+    const mins = resetAt.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    // Convert to 12-hour format
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 should be 12
+    const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
+    return `Resets ${dayName} ${hours}:${minsStr} ${ampm}`;
+}
+/**
+ * Format reset time as just time: "2:30 PM"
+ * Used for 5-hour reset display (same day, so no need for day name)
+ */
+function formatResetTimeOnly(resetAt) {
+    if (!resetAt)
+        return '';
+    const now = new Date();
+    if (resetAt.getTime() <= now.getTime())
+        return '';
+    let hours = resetAt.getHours();
+    const mins = resetAt.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    // Convert to 12-hour format
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 should be 12
+    const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
+    return `${hours}:${minsStr} ${ampm}`;
+}
+/**
+ * Format model-specific quota display
+ * Shows model name, utilization, and weekly hours if available
+ */
+function formatModelQuota(quota) {
+    const util = quota.utilization ?? 0;
+    const color = getContextColor(util);
+    // Short name for display
+    const shortName = quota.displayName
+        .replace('Claude ', '')
+        .replace(' ', '')
+        .substring(0, 8);
+    let display = `${color}${shortName}: ${util}%${RESET}`;
+    // Add weekly hours if available (compute-intensive models like Opus 4.5)
+    if (quota.weeklyHoursUsed !== null && quota.weeklyHoursLimit !== null) {
+        display += dim(` (${quota.weeklyHoursUsed}/${quota.weeklyHoursLimit}h/wk)`);
+    }
+    return display;
 }
 //# sourceMappingURL=session-line.js.map

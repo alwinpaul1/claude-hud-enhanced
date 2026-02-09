@@ -9,14 +9,14 @@ export interface StdinData {
     };
     context_window?: {
         context_window_size?: number;
+        used_percentage?: number;
+        remaining_percentage?: number;
         current_usage?: {
             input_tokens?: number;
             output_tokens?: number;
             cache_creation_input_tokens?: number;
             cache_read_input_tokens?: number;
         } | null;
-        used_percentage?: number | null;
-        remaining_percentage?: number | null;
     };
 }
 export interface ToolEntry {
@@ -45,6 +45,28 @@ export interface UsageWindow {
     utilization: number | null;
     resetAt: Date | null;
 }
+/** Model-specific quota information for compute-intensive models */
+export interface ModelQuota {
+    modelId: string;
+    displayName: string;
+    weeklyHoursUsed: number | null;
+    weeklyHoursLimit: number | null;
+    tokensUsed: number | null;
+    tokensLimit: number | null;
+    utilization: number | null;
+    resetsAt: Date | null;
+}
+/** Max plan tier information */
+export interface MaxPlanInfo {
+    tier: 'Max5' | 'Max20' | null;
+    tokensPerWindow: number | null;
+    isActive: boolean;
+}
+/** Auto-compaction configuration from server */
+export interface CompactionInfo {
+    bufferPercent: number;
+    isEnabled: boolean;
+}
 export interface UsageData {
     planName: string | null;
     fiveHour: number | null;
@@ -53,14 +75,25 @@ export interface UsageData {
     sevenDayResetAt: Date | null;
     apiUnavailable?: boolean;
     apiError?: string;
+    modelQuotas?: ModelQuota[];
+    maxPlanInfo?: MaxPlanInfo;
+    compactionInfo?: CompactionInfo;
+    organizationUuid?: string;
+    fiveHourResetIn?: string;
+    sevenDayResetIn?: string;
 }
 /** Check if usage limit is reached (either window at 100%) */
 export declare function isLimitReached(data: UsageData): boolean;
+/** Check if a specific model quota is exhausted */
+export declare function isModelQuotaExhausted(data: UsageData, modelId: string): boolean;
+/** Get the most restrictive model quota */
+export declare function getMostRestrictiveQuota(data: UsageData): ModelQuota | null;
 export interface TranscriptData {
     tools: ToolEntry[];
     agents: AgentEntry[];
     todos: TodoItem[];
     sessionStart?: Date;
+    lastUserMessage?: string;
 }
 export interface RenderContext {
     stdin: StdinData;
