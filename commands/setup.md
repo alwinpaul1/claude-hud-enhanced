@@ -107,7 +107,7 @@ Use AskUserQuestion:
 - Question: "The HUD should now appear below your input field. Is it working?"
 - Options: "Yes, I see it" / "No, something's wrong"
 
-**If yes**: Ask the user if they'd like to ⭐ star the claude-hud repository on GitHub to support the project. If they agree and `gh` CLI is available, run: `gh api -X PUT /user/starred/jarrodwatts/claude-hud`. Only run the star command if they explicitly say yes.
+**If yes**: Ask the user if they'd like to ⭐ star the claude-hud-enhanced repository on GitHub to support the project. If they agree and `gh` CLI is available, run: `gh api -X PUT /user/starred/alwinpaul1/claude-hud-enhanced`. Only run the star command if they explicitly say yes.
 
 **If no**: Debug systematically:
 
