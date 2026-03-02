@@ -49,7 +49,14 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
    bash -c '"{RUNTIME_PATH}" "$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1){SOURCE}"'
    ```
 
-**Windows** (native PowerShell/cmd.exe - if `uname` command is not available):
+**Windows** (Platform: `win32`):
+
+**First, detect the shell**: Check the `Shell:` value from the environment context (shown in the system prompt).
+- If Shell is `bash` (Git Bash, MSYS2, Cygwin): Use the **macOS/Linux instructions above** — they work identically since these provide a POSIX-compatible environment.
+- If Shell is `powershell`, `pwsh`, or `cmd`: Use the **PowerShell instructions below**.
+- If unsure, check: `echo $BASH_VERSION` — if it outputs a version string, use the macOS/Linux instructions.
+
+**PowerShell instructions** (only when Shell is NOT bash):
 
 1. Get plugin path:
    ```powershell
@@ -64,12 +71,38 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
    If neither found, stop and tell user to install Node.js or Bun.
 
-3. Check if runtime is bun (by filename). If bun, use `src\index.ts`. Otherwise use `dist\index.js`.
+3. **Resolve to actual `.exe` binary** (critical for Windows):
+   The path from `Get-Command` may point to a shell wrapper script (e.g. `D:\nvm4w\nodejs\bun` — a bash script, not an executable). Verify the runtime is a real `.exe`:
+   ```powershell
+   # Check if the file is an actual executable
+   [System.IO.Path]::GetExtension("{RUNTIME_PATH}")
+   ```
+   If the extension is NOT `.exe`, resolve the real binary:
+   - For **bun**: Look for `bun.exe` nearby — check `{RUNTIME_DIR}\bun.exe` and `{RUNTIME_DIR}\node_modules\bun\bin\bun.exe`
+   - For **node**: Look for `node.exe` — check `{RUNTIME_DIR}\node.exe`
+   ```powershell
+   # Example: resolve bun wrapper to real bun.exe
+   $bunDir = Split-Path (Get-Command bun).Source
+   $candidates = @(
+     (Join-Path $bunDir "bun.exe"),
+     (Join-Path $bunDir "node_modules\bun\bin\bun.exe")
+   )
+   $resolved = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+   if ($resolved) { $resolved } else { Write-Error "Could not find bun.exe" }
+   ```
+   Use the resolved `.exe` path as `{RUNTIME_PATH}`.
 
-4. Generate command (note: quotes around runtime path handle spaces in paths):
+4. Check if runtime is bun (by filename). If bun, use `src\index.ts`. Otherwise use `dist\index.js`.
+
+5. Generate command — **use the `.exe` directly, NOT a PowerShell wrapper**:
+
+   The statusLine command runs every ~300ms. Using `powershell -Command "..."` spawns a visible console window each time, causing constant black window flickering. Instead, generate a direct executable command:
    ```
-   powershell -Command "& {$p=(Get-ChildItem $env:USERPROFILE\.claude\plugins\cache\claude-hud\claude-hud | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName; & '{RUNTIME_PATH}' (Join-Path $p '{SOURCE}')}"
+   {RUNTIME_PATH} {PLUGIN_PATH}\{SOURCE}
    ```
+   Where `{PLUGIN_PATH}` is the **full static path** from step 1 (e.g. `C:\Users\Name\.claude\plugins\cache\claude-hud\claude-hud\0.0.5`), and `{RUNTIME_PATH}` is the resolved `.exe` from step 3.
+
+   **Important**: Unlike macOS/Linux, the Windows command uses a static plugin path (no dynamic lookup). This is necessary because dynamic lookup requires a shell wrapper, which causes window flashing. The tradeoff is that after a plugin update, the user may need to re-run `/claude-hud-enhanced:setup`.
 
 **WSL (Windows Subsystem for Linux)**: If running in WSL, use the macOS/Linux instructions. Ensure the plugin is installed in the Linux environment (`~/.claude/plugins/...`), not the Windows side.
 
@@ -99,7 +132,7 @@ If a write fails with `File has been unexpectedly modified`, re-read the file an
 }
 ```
 
-**Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud-enhanced:setup` to verify the plugin is still installed.
+**Note**: On macOS/Linux, the generated command dynamically finds and runs the latest installed plugin version — updates are automatic. On Windows (PowerShell), the command uses a static path to avoid window flashing, so re-run `/claude-hud-enhanced:setup` after plugin updates. If the HUD suddenly stops working on any platform, re-run setup to verify the plugin is still installed.
 
 ## Step 4: Verify With User
 
@@ -135,10 +168,23 @@ Use AskUserQuestion:
 
    **Windows: "bash not recognized"**:
    - Wrong command type for Windows
-   - Solution: use the PowerShell command variant
+   - Solution: use the PowerShell command variant, or if using Git Bash, re-run setup
 
    **Windows: PowerShell execution policy error**:
    - Run: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
+   **Windows: Black window flashing every ~300ms**:
+   - The statusLine command is wrapped in `powershell -Command "..."`, which spawns a visible console window on each invocation
+   - Solution: re-run `/claude-hud-enhanced:setup` — the fix generates a direct `.exe` command without a PowerShell wrapper
+
+   **Windows: bun not executing / "not recognized"**:
+   - `bun` may resolve to a bash shell wrapper script (common with nvm4w), not an actual `.exe`
+   - Solution: find the real `bun.exe` binary (often at `{bun_dir}\node_modules\bun\bin\bun.exe`) and use that path
+
+   **Windows: HUD shows "[claude-hud] Initializing..." and never updates**:
+   - stdin pipe not reaching the runtime. This can happen when Claude Code spawns the process directly on Windows
+   - Solution: wrap the command with `bash -c exec`: `bash -c 'exec {RUNTIME_PATH} {PLUGIN_PATH}/{SOURCE}'`
+   - This preserves the stdin pipe correctly through process replacement
 
    **Permission denied**:
    - Runtime not executable: `chmod +x {RUNTIME_PATH}`
