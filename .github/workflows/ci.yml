@@ -4,8 +4,12 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore:
-      - 'dist/**'
+    paths:
+      - 'plugins/claude-hud-enhanced/src/**'
+      - 'plugins/claude-hud-enhanced/tests/**'
+      - 'plugins/claude-hud-enhanced/package.json'
+      - 'plugins/claude-hud-enhanced/package-lock.json'
+      - 'plugins/claude-hud-enhanced/tsconfig.json'
 
 jobs:
   test:
@@ -19,5 +23,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
-      - run: npm run test:coverage
+          cache-dependency-path: plugins/claude-hud-enhanced/package-lock.json
+      - name: Install and test
+        working-directory: plugins/claude-hud-enhanced
+        run: |
+          npm ci
+          npm run test:coverage
