@@ -167,7 +167,9 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
     const apiResponse = await deps.fetchApi(accessToken, organizationUuid);
 
     if (!apiResponse) {
-      // Both API calls failed, cache the failure to prevent retry storms
+      // API call failed, cache the failure to prevent retry storms
+      // Still include maxPlanInfo from credentials so tier shows even when API is down
+      const maxPlanInfo = parseMaxPlanInfo(undefined, undefined, rateLimitTier);
       const failureResult: UsageData = {
         planName,
         fiveHour: null,
@@ -175,6 +177,7 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
         fiveHourResetAt: null,
         sevenDayResetAt: null,
         apiUnavailable: true,
+        maxPlanInfo: maxPlanInfo.tier ? maxPlanInfo : undefined,
       };
       writeCache(homeDir, failureResult, now);
       return failureResult;
@@ -260,10 +263,10 @@ function parseMaxPlanInfo(
   // Fallback to rateLimitTier from credentials
   if (!tier && rateLimitTier) {
     const lower = rateLimitTier.toLowerCase();
-    if (lower.includes('max20') || lower.includes('tier_20')) {
+    if (lower.includes('max20') || lower.includes('max_20') || lower.includes('tier_20')) {
       tier = 'Max20';
       calculatedTokens = 220_000;
-    } else if (lower.includes('max5') || lower.includes('tier_5')) {
+    } else if (lower.includes('max5') || lower.includes('max_5') || lower.includes('tier_5')) {
       tier = 'Max5';
       calculatedTokens = 88_000;
     }
