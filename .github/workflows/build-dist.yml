@@ -3,6 +3,11 @@ name: Build dist
 on:
   push:
     branches: [main]
+    paths:
+      - 'plugins/claude-hud-enhanced/src/**'
+      - 'plugins/claude-hud-enhanced/package.json'
+      - 'plugins/claude-hud-enhanced/package-lock.json'
+      - 'plugins/claude-hud-enhanced/tsconfig.json'
 
 concurrency:
   group: build-dist
@@ -25,18 +30,21 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: plugins/claude-hud-enhanced/package-lock.json
 
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - name: Install and build
+        working-directory: plugins/claude-hud-enhanced
+        run: |
+          npm ci
+          npm run build
 
       - name: Verify build output
-        run: test -f dist/index.js || exit 1
+        run: test -f plugins/claude-hud-enhanced/dist/index.js || exit 1
 
-      - name: Commit dist/
+      - name: Commit dist/ if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dist/ --force
+          git add plugins/claude-hud-enhanced/dist/ --force
           git diff --staged --quiet || git commit -m "build: compile dist/ [auto]"
           git push
