@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "postinstall": "tsc || true",
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "npm run build && node --test",
