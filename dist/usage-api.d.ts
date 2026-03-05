@@ -27,7 +27,6 @@ interface UsageApiResponse {
 export type UsageApiDeps = {
     homeDir: () => string;
     fetchApi: (accessToken: string, organizationUuid?: string) => Promise<UsageApiResponse | null>;
-    fetchUsageLimits: (accessToken: string, organizationUuid?: string) => Promise<UsageApiResponse | null>;
     now: () => number;
 };
 /**
@@ -36,9 +35,7 @@ export type UsageApiDeps = {
  * Returns { apiUnavailable: true, ... } if API call fails (to show warning in HUD).
  *
  * Uses file-based cache since HUD runs as a new process each render (~300ms).
- * Cache TTL: 60s for success, 15s for failures.
- *
- * Enhanced (2026): Also fetches model quotas, max plan info, and compaction settings.
+ * Cache TTL: 60s for success, 120s for failures.
  */
 export declare function getUsage(overrides?: Partial<UsageApiDeps>): Promise<UsageData | null>;
 export declare function clearCache(homeDir?: string): void;

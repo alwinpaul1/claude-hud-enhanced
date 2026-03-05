@@ -112,14 +112,12 @@ function writeCache(homeDir: string, data: UsageData, timestamp: number): void {
 export type UsageApiDeps = {
   homeDir: () => string;
   fetchApi: (accessToken: string, organizationUuid?: string) => Promise<UsageApiResponse | null>;
-  fetchUsageLimits: (accessToken: string, organizationUuid?: string) => Promise<UsageApiResponse | null>;
   now: () => number;
 };
 
 const defaultDeps: UsageApiDeps = {
   homeDir: () => os.homedir(),
   fetchApi: fetchUsageApi,
-  fetchUsageLimits: fetchUsageLimitsApi,
   now: () => Date.now(),
 };
 
@@ -129,9 +127,7 @@ const defaultDeps: UsageApiDeps = {
  * Returns { apiUnavailable: true, ... } if API call fails (to show warning in HUD).
  *
  * Uses file-based cache since HUD runs as a new process each render (~300ms).
- * Cache TTL: 60s for success, 15s for failures.
- * 
- * Enhanced (2026): Also fetches model quotas, max plan info, and compaction settings.
+ * Cache TTL: 60s for success, 120s for failures.
  */
 export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<UsageData | null> {
   const deps = { ...defaultDeps, ...overrides };
@@ -167,16 +163,10 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
       return null;
     }
 
-    // Fetch usage from both APIs in parallel for comprehensive data
-    const [apiResponse, usageLimitsResponse] = await Promise.all([
-      deps.fetchApi(accessToken, organizationUuid),
-      deps.fetchUsageLimits(accessToken, organizationUuid),
-    ]);
+    // Fetch usage from Anthropic OAuth API
+    const apiResponse = await deps.fetchApi(accessToken, organizationUuid);
 
-    // Merge responses, preferring the more detailed one
-    const mergedResponse = mergeApiResponses(apiResponse, usageLimitsResponse);
-
-    if (!mergedResponse) {
+    if (!apiResponse) {
       // Both API calls failed, cache the failure to prevent retry storms
       const failureResult: UsageData = {
         planName,
@@ -192,16 +182,16 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
 
     // Parse response - API returns 0-100 percentage directly
     // Clamp to 0-100 and handle NaN/Infinity
-    const fiveHour = parseUtilization(mergedResponse.five_hour?.utilization);
-    const sevenDay = parseUtilization(mergedResponse.seven_day?.utilization);
+    const fiveHour = parseUtilization(apiResponse.five_hour?.utilization);
+    const sevenDay = parseUtilization(apiResponse.seven_day?.utilization);
 
-    const fiveHourResetAt = parseDate(mergedResponse.five_hour?.resets_at);
-    const sevenDayResetAt = parseDate(mergedResponse.seven_day?.resets_at);
+    const fiveHourResetAt = parseDate(apiResponse.five_hour?.resets_at);
+    const sevenDayResetAt = parseDate(apiResponse.seven_day?.resets_at);
 
     // Parse enhanced 2026 features
-    const modelQuotas = parseModelQuotas(mergedResponse.model_quotas);
-    const maxPlanInfo = parseMaxPlanInfo(mergedResponse.max_plan_type, mergedResponse.tokens_per_window, rateLimitTier);
-    const compactionInfo = parseCompactionInfo(mergedResponse.compaction_buffer);
+    const modelQuotas = parseModelQuotas(apiResponse.model_quotas);
+    const maxPlanInfo = parseMaxPlanInfo(apiResponse.max_plan_type, apiResponse.tokens_per_window, rateLimitTier);
+    const compactionInfo = parseCompactionInfo(apiResponse.compaction_buffer);
 
     const result: UsageData = {
       planName,
@@ -229,24 +219,6 @@ export async function getUsage(overrides: Partial<UsageApiDeps> = {}): Promise<U
   }
 }
 
-/** Merge responses from both API endpoints */
-function mergeApiResponses(
-  primary: UsageApiResponse | null,
-  secondary: UsageApiResponse | null
-): UsageApiResponse | null {
-  if (!primary && !secondary) return null;
-  if (!primary) return secondary;
-  if (!secondary) return primary;
-  
-  return {
-    five_hour: primary.five_hour ?? secondary.five_hour,
-    seven_day: primary.seven_day ?? secondary.seven_day,
-    model_quotas: primary.model_quotas ?? secondary.model_quotas,
-    max_plan_type: primary.max_plan_type ?? secondary.max_plan_type,
-    compaction_buffer: primary.compaction_buffer ?? secondary.compaction_buffer,
-    tokens_per_window: primary.tokens_per_window ?? secondary.tokens_per_window,
-  };
-}
 
 /** Parse model quotas from API response */
 function parseModelQuotas(quotas?: ModelQuotaResponse[]): ModelQuota[] {
@@ -520,68 +492,6 @@ function fetchUsageApi(accessToken: string, organizationUuid?: string): Promise<
   });
 }
 
-/** 
- * Fetch from the Claude.ai usage_limits endpoint (enhanced 2026 data)
- * This endpoint provides model quotas, max plan info, and compaction settings
- */
-function fetchUsageLimitsApi(accessToken: string, organizationUuid?: string): Promise<UsageApiResponse | null> {
-  return new Promise((resolve) => {
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'claude-hud-enhanced/1.0',
-    };
-    
-    if (organizationUuid) {
-      headers['x-organization-uuid'] = organizationUuid;
-    }
-
-    const options = {
-      hostname: 'api.claude.ai',
-      path: '/api/v1/usage_limits',
-      method: 'GET',
-      headers,
-      timeout: 5000,
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-
-      res.on('data', (chunk: Buffer) => {
-        data += chunk.toString();
-      });
-
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          debug('Claude.ai usage_limits API returned non-200 status:', res.statusCode, data);
-          resolve(null);
-          return;
-        }
-
-        try {
-          const parsed: UsageApiResponse = JSON.parse(data);
-          debug('Claude.ai usage_limits response:', parsed);
-          resolve(parsed);
-        } catch (error) {
-          debug('Failed to parse Claude.ai usage_limits response:', error);
-          resolve(null);
-        }
-      });
-    });
-
-    req.on('error', (error) => {
-      debug('Claude.ai usage_limits request error:', error);
-      resolve(null);
-    });
-    req.on('timeout', () => {
-      debug('Claude.ai usage_limits request timeout');
-      req.destroy();
-      resolve(null);
-    });
-
-    req.end();
-  });
-}
 
 // Export for testing
 export function clearCache(homeDir?: string): void {
