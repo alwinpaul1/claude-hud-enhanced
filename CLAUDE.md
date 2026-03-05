@@ -9,6 +9,7 @@ Claude HUD is a Claude Code plugin that displays a real-time multi-line statusli
 ## Build Commands
 
 ```bash
+cd plugins/claude-hud-enhanced
 npm ci               # Install dependencies
 npm run build        # Build TypeScript to dist/
 

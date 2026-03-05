@@ -2,16 +2,16 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [0.1.5] - 2026-03-05
+## [0.1.6] - 2026-03-05
+
+### Fixed
+- Restructure repo to official marketplace layout (`plugins/claude-hud-enhanced/`) so "Update now" works
+- Plugin was treated as local due to `"source": "./"` — changed to `"source": "./plugins/claude-hud-enhanced"`
 
 ### Added
 - Auto-invalidate usage cache on plugin update (version-stamped cache entries)
-
-### Fixed
-- Use POSIX-portable semver sort for version resolution (replaces `ls -td` which picked wrong version)
+- POSIX-portable semver sort for version resolution
 - Proper `[version]` cast in PowerShell setup for correct semver sorting
-- Fix all stale `claude-hud` path references in setup command
-- Fix plugin "Update now" by documenting `installed_plugins.json` registry dependency
 
 ---
 
