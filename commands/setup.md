@@ -60,7 +60,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 1. Get plugin path:
    ```powershell
-   (Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\claude-hud-enhanced\claude-hud-enhanced" | Sort-Object Name -Descending | Select-Object -First 1).FullName
+   (Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\claude-hud-enhanced\claude-hud-enhanced" | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1).FullName
    ```
    If empty or errors, the plugin is not installed. Tell user to install via marketplace first.
 
