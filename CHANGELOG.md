@@ -2,7 +2,7 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [0.1.4] - 2026-03-05
+## [0.1.5] - 2026-03-05
 
 ### Added
 - Auto-invalidate usage cache on plugin update (version-stamped cache entries)
