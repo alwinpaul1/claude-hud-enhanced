@@ -1,10 +1,7 @@
 # Dependencies
 node_modules/
 
-# Build artifacts
-# dist/ is gitignored but exists on main - CI builds and commits it after each merge.
-# See .github/workflows/build-dist.yml
-dist/
+# Build artifacts — dist/ is tracked so fresh installs work without a build step
 *.tsbuildinfo
 
 # Logs
