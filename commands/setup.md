@@ -1,5 +1,5 @@
 ---
-description: Configure claude-hud as your statusline
+description: Configure claude-hud-enhanced as your statusline
 allowed-tools: Bash, Read, Edit, AskUserQuestion
 ---
 
@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 1. Get plugin path:
    ```bash
-   ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1
+   ls -d ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/*/ 2>/dev/null | sort -V | tail -1
    ```
    If empty, the plugin is not installed. **On Linux only** (if `uname -s` returns "Linux"), check for cross-device filesystem issue:
    ```bash
@@ -46,7 +46,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 5. Generate command (quotes around runtime path handle spaces):
    ```
-   bash -c '"{RUNTIME_PATH}" "$(ls -td ~/.claude/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | head -1){SOURCE}"'
+   bash -c '"{RUNTIME_PATH}" "$(ls -d ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/*/ 2>/dev/null | sort -V | tail -1){SOURCE}"'
    ```
 
 **Windows** (Platform: `win32`):
@@ -60,7 +60,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 1. Get plugin path:
    ```powershell
-   (Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\claude-hud\claude-hud" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+   (Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\claude-hud-enhanced\claude-hud-enhanced" | Sort-Object Name -Descending | Select-Object -First 1).FullName
    ```
    If empty or errors, the plugin is not installed. Tell user to install via marketplace first.
 
@@ -100,7 +100,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
    ```
    {RUNTIME_PATH} {PLUGIN_PATH}\{SOURCE}
    ```
-   Where `{PLUGIN_PATH}` is the **full static path** from step 1 (e.g. `C:\Users\Name\.claude\plugins\cache\claude-hud\claude-hud\0.0.5`), and `{RUNTIME_PATH}` is the resolved `.exe` from step 3.
+   Where `{PLUGIN_PATH}` is the **full static path** from step 1 (e.g. `C:\Users\Name\.claude\plugins\cache\claude-hud-enhanced\claude-hud-enhanced\0.1.1`), and `{RUNTIME_PATH}` is the resolved `.exe` from step 3.
 
    **Important**: Unlike macOS/Linux, the Windows command uses a static plugin path (no dynamic lookup). This is necessary because dynamic lookup requires a shell wrapper, which causes window flashing. The tradeoff is that after a plugin update, the user may need to re-run `/claude-hud-enhanced:setup`.
 
@@ -147,7 +147,7 @@ Use AskUserQuestion:
 1. **Verify config was applied**:
    - Read settings file (`~/.claude/settings.json` or `$env:USERPROFILE\.claude\settings.json` on Windows)
    - Check statusLine.command exists and looks correct
-   - If command contains a hardcoded version path (not using dynamic `ls -td` lookup), it may be a stale config from a previous setup
+   - If command contains a hardcoded version path (not using dynamic `sort -V` lookup), it may be a stale config from a previous setup
 
 2. **Test the command manually** and capture error output:
    ```bash
@@ -163,7 +163,7 @@ Use AskUserQuestion:
    - Solution: re-detect with `command -v bun` or `command -v node`, and verify with `realpath {RUNTIME_PATH}` (or `readlink -f {RUNTIME_PATH}`) to get the true absolute path
 
    **"No such file or directory" for plugin**:
-   - Plugin might not be installed: `ls ~/.claude/plugins/cache/claude-hud/`
+   - Plugin might not be installed: `ls ~/.claude/plugins/cache/claude-hud-enhanced/`
    - Solution: reinstall plugin via marketplace
 
    **Windows: "bash not recognized"**:
@@ -181,7 +181,7 @@ Use AskUserQuestion:
    - `bun` may resolve to a bash shell wrapper script (common with nvm4w), not an actual `.exe`
    - Solution: find the real `bun.exe` binary (often at `{bun_dir}\node_modules\bun\bin\bun.exe`) and use that path
 
-   **Windows: HUD shows "[claude-hud] Initializing..." and never updates**:
+   **Windows: HUD shows "[claude-hud-enhanced] Initializing..." and never updates**:
    - stdin pipe not reaching the runtime. This can happen when Claude Code spawns the process directly on Windows
    - Solution: wrap the command with `bash -c exec`: `bash -c 'exec {RUNTIME_PATH} {PLUGIN_PATH}/{SOURCE}'`
    - This preserves the stdin pipe correctly through process replacement
@@ -191,6 +191,6 @@ Use AskUserQuestion:
 
    **WSL confusion**:
    - If using WSL, ensure plugin is installed in Linux environment, not Windows
-   - Check: `ls ~/.claude/plugins/cache/claude-hud/`
+   - Check: `ls ~/.claude/plugins/cache/claude-hud-enhanced/`
 
 4. **If still stuck**: Show the user the exact command that was generated and the error, so they can report it or debug further
