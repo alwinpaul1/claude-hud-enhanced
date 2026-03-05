@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 1. Get plugin path:
    ```bash
-   ls -d ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/*/ 2>/dev/null | sort -V | tail -1
+   ls -d ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/*/ 2>/dev/null | awk -F/ '{print $(NF-1)}' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
    ```
    If empty, the plugin is not installed. **On Linux only** (if `uname -s` returns "Linux"), check for cross-device filesystem issue:
    ```bash
@@ -46,7 +46,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 5. Generate command (quotes around runtime path handle spaces):
    ```
-   bash -c '"{RUNTIME_PATH}" "$(ls -d ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/*/ 2>/dev/null | sort -V | tail -1){SOURCE}"'
+   bash -c 'B=~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced; V=$(ls -d "$B"/*/ 2>/dev/null | awk -F/ "{print \$(NF-1)}" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); "{RUNTIME_PATH}" "$B/$V/{SOURCE}"'
    ```
 
 **Windows** (Platform: `win32`):
@@ -147,7 +147,7 @@ Use AskUserQuestion:
 1. **Verify config was applied**:
    - Read settings file (`~/.claude/settings.json` or `$env:USERPROFILE\.claude\settings.json` on Windows)
    - Check statusLine.command exists and looks correct
-   - If command contains a hardcoded version path (not using dynamic `sort -V` lookup), it may be a stale config from a previous setup
+   - If command contains a hardcoded version path (not using dynamic semver lookup), it may be a stale config from a previous setup
 
 2. **Test the command manually** and capture error output:
    ```bash
