@@ -2,6 +2,34 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.0.9] - 2026-03-05
+
+### Added
+- Show plan name in model bracket: `[Opus 4.6 | Max]`
+- Max tier detection (Max5/Max20) from `rateLimitTier` credentials with underscore variants (`default_claude_max_5x`)
+- Max tier info displays even when usage API is unavailable
+
+### Fixed
+- Remove non-existent `api.claude.ai` endpoint that caused persistent 429 rate limiting
+- Increase failure cache TTL from 15s to 120s to avoid retry storms
+
+---
+
+## [0.0.8] - 2026-03-05
+
+### Fixed
+- Windows setup: shell detection, `.exe` resolution, no PowerShell wrapper
+- Fix minimatch ReDoS vulnerability (CVE high severity)
+
+---
+
+## [0.0.7] - 2026-02-15
+
+### Changed
+- Version bump
+
+---
+
 ## [0.0.6] - 2026-02-09
 
 ### Changed
