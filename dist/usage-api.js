@@ -6,15 +6,34 @@ import { createDebug } from './debug.js';
 const debug = createDebug('usage');
 /** Resolve Claude Code version once at module load for User-Agent */
 function getClaudeCodeVersion() {
+    const home = os.homedir();
+    // 1. Try symlink: ~/.local/bin/claude -> ~/.local/share/claude/versions/X.Y.Z (macOS/Linux)
     try {
-        // Try symlink: ~/.local/bin/claude -> ~/.local/share/claude/versions/X.Y.Z
-        const claudePath = path.join(os.homedir(), '.local', 'bin', 'claude');
-        const target = fs.readlinkSync(claudePath);
-        const match = target.match(/(\d+\.\d+\.\d+)/);
-        if (match)
-            return match[1];
+        const target = fs.readlinkSync(path.join(home, '.local', 'bin', 'claude'));
+        const m = target.match(/(\d+\.\d+\.\d+)/);
+        if (m)
+            return m[1];
     }
-    catch { /* not installed or not a symlink */ }
+    catch { /* ignore */ }
+    // 2. Scan versions directory for highest semver (works on all platforms)
+    const versionsDirs = [
+        path.join(home, '.local', 'share', 'claude', 'versions'), // macOS/Linux
+        path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'claude-code', 'versions'), // Windows
+    ];
+    for (const dir of versionsDirs) {
+        try {
+            const entries = fs.readdirSync(dir).filter(e => /^\d+\.\d+\.\d+$/.test(e));
+            if (entries.length > 0) {
+                entries.sort((a, b) => {
+                    const [a1, a2, a3] = a.split('.').map(Number);
+                    const [b1, b2, b3] = b.split('.').map(Number);
+                    return (b1 - a1) || (b2 - a2) || (b3 - a3);
+                });
+                return entries[0];
+            }
+        }
+        catch { /* ignore */ }
+    }
     return 'unknown';
 }
 const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
