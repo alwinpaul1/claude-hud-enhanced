@@ -6,7 +6,7 @@ import { createDebug } from './debug.js';
 const debug = createDebug('usage');
 // File-based cache (HUD runs as new process each render, so in-memory cache won't persist)
 const CACHE_TTL_MS = 60_000; // 60 seconds
-const CACHE_FAILURE_TTL_MS = 15_000; // 15 seconds for failed requests
+const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
 function getCachePath(homeDir) {
     return path.join(homeDir, '.claude', 'plugins', 'claude-hud', '.usage-cache.json');
 }
