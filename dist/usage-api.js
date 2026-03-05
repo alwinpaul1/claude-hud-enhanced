@@ -4,6 +4,20 @@ import * as os from 'os';
 import * as https from 'https';
 import { createDebug } from './debug.js';
 const debug = createDebug('usage');
+/** Resolve Claude Code version once at module load for User-Agent */
+function getClaudeCodeVersion() {
+    try {
+        // Try symlink: ~/.local/bin/claude -> ~/.local/share/claude/versions/X.Y.Z
+        const claudePath = path.join(os.homedir(), '.local', 'bin', 'claude');
+        const target = fs.readlinkSync(claudePath);
+        const match = target.match(/(\d+\.\d+\.\d+)/);
+        if (match)
+            return match[1];
+    }
+    catch { /* not installed or not a symlink */ }
+    return 'unknown';
+}
+const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
 // File-based cache (HUD runs as new process each render, so in-memory cache won't persist)
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
@@ -334,7 +348,7 @@ function fetchUsageApi(accessToken, organizationUuid) {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
             'anthropic-beta': 'oauth-2025-04-20',
-            'User-Agent': 'claude-code/2.1.69',
+            'User-Agent': `claude-code/${CLAUDE_CODE_VERSION}`,
         };
         if (organizationUuid) {
             headers['x-organization-uuid'] = organizationUuid;

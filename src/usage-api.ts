@@ -9,6 +9,19 @@ export type { UsageData } from './types.js';
 
 const debug = createDebug('usage');
 
+/** Resolve Claude Code version once at module load for User-Agent */
+function getClaudeCodeVersion(): string {
+  try {
+    // Try symlink: ~/.local/bin/claude -> ~/.local/share/claude/versions/X.Y.Z
+    const claudePath = path.join(os.homedir(), '.local', 'bin', 'claude');
+    const target = fs.readlinkSync(claudePath);
+    const match = target.match(/(\d+\.\d+\.\d+)/);
+    if (match) return match[1];
+  } catch { /* not installed or not a symlink */ }
+  return 'unknown';
+}
+const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
+
 interface CredentialsFile {
   claudeAiOauth?: {
     accessToken?: string;
@@ -442,7 +455,7 @@ function fetchUsageApi(accessToken: string, organizationUuid?: string): Promise<
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'anthropic-beta': 'oauth-2025-04-20',
-      'User-Agent': 'claude-code/2.1.69',
+      'User-Agent': `claude-code/${CLAUDE_CODE_VERSION}`,
     };
     
     if (organizationUuid) {
