@@ -2,7 +2,7 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
-## [0.1.3] - 2026-03-05
+## [0.1.4] - 2026-03-05
 
 ### Added
 - Auto-invalidate usage cache on plugin update (version-stamped cache entries)
@@ -11,6 +11,7 @@ All notable changes to Claude HUD will be documented in this file.
 - Use POSIX-portable semver sort for version resolution (replaces `ls -td` which picked wrong version)
 - Proper `[version]` cast in PowerShell setup for correct semver sorting
 - Fix all stale `claude-hud` path references in setup command
+- Fix plugin "Update now" by documenting `installed_plugins.json` registry dependency
 
 ---
 
