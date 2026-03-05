@@ -25,7 +25,8 @@ export function renderSessionLine(ctx) {
     const tokenDisplay = `${getContextColor(percent)}${formatTokens(totalTokens)}/${formatTokens(contextSize)}${RESET}`;
     const percentDisplay = `${getContextColor(percent)}${percent}%${RESET}`;
     if (display?.showModel !== false) {
-        const planLabel = showPlanName ? ` | ${ctx.usageData.planName}` : '';
+        const tier = ctx.usageData?.maxPlanInfo?.tier;
+        const planLabel = showPlanName ? ` | ${tier ?? ctx.usageData.planName}` : '';
         parts.push(`${accent(`[${model}${planLabel}]`)} ${bar} ${percentDisplay} ${tokenDisplay}`);
     }
     else {
@@ -120,12 +121,6 @@ export function renderSessionLine(ctx) {
             else {
                 parts.push(fiveHourPart);
             }
-        }
-        // Show Max plan tier if available (Max5 = 88k, Max20 = 220k tokens/window)
-        if (ctx.usageData.maxPlanInfo?.tier) {
-            const tierInfo = ctx.usageData.maxPlanInfo;
-            const tokens = tierInfo.tokensPerWindow ? formatTokens(tierInfo.tokensPerWindow) : '';
-            parts.push(dim(`${BLUE}${tierInfo.tier}${RESET}${tokens ? dim(` ${tokens}/win`) : ''}`));
         }
         // Show model-specific quotas if any are > 50% utilized
         const modelQuota = getMostRestrictiveQuota(ctx.usageData);
