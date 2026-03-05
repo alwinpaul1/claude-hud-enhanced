@@ -164,7 +164,8 @@ describe('getUsage', () => {
     assert.equal(first?.apiUnavailable, true);
     assert.equal(fetchCalls, 1);
 
-    nowValue += 10_000;
+    // Still within 120s failure cache TTL
+    nowValue += 60_000;
     const cached = await getUsage({
       homeDir: () => tempHome,
       fetchApi,
@@ -173,7 +174,8 @@ describe('getUsage', () => {
     assert.equal(cached?.apiUnavailable, true);
     assert.equal(fetchCalls, 1);
 
-    nowValue += 6_000;
+    // Past 120s failure cache TTL
+    nowValue += 61_000;
     const second = await getUsage({
       homeDir: () => tempHome,
       fetchApi,
@@ -218,7 +220,7 @@ describe('getUsage caching behavior', () => {
     assert.equal(fetchCalls, 2);
   });
 
-  test('cache expires after 15 seconds for failures', async () => {
+  test('cache expires after 120 seconds for failures', async () => {
     await writeCredentials(tempHome, buildCredentials());
     let fetchCalls = 0;
     let nowValue = 1000;
@@ -230,11 +232,13 @@ describe('getUsage caching behavior', () => {
     await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
     assert.equal(fetchCalls, 1);
 
-    nowValue += 10_000;
+    // Still within 120s failure cache TTL
+    nowValue += 100_000;
     await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
     assert.equal(fetchCalls, 1);
 
-    nowValue += 6_000;
+    // Past 120s failure cache TTL
+    nowValue += 21_000;
     await getUsage({ homeDir: () => tempHome, fetchApi, now: () => nowValue });
     assert.equal(fetchCalls, 2);
   });

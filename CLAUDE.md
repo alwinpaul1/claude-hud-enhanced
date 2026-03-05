@@ -57,7 +57,7 @@ Claude Code → stdin JSON → parse → render lines → stdout → Claude Code
 
 **From Anthropic Usage API** (`api.anthropic.com/api/oauth/usage`):
 - 5-hour and 7-day usage percentages
-- Reset timestamps (cached 60s success, 15s failure)
+- Reset timestamps (cached 60s success, 120s failure)
 
 ### File Structure
 
