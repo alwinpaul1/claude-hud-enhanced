@@ -41,7 +41,7 @@ const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
 // Cache version — tied to plugin version so updates auto-invalidate stale caches
-const CACHE_VERSION = '0.1.4';
+const CACHE_VERSION = '0.1.5';
 function getCachePath(homeDir) {
     return path.join(homeDir, '.claude', 'plugins', 'claude-hud', '.usage-cache.json');
 }
