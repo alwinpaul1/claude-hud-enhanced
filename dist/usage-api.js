@@ -332,8 +332,9 @@ function fetchUsageApi(accessToken, organizationUuid) {
     return new Promise((resolve) => {
         const headers = {
             'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
             'anthropic-beta': 'oauth-2025-04-20',
-            'User-Agent': 'claude-hud-enhanced/1.0',
+            'User-Agent': 'claude-code/2.1.69',
         };
         if (organizationUuid) {
             headers['x-organization-uuid'] = organizationUuid;

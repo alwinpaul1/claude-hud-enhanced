@@ -440,8 +440,9 @@ function fetchUsageApi(accessToken: string, organizationUuid?: string): Promise<
   return new Promise((resolve) => {
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
       'anthropic-beta': 'oauth-2025-04-20',
-      'User-Agent': 'claude-hud-enhanced/1.0',
+      'User-Agent': 'claude-code/2.1.69',
     };
     
     if (organizationUuid) {
