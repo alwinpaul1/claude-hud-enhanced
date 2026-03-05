@@ -34,8 +34,8 @@ export function renderSessionLine(ctx: RenderContext): string {
   const percentDisplay = `${getContextColor(percent)}${percent}%${RESET}`;
 
   if (display?.showModel !== false) {
-    const modelDisplay = model;
-    parts.push(`${accent(`[${modelDisplay}]`)} ${bar} ${percentDisplay} ${tokenDisplay}`);
+    const planLabel = showPlanName ? ` | ${ctx.usageData!.planName}` : '';
+    parts.push(`${accent(`[${model}${planLabel}]`)} ${bar} ${percentDisplay} ${tokenDisplay}`);
   } else {
     parts.push(`${bar} ${percentDisplay} ${tokenDisplay}`);
   }
