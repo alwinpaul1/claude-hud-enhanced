@@ -40,6 +40,8 @@ const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
 // File-based cache (HUD runs as new process each render, so in-memory cache won't persist)
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
+// Cache version — tied to plugin version so updates auto-invalidate stale caches
+const CACHE_VERSION = '0.1.1';
 function getCachePath(homeDir) {
     return path.join(homeDir, '.claude', 'plugins', 'claude-hud', '.usage-cache.json');
 }
@@ -50,6 +52,9 @@ function readCache(homeDir, now) {
             return null;
         const content = fs.readFileSync(cachePath, 'utf8');
         const cache = JSON.parse(content);
+        // Invalidate cache from older plugin versions
+        if (cache.version !== CACHE_VERSION)
+            return null;
         // Check TTL - use shorter TTL for failure results
         const ttl = cache.data.apiUnavailable ? CACHE_FAILURE_TTL_MS : CACHE_TTL_MS;
         if (now - cache.timestamp >= ttl)
@@ -76,7 +81,7 @@ function writeCache(homeDir, data, timestamp) {
         if (!fs.existsSync(cacheDir)) {
             fs.mkdirSync(cacheDir, { recursive: true });
         }
-        const cache = { data, timestamp };
+        const cache = { data, timestamp, version: CACHE_VERSION };
         fs.writeFileSync(cachePath, JSON.stringify(cache), 'utf8');
     }
     catch {

@@ -89,9 +89,13 @@ interface UsageApiResponse {
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
 
+// Cache version — tied to plugin version so updates auto-invalidate stale caches
+const CACHE_VERSION = '0.1.1';
+
 interface CacheFile {
   data: UsageData;
   timestamp: number;
+  version?: string;
 }
 
 function getCachePath(homeDir: string): string {
@@ -105,6 +109,9 @@ function readCache(homeDir: string, now: number): UsageData | null {
 
     const content = fs.readFileSync(cachePath, 'utf8');
     const cache: CacheFile = JSON.parse(content);
+
+    // Invalidate cache from older plugin versions
+    if (cache.version !== CACHE_VERSION) return null;
 
     // Check TTL - use shorter TTL for failure results
     const ttl = cache.data.apiUnavailable ? CACHE_FAILURE_TTL_MS : CACHE_TTL_MS;
@@ -135,7 +142,7 @@ function writeCache(homeDir: string, data: UsageData, timestamp: number): void {
       fs.mkdirSync(cacheDir, { recursive: true });
     }
 
-    const cache: CacheFile = { data, timestamp };
+    const cache: CacheFile = { data, timestamp, version: CACHE_VERSION };
     fs.writeFileSync(cachePath, JSON.stringify(cache), 'utf8');
   } catch {
     // Ignore cache write failures
