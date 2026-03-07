@@ -2,6 +2,17 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.1.7] - 2026-03-07
+
+### Fixed
+- Setup: replace `ls -d | awk` with simpler `ls` for version resolution (fixes quoting breakage on MSYS2/Git Bash)
+- Setup: add `exec` to bash -c wrapper for proper stdin pipe forwarding
+- Configure: fix config path from `claude-hud-enhanced` to `claude-hud` to match actual code path
+- CACHE_VERSION now read from package.json instead of hardcoded (stays in sync on version bumps)
+- Tests: fix stale `getGitBranch` references → `getGitStatus`, remove invalid `condensed` layout
+
+---
+
 ## [0.1.6] - 2026-03-05
 
 ### Fixed
