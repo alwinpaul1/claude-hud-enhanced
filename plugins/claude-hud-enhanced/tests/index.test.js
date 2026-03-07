@@ -36,7 +36,7 @@ test('main logs an error when dependencies throw', async () => {
     },
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => null,
+    getGitStatus: async () => null,
     getUsage: async () => null,
     render: () => {},
     now: () => Date.now(),
@@ -54,7 +54,7 @@ test('main logs unknown error for non-Error throws', async () => {
     },
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => null,
+    getGitStatus: async () => null,
     getUsage: async () => null,
     render: () => {},
     now: () => Date.now(),
@@ -98,7 +98,7 @@ test('main executes the happy path with default dependencies', async () => {
       }),
       parseTranscript: async () => ({ tools: [], agents: [], todos: [], sessionStart: new Date(0) }),
       countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-      getGitBranch: async () => null,
+      getGitStatus: async () => null,
       getUsage: async () => null,
       render: (ctx) => {
         renderedContext = ctx;
@@ -156,7 +156,7 @@ test('main includes usageData in render context', async () => {
     }),
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => null,
+    getGitStatus: async () => null,
     getUsage: async () => mockUsageData,
     render: (ctx) => {
       renderedContext = ctx;

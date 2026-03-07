@@ -11,7 +11,7 @@ test('loadConfig returns valid config structure', async () => {
   assert.ok([1, 2, 3].includes(config.pathLevels), 'pathLevels should be 1, 2, or 3');
 
   // layout must be valid
-  const validLayouts = ['default', 'condensed', 'separators'];
+  const validLayouts = ['default', 'separators'];
   assert.ok(validLayouts.includes(config.layout), 'layout should be valid');
 
   // gitStatus object with expected properties

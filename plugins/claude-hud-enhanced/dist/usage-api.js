@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as https from 'https';
+import { fileURLToPath } from 'node:url';
 import { createDebug } from './debug.js';
 const debug = createDebug('usage');
 /** Resolve Claude Code version once at module load for User-Agent */
@@ -41,7 +42,9 @@ const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
 // Cache version — tied to plugin version so updates auto-invalidate stale caches
-const CACHE_VERSION = '0.1.6';
+// Read from package.json so it stays in sync automatically
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CACHE_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version;
 function getCachePath(homeDir) {
     return path.join(homeDir, '.claude', 'plugins', 'claude-hud', '.usage-cache.json');
 }

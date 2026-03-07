@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 1. Get plugin path:
    ```bash
-   ls -d ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/*/ 2>/dev/null | awk -F/ '{print $(NF-1)}' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+   ls ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/ 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
    ```
    If empty, the plugin is not installed. **On Linux only** (if `uname -s` returns "Linux"), check for cross-device filesystem issue:
    ```bash
@@ -44,9 +44,9 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
    ```
    If result is "bun", use `src/index.ts` (bun has native TypeScript support). Otherwise use `dist/index.js` (pre-compiled).
 
-5. Generate command (quotes around runtime path handle spaces):
+5. Generate command (quotes around runtime path handle spaces, `exec` replaces shell to preserve stdin pipe):
    ```
-   bash -c 'B=~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced; V=$(ls -d "$B"/*/ 2>/dev/null | awk -F/ "{print \$(NF-1)}" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); "{RUNTIME_PATH}" "$B/$V/{SOURCE}"'
+   bash -c 'B=~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced; V=$(ls "$B" 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); exec "{RUNTIME_PATH}" "$B/$V/{SOURCE}"'
    ```
 
 **Windows** (Platform: `win32`):
