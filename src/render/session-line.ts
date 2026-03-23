@@ -238,14 +238,22 @@ function formatTokens(n: number): string {
   return n.toString();
 }
 
-function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent' | 'tokens' | 'remaining'): string {
+function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent' | 'tokens' | 'remaining' | 'both'): string {
+  const totalTokens = getTotalTokens(ctx.stdin);
+  const size = ctx.stdin.context_window?.context_window_size ?? 0;
+
   if (mode === 'tokens') {
-    const totalTokens = getTotalTokens(ctx.stdin);
-    const size = ctx.stdin.context_window?.context_window_size ?? 0;
     if (size > 0) {
       return `${formatTokens(totalTokens)}/${formatTokens(size)}`;
     }
     return formatTokens(totalTokens);
+  }
+
+  if (mode === 'both') {
+    if (size > 0) {
+      return `${percent}% (${formatTokens(totalTokens)}/${formatTokens(size)})`;
+    }
+    return `${percent}%`;
   }
 
   if (mode === 'remaining') {

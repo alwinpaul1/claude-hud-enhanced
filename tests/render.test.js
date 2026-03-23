@@ -245,6 +245,15 @@ test('renderSessionLine supports remaining-based context display', () => {
   assert.ok(line.includes('93%'), 'should include remaining percentage');
 });
 
+test('renderSessionLine supports combined context display', () => {
+  const ctx = baseContext();
+  ctx.config.display.contextValue = 'both';
+  ctx.stdin.context_window.context_window_size = 200000;
+  ctx.stdin.context_window.current_usage.input_tokens = 12345;
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('7% (12k/200k)'), 'should include percentage and token counts');
+});
+
 test('render expanded layout supports remaining-based context display', () => {
   const ctx = baseContext();
   ctx.config.lineLayout = 'expanded';
@@ -263,6 +272,28 @@ test('render expanded layout supports remaining-based context display', () => {
 
   // 12345/200k = 6.17% raw, scale ≈ 0.026, buffer ≈ 858 → 7% buffered → 93% remaining
   assert.ok(logs.some(line => line.includes('Context') && line.includes('93%')), 'expected remaining percentage on context line');
+});
+
+test('render expanded layout supports combined context display', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.display.contextValue = 'both';
+  ctx.stdin.context_window.context_window_size = 200000;
+  ctx.stdin.context_window.current_usage.input_tokens = 12345;
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (line) => logs.push(line);
+  try {
+    render(ctx);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.ok(
+    logs.some(line => line.includes('Context') && line.includes('7% (12k/200k)')),
+    'expected combined percentage and token counts on context line'
+  );
 });
 
 test('renderSessionLine omits project name when cwd is undefined', () => {
