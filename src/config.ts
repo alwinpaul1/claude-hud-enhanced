@@ -96,8 +96,9 @@ export interface HudConfig {
 }
 
 export function detectLanguage(): Language {
+  // POSIX priority: LC_ALL overrides everything, then LC_MESSAGES, then LANG
   const envLang =
-    process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || "";
+    process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || "";
   if (envLang.startsWith("zh")) return "zh";
   return "en";
 }
@@ -458,13 +459,13 @@ export async function loadConfig(): Promise<HudConfig> {
 
   try {
     if (!fs.existsSync(configPath)) {
-      return DEFAULT_CONFIG;
+      return mergeConfig({});
     }
 
     const content = fs.readFileSync(configPath, "utf-8");
     const userConfig = JSON.parse(content) as Partial<HudConfig>;
     return mergeConfig(userConfig);
   } catch {
-    return DEFAULT_CONFIG;
+    return mergeConfig({});
   }
 }

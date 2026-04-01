@@ -14,7 +14,7 @@ export const zh: Messages = {
 
   // Format
   "format.resets": "重置于",
-  "format.resetsIn": "将在...后重置",
+  "format.resetsIn": "重置剩余",
   "format.in": "输入",
   "format.cache": "缓存",
   "format.out": "输出",
