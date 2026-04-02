@@ -346,6 +346,24 @@ test('renderSessionLine includes customLine when configured', () => {
   assert.ok(line.includes('Ship it'));
 });
 
+test('renderSessionLine applies modelFormat compact', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Opus 4.6 (1M context)' };
+  ctx.config.display.modelFormat = 'compact';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Opus 4.6'));
+  assert.ok(!line.includes('context'));
+});
+
+test('renderSessionLine applies modelOverride', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus' };
+  ctx.config.display.modelOverride = 'My AI';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('My AI'));
+  assert.ok(!line.includes('Claude Opus'));
+});
+
 test('renderProjectLine includes session name when showSessionName is true', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
@@ -425,6 +443,43 @@ test('renderProjectLine includes customLine when configured', () => {
   ctx.config.display.customLine = 'Stay sharp';
   const line = stripAnsi(renderProjectLine(ctx) ?? '');
   assert.ok(line.includes('Stay sharp'));
+});
+
+test('renderProjectLine applies modelFormat compact (strips context suffix)', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Opus 4.6 (1M context)' };
+  ctx.config.display.modelFormat = 'compact';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('Opus 4.6'));
+  assert.ok(!line.includes('context'));
+});
+
+test('renderProjectLine applies modelFormat short (strips Claude prefix and context)', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Sonnet 3.5 (200k context)' };
+  ctx.config.display.modelFormat = 'short';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('Sonnet 3.5'));
+  assert.ok(!line.includes('Claude'));
+  assert.ok(!line.includes('context'));
+});
+
+test('renderProjectLine applies modelOverride as custom name', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.5' };
+  ctx.config.display.modelOverride = "zane's intelligent opus";
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes("zane's intelligent opus"));
+  assert.ok(!line.includes('Claude Opus'));
+});
+
+test('renderProjectLine modelOverride takes precedence over modelFormat', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.5 (1M context)' };
+  ctx.config.display.modelFormat = 'short';
+  ctx.config.display.modelOverride = 'My Custom Model';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('My Custom Model'));
 });
 
 test('renderProjectLine uses configurable element colors', () => {
