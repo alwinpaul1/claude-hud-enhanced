@@ -1,8 +1,41 @@
 import os from 'node:os';
-let readMemory = () => ({
+import { execFileSync } from 'node:child_process';
+export function parseVmStat(output) {
+    const pageSizeMatch = output.match(/page size of (\d+) bytes/);
+    if (!pageSizeMatch)
+        return null;
+    const activeMatch = output.match(/Pages active:\s+(\d+)/);
+    const wiredMatch = output.match(/Pages wired down:\s+(\d+)/);
+    if (!activeMatch || !wiredMatch)
+        return null;
+    return {
+        pageSize: Number(pageSizeMatch[1]),
+        active: Number(activeMatch[1]),
+        wired: Number(wiredMatch[1]),
+    };
+}
+const readDefaultMemory = () => ({
     totalBytes: os.totalmem(),
     freeBytes: os.freemem(),
 });
+const readMacOSMemory = () => {
+    try {
+        const output = execFileSync('/usr/bin/vm_stat', {
+            encoding: 'utf8',
+            timeout: 5000,
+        });
+        const parsed = parseVmStat(output);
+        if (!parsed)
+            return readDefaultMemory();
+        const totalBytes = os.totalmem();
+        const usedBytes = (parsed.active + parsed.wired) * parsed.pageSize;
+        return { totalBytes, freeBytes: totalBytes - usedBytes };
+    }
+    catch {
+        return readDefaultMemory();
+    }
+};
+let readMemory = process.platform === 'darwin' ? readMacOSMemory : readDefaultMemory;
 export async function getMemoryUsage() {
     try {
         const { totalBytes, freeBytes } = readMemory();
@@ -40,9 +73,6 @@ export function formatBytes(bytes) {
     return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
 }
 export function _setMemoryReaderForTests(reader) {
-    readMemory = reader ?? (() => ({
-        totalBytes: os.totalmem(),
-        freeBytes: os.freemem(),
-    }));
+    readMemory = reader ?? (process.platform === 'darwin' ? readMacOSMemory : readDefaultMemory);
 }
 //# sourceMappingURL=memory.js.map
