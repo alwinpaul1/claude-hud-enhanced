@@ -5,7 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { render } from '../dist/render/index.js';
 import { renderSessionLine } from '../dist/render/session-line.js';
-import { renderProjectLine } from '../dist/render/lines/project.js';
+import { renderProjectLine, renderGitFilesLine } from '../dist/render/lines/project.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
 import { renderTodosLine } from '../dist/render/todos-line.js';
@@ -1462,6 +1462,59 @@ test('renderSessionLine combines showFileStats with showDirty and showAheadBehin
   assert.ok(line.includes('↓1'), 'expected behind count');
   assert.ok(line.includes('!3'), 'expected modified count');
   assert.ok(line.includes('✘1'), 'expected deleted count');
+});
+
+test('renderGitFilesLine renders tracked files with per-file line diffs', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.gitStatus.showFileStats = true;
+  ctx.gitStatus = {
+    branch: 'main',
+    isDirty: true,
+    ahead: 0,
+    behind: 0,
+    lineDiff: { added: 5, deleted: 2 },
+    fileStats: {
+      modified: 1,
+      added: 1,
+      deleted: 0,
+      untracked: 2,
+      trackedFiles: [
+        { basename: 'app.ts', fullPath: 'src/app.ts', type: 'modified', lineDiff: { added: 4, deleted: 2 } },
+        { basename: 'new.ts', fullPath: 'src/new.ts', type: 'added', lineDiff: { added: 1, deleted: 0 } },
+      ],
+    },
+  };
+
+  const line = renderGitFilesLine(ctx, 120);
+  assert.ok(line?.includes('app.ts'));
+  assert.ok(line?.includes('new.ts'));
+  assert.ok(line?.includes('+4'));
+  assert.ok(line?.includes('-2'));
+  assert.ok(line?.includes('?2'));
+});
+
+test('renderGitFilesLine hides on narrow terminals', () => {
+  const ctx = baseContext();
+  ctx.config.gitStatus.showFileStats = true;
+  ctx.gitStatus = {
+    branch: 'main',
+    isDirty: true,
+    ahead: 0,
+    behind: 0,
+    lineDiff: { added: 1, deleted: 0 },
+    fileStats: {
+      modified: 1,
+      added: 0,
+      deleted: 0,
+      untracked: 0,
+      trackedFiles: [
+        { basename: 'app.ts', fullPath: 'src/app.ts', type: 'modified', lineDiff: { added: 1, deleted: 0 } },
+      ],
+    },
+  };
+
+  assert.equal(renderGitFilesLine(ctx, 50), null);
 });
 
 test('render expanded layout honors custom elementOrder including activity placement', () => {
