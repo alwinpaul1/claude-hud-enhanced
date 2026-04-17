@@ -2,6 +2,12 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.16] - 2026-04-17
+
+### Fixed
+- Limit-reached branch now shows reset as clock time (`(resets 9:00 PM)` for 5h, `(resets Thu 9:00 PM)` for 7d) instead of the `24m` countdown — matches the normal usage display format.
+- Weekly segment stays visible next to the 5h `⚠ Limit reached` warning so users still see their 7-day standing while the 5h is blocked.
+
 ## [0.2.15] - 2026-04-17
 
 ### Added

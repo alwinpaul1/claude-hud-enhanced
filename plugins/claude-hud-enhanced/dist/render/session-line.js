@@ -128,10 +128,26 @@ export function renderSessionLine(ctx) {
     // Usage limits display (shown when enabled in config, respects usageThreshold)
     if (display?.showUsage !== false && ctx.usageData && !providerLabel) {
         if (isLimitReached(ctx.usageData)) {
-            const resetTime = ctx.usageData.fiveHour === 100
-                ? formatResetTime(ctx.usageData.fiveHourResetAt)
-                : formatResetTime(ctx.usageData.sevenDayResetAt);
+            const fiveHourReached = ctx.usageData.fiveHour === 100;
+            const sevenDayReached = ctx.usageData.sevenDay === 100;
+            const resetTime = fiveHourReached
+                ? formatResetTimeOfDay(ctx.usageData.fiveHourResetAt)
+                : formatResetDateTime(ctx.usageData.sevenDayResetAt);
             parts.push(critical(`⚠ ${t('status.limitReached')}${resetTime ? ` (${t('format.resets')} ${resetTime})` : ''}`, colors));
+            // Still surface the other window so users know their weekly standing
+            const usageBarEnabled = display?.usageBarEnabled ?? true;
+            if (fiveHourReached && !sevenDayReached && ctx.usageData.sevenDay !== null) {
+                parts.push(formatUsageWindowPart({
+                    label: t('label.weekly'),
+                    percent: ctx.usageData.sevenDay,
+                    resetAt: ctx.usageData.sevenDayResetAt,
+                    colors,
+                    usageBarEnabled,
+                    barWidth,
+                    forceLabel: true,
+                    resetStyle: 'datetime',
+                }));
+            }
         }
         else {
             const usageThreshold = display?.usageThreshold ?? 0;

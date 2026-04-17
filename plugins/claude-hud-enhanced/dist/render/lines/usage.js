@@ -17,10 +17,28 @@ export function renderUsageLine(ctx) {
     }
     const usageLabel = label(t("label.usage"), colors);
     if (isLimitReached(ctx.usageData)) {
-        const resetTime = ctx.usageData.fiveHour === 100
-            ? formatResetTime(ctx.usageData.fiveHourResetAt)
-            : formatResetTime(ctx.usageData.sevenDayResetAt);
-        return `${usageLabel} ${critical(`⚠ ${t("status.limitReached")}${resetTime ? ` (${t("format.resets")} ${resetTime})` : ""}`, colors)}`;
+        const fiveHourReached = ctx.usageData.fiveHour === 100;
+        const sevenDayReached = ctx.usageData.sevenDay === 100;
+        const resetTime = fiveHourReached
+            ? formatResetTimeOfDay(ctx.usageData.fiveHourResetAt)
+            : formatResetDateTime(ctx.usageData.sevenDayResetAt);
+        const warning = critical(`⚠ ${t("status.limitReached")}${resetTime ? ` (${t("format.resets")} ${resetTime})` : ""}`, colors);
+        if (fiveHourReached && !sevenDayReached && ctx.usageData.sevenDay !== null) {
+            const barWidth = getAdaptiveBarWidth();
+            const usageBarEnabled = display?.usageBarEnabled ?? true;
+            const weeklyPart = formatUsageWindowPart({
+                label: t("label.weekly"),
+                percent: ctx.usageData.sevenDay,
+                resetAt: ctx.usageData.sevenDayResetAt,
+                colors,
+                usageBarEnabled,
+                barWidth,
+                forceLabel: true,
+                resetStyle: "datetime",
+            });
+            return `${usageLabel} ${warning} | ${weeklyPart}`;
+        }
+        return `${usageLabel} ${warning}`;
     }
     const threshold = display?.usageThreshold ?? 0;
     const fiveHour = ctx.usageData.fiveHour;
