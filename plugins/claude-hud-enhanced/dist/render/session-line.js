@@ -161,6 +161,7 @@ export function renderSessionLine(ctx) {
                         colors,
                         usageBarEnabled,
                         barWidth,
+                        resetStyle: 'datetime',
                     });
                     const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
                     if (sevenDay !== null && sevenDay >= sevenDayThreshold) {

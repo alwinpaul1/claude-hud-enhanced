@@ -176,6 +176,7 @@ export function renderSessionLine(ctx: RenderContext): string {
             colors,
             usageBarEnabled,
             barWidth,
+            resetStyle: 'datetime',
           });
 
           const sevenDayThreshold = display?.sevenDayThreshold ?? 80;

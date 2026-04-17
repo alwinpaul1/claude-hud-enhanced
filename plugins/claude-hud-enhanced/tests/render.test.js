@@ -1079,7 +1079,7 @@ test('renderUsageLine translates labels when Chinese is enabled', () => {
   try {
     const line = stripAnsi(renderUsageLine(ctx) ?? '');
     assert.ok(line.includes('用量'));
-    assert.ok(line.includes('重置剩余'));
+    assert.ok(line.includes('重置于'));
   } finally {
     setLanguage('en');
   }
@@ -1193,9 +1193,9 @@ test('renderSessionLine shows 5hr reset countdown', () => {
     fiveHourResetAt: resetTime,
     sevenDayResetAt: null,
   };
-  const line = renderSessionLine(ctx);
+  const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('5h'), 'should include 5h label');
-  assert.ok(line.includes('2h'), 'should include reset countdown');
+  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 5h reset datetime: ${line}`);
 });
 
 test('renderUsageLine shows reset countdown in days when >= 24 hours', () => {
@@ -1212,7 +1212,7 @@ test('renderUsageLine shows reset countdown in days when >= 24 hours', () => {
   const line = renderUsageLine(ctx);
   assert.ok(line, 'should render usage line');
   const plain = stripAnsi(line);
-  assert.ok(plain.includes('(resets in 6d 7h)'), `expected bar-mode reset wording, got: ${plain}`);
+  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(plain), `expected bar-mode reset datetime wording, got: ${plain}`);
   assert.ok(!plain.includes('151h'), `should avoid raw hour format for long durations: ${plain}`);
 });
 

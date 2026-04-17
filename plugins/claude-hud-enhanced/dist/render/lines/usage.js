@@ -52,6 +52,7 @@ export function renderUsageLine(ctx) {
         colors,
         usageBarEnabled,
         barWidth,
+        resetStyle: "datetime",
     });
     if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
         const sevenDayPart = formatUsageWindowPart({

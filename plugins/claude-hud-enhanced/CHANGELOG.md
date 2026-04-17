@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.13] - 2026-04-17
+
+### Changed
+- 5-hour window reset now renders as weekday+time (e.g. `(resets Thu 9:00 PM)`), matching the Weekly format. Replaces the `(51m)` countdown to tell users the exact clock time when their rate limit lifts.
+
 ## [0.2.12] - 2026-04-17
 
 ### Changed

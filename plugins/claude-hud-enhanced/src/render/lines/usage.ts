@@ -65,6 +65,7 @@ export function renderUsageLine(ctx: RenderContext): string | null {
     colors,
     usageBarEnabled,
     barWidth,
+    resetStyle: "datetime",
   });
 
   if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
