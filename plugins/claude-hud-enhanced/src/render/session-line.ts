@@ -176,7 +176,7 @@ export function renderSessionLine(ctx: RenderContext): string {
             colors,
             usageBarEnabled,
             barWidth,
-            resetStyle: 'datetime',
+            resetStyle: 'time',
           });
 
           const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
@@ -312,16 +312,18 @@ function formatUsageWindowPart({
   usageBarEnabled: boolean;
   barWidth: number;
   forceLabel?: boolean;
-  resetStyle?: 'countdown' | 'datetime';
+  resetStyle?: 'countdown' | 'datetime' | 'time';
 }): string {
   const usageDisplay = formatUsagePercent(percent, colors);
   const reset = resetStyle === 'datetime'
     ? formatResetDateTime(resetAt)
-    : formatResetTime(resetAt);
+    : resetStyle === 'time'
+      ? formatResetTimeOfDay(resetAt)
+      : formatResetTime(resetAt);
   const styledLabel = label(windowLabel, colors);
 
   if (usageBarEnabled) {
-    const suffix = resetStyle === 'datetime'
+    const suffix = resetStyle === 'datetime' || resetStyle === 'time'
       ? `(${t('format.resets')} ${reset})`
       : `(${reset})`;
     const body = reset
@@ -330,7 +332,9 @@ function formatUsageWindowPart({
     return forceLabel ? `${styledLabel} ${body}` : body;
   }
 
-  const prefix = resetStyle === 'datetime' ? t('format.resets') : t('format.resetsIn');
+  const prefix = resetStyle === 'datetime' || resetStyle === 'time'
+    ? t('format.resets')
+    : t('format.resetsIn');
   return reset
     ? `${styledLabel} ${usageDisplay} (${prefix} ${reset})`
     : `${styledLabel} ${usageDisplay}`;
@@ -346,6 +350,16 @@ function formatResetDateTime(resetAt: Date | null): string {
     minute: '2-digit',
   });
   return `${weekday} ${time}`;
+}
+
+function formatResetTimeOfDay(resetAt: Date | null): string {
+  if (!resetAt) return '';
+  const now = new Date();
+  if (resetAt.getTime() <= now.getTime()) return '';
+  return resetAt.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function formatResetTime(resetAt: Date | null): string {

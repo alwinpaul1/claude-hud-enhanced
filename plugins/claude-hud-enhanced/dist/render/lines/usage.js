@@ -52,7 +52,7 @@ export function renderUsageLine(ctx) {
         colors,
         usageBarEnabled,
         barWidth,
-        resetStyle: "datetime",
+        resetStyle: "time",
     });
     if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
         const sevenDayPart = formatUsageWindowPart({
@@ -80,8 +80,10 @@ function formatUsageWindowPart({ label: windowLabel, percent, resetAt, colors, u
     const usageDisplay = formatUsagePercent(percent, colors);
     const reset = resetStyle === "datetime"
         ? formatResetDateTime(resetAt)
-        : formatResetTime(resetAt);
-    const resetPrefix = resetStyle === "datetime"
+        : resetStyle === "time"
+            ? formatResetTimeOfDay(resetAt)
+            : formatResetTime(resetAt);
+    const resetPrefix = resetStyle === "datetime" || resetStyle === "time"
         ? t("format.resets")
         : t("format.resetsIn");
     const styledLabel = label(windowLabel, colors);
@@ -107,6 +109,17 @@ function formatResetDateTime(resetAt) {
         minute: "2-digit",
     });
     return `${weekday} ${time}`;
+}
+function formatResetTimeOfDay(resetAt) {
+    if (!resetAt)
+        return "";
+    const now = new Date();
+    if (resetAt.getTime() <= now.getTime())
+        return "";
+    return resetAt.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+    });
 }
 function formatResetTime(resetAt) {
     if (!resetAt)

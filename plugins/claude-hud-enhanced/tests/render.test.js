@@ -1195,7 +1195,7 @@ test('renderSessionLine shows 5hr reset countdown', () => {
   };
   const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('5h'), 'should include 5h label');
-  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 5h reset datetime: ${line}`);
+  assert.ok(/\(resets \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 5h reset time-of-day: ${line}`);
 });
 
 test('renderUsageLine shows reset countdown in days when >= 24 hours', () => {
@@ -1212,7 +1212,7 @@ test('renderUsageLine shows reset countdown in days when >= 24 hours', () => {
   const line = renderUsageLine(ctx);
   assert.ok(line, 'should render usage line');
   const plain = stripAnsi(line);
-  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(plain), `expected bar-mode reset datetime wording, got: ${plain}`);
+  assert.ok(/\(resets \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(plain), `expected bar-mode reset time-of-day, got: ${plain}`);
   assert.ok(!plain.includes('151h'), `should avoid raw hour format for long durations: ${plain}`);
 });
 

@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.14] - 2026-04-17
+
+### Changed
+- 5-hour reset now shows just time-of-day (e.g. `(resets 9:00 PM)`) without the weekday. The 5h window always resets within the same day, so the weekday prefix was redundant. Weekly keeps its `(resets Thu 9:00 PM)` weekday+time format.
+
 ## [0.2.13] - 2026-04-17
 
 ### Changed
