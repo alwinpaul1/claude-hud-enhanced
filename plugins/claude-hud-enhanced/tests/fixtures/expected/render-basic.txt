@@ -1,2 +1,6 @@
 [Opus] │ my-project
 Context ███░░░░░░░ 29%
+──────────────────────
+◐ Edit: .../authentication.ts | ✓ Read ×1
+✓ explore [haiku]: Finding auth code (<1s)
+▸ Add tests (1/2)

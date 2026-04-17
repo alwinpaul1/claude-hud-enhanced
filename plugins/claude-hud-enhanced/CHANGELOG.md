@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.3] - 2026-04-17
+
+### Changed
+- Default every optional display boolean to `true` so fresh installs see the full HUD surface out of the box: tools, agents, todos, config counts, cost, duration, speed, session name, Claude Code version, memory, session tokens, output style, git ahead/behind + file stats, and section separators are all on by default. Users who preferred the minimal look can disable individual items via `/claude-hud-enhanced:configure` or by setting them to `false` in `~/.claude/plugins/claude-hud/config.json`.
+
 ## [0.2.2] - 2026-04-17
 
 ### Changed

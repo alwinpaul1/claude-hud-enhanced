@@ -36,9 +36,24 @@ test("CLI renders expected output for a basic transcript", async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), "claude-hud-home-"));
   // Use a fixed 3-level path for deterministic test output
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
-  await import("node:fs/promises").then((fs) =>
-    fs.mkdir(projectDir, { recursive: true }),
-  );
+  const pluginConfigDir = path.join(homeDir, ".claude", "plugins", "claude-hud");
+  await import("node:fs/promises").then(async (fs) => {
+    await fs.mkdir(projectDir, { recursive: true });
+    await fs.mkdir(pluginConfigDir, { recursive: true });
+    // Disable nondeterministic live-data elements so snapshot stays stable
+    await fs.writeFile(
+      path.join(pluginConfigDir, "config.json"),
+      JSON.stringify({
+        display: {
+          showMemoryUsage: false,
+          showCost: false,
+          showDuration: false,
+          showSpeed: false,
+          showClaudeCodeVersion: false,
+        },
+      }),
+    );
+  });
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
