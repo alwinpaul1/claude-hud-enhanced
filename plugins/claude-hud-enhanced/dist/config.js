@@ -33,7 +33,7 @@ export const DEFAULT_CONFIG = {
         showContextBar: true,
         contextValue: 'percent',
         showConfigCounts: true,
-        showCost: true,
+        showCost: false,
         showDuration: true,
         showSpeed: true,
         showTokenBreakdown: true,

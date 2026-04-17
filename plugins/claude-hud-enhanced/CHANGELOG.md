@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.8] - 2026-04-17
+
+### Changed
+- `display.showCost` now defaults to `false`. The estimated cost adds noise and Usage/Weekly windows already convey spend pressure. Users can opt back in via `display.showCost: true`.
+
 ## [0.2.7] - 2026-04-17
 
 ### Changed

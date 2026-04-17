@@ -124,7 +124,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showContextBar: true,
     contextValue: 'percent',
     showConfigCounts: true,
-    showCost: true,
+    showCost: false,
     showDuration: true,
     showSpeed: true,
     showTokenBreakdown: true,

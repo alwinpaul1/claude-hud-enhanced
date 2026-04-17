@@ -122,10 +122,10 @@ test('mergeConfig preserves explicit showMemoryUsage=true', () => {
   assert.equal(config.display.showMemoryUsage, true);
 });
 
-test('mergeConfig defaults showCost to true', () => {
+test('mergeConfig defaults showCost to false', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.showCost, true);
-  assert.equal(DEFAULT_CONFIG.display.showCost, true);
+  assert.equal(config.display.showCost, false);
+  assert.equal(DEFAULT_CONFIG.display.showCost, false);
 });
 
 test('mergeConfig preserves explicit showCost=true', () => {
