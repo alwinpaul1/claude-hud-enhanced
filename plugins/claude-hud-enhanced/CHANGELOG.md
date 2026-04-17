@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.15] - 2026-04-17
+
+### Added
+- Persist stdin `rate_limits` to `~/.claude/plugins/claude-hud/usage-cache.json` and fall back to it on sessions where Claude Code has not yet pushed rate_limits into stdin (fresh session start, before first API call). Cache entries with expired reset timestamps are filtered out per-window so stale values never show. The HUD now keeps showing Usage/Weekly immediately on session start instead of rendering a line without the usage section.
+
 ## [0.2.14] - 2026-04-17
 
 ### Changed

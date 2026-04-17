@@ -1,6 +1,10 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { StdinData, UsageData } from './types.js';
 import type { ModelFormatMode } from './config.js';
 import { AUTOCOMPACT_BUFFER_PERCENT } from './constants.js';
+import { getHudPluginDir } from './claude-config-dir.js';
 
 type StdinStream = Pick<NodeJS.ReadStream, 'setEncoding' | 'on' | 'off' | 'pause'> & {
   isTTY?: boolean;
@@ -260,6 +264,63 @@ export function getUsageFromStdin(stdin: StdinData): UsageData | null {
     fiveHourResetAt: parseRateLimitResetAt(rateLimits.five_hour?.resets_at),
     sevenDayResetAt: parseRateLimitResetAt(rateLimits.seven_day?.resets_at),
   };
+}
+
+function getUsageCachePath(): string {
+  return path.join(getHudPluginDir(os.homedir()), 'usage-cache.json');
+}
+
+function writeUsageCache(usage: UsageData): void {
+  try {
+    const file = getUsageCachePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      fiveHour: usage.fiveHour,
+      sevenDay: usage.sevenDay,
+      fiveHourResetAt: usage.fiveHourResetAt?.toISOString() ?? null,
+      sevenDayResetAt: usage.sevenDayResetAt?.toISOString() ?? null,
+    }));
+  } catch {
+    // Best-effort cache — never block the render path.
+  }
+}
+
+function readUsageCache(): UsageData | null {
+  try {
+    const raw = fs.readFileSync(getUsageCachePath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    const fiveHourResetAt = parsed.fiveHourResetAt ? new Date(parsed.fiveHourResetAt) : null;
+    const sevenDayResetAt = parsed.sevenDayResetAt ? new Date(parsed.sevenDayResetAt) : null;
+    const now = Date.now();
+    const fiveHourLive = fiveHourResetAt && fiveHourResetAt.getTime() > now;
+    const sevenDayLive = sevenDayResetAt && sevenDayResetAt.getTime() > now;
+    if (!fiveHourLive && !sevenDayLive) {
+      return null;
+    }
+    return {
+      fiveHour: fiveHourLive ? parsed.fiveHour : null,
+      sevenDay: sevenDayLive ? parsed.sevenDay : null,
+      fiveHourResetAt: fiveHourLive ? fiveHourResetAt : null,
+      sevenDayResetAt: sevenDayLive ? sevenDayResetAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns usage from stdin when available, falling back to a persisted cache
+ * so the HUD can still show Usage/Weekly on a fresh session start (before
+ * Claude Code has sent rate_limits into stdin). Cache entries with expired
+ * reset times are filtered out per-window.
+ */
+export function getUsageWithCache(stdin: StdinData): UsageData | null {
+  const fresh = getUsageFromStdin(stdin);
+  if (fresh) {
+    writeUsageCache(fresh);
+    return fresh;
+  }
+  return readUsageCache();
 }
 
 /**

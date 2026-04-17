@@ -1,4 +1,4 @@
-import { readStdin, getUsageFromStdin } from "./stdin.js";
+import { readStdin, getUsageFromStdin, getUsageWithCache } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
@@ -14,6 +14,7 @@ export async function main(overrides = {}) {
     const deps = {
         readStdin,
         getUsageFromStdin,
+        getUsageWithCache,
         parseTranscript,
         countConfigs,
         getGitStatus,
@@ -51,7 +52,7 @@ export async function main(overrides = {}) {
         // Usage comes only from Claude Code's official stdin rate_limits fields.
         let usageData = null;
         if (config.display.showUsage !== false) {
-            usageData = deps.getUsageFromStdin(stdin);
+            usageData = deps.getUsageWithCache(stdin);
         }
         const extraCmd = deps.parseExtraCmdArg();
         const extraLabel = extraCmd ? await deps.runExtraCmd(extraCmd) : null;

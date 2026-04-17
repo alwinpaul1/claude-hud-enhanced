@@ -17,6 +17,13 @@ export declare function isBedrockModelId(modelId?: string): boolean;
 export declare function getProviderLabel(stdin: StdinData): string | null;
 export declare function getUsageFromStdin(stdin: StdinData): UsageData | null;
 /**
+ * Returns usage from stdin when available, falling back to a persisted cache
+ * so the HUD can still show Usage/Weekly on a fresh session start (before
+ * Claude Code has sent rate_limits into stdin). Cache entries with expired
+ * reset times are filtered out per-window.
+ */
+export declare function getUsageWithCache(stdin: StdinData): UsageData | null;
+/**
  * Strips redundant context-window size suffixes from model display names.
  *
  * Claude Code may include the context window size in the display name

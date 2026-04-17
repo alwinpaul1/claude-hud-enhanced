@@ -1,4 +1,4 @@
-import { readStdin, getUsageFromStdin } from "./stdin.js";
+import { readStdin, getUsageFromStdin, getUsageWithCache } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
@@ -10,6 +10,7 @@ import { getMemoryUsage } from "./memory.js";
 export type MainDeps = {
     readStdin: typeof readStdin;
     getUsageFromStdin: typeof getUsageFromStdin;
+    getUsageWithCache: typeof getUsageWithCache;
     parseTranscript: typeof parseTranscript;
     countConfigs: typeof countConfigs;
     getGitStatus: typeof getGitStatus;
