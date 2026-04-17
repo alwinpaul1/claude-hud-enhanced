@@ -372,6 +372,9 @@ function renderCompact(ctx: RenderContext): string[] {
 
   const usageLine = renderUsageSecondLine(ctx);
   if (usageLine) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
     lines.push(usageLine);
   }
 

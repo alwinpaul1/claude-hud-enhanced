@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.24] - 2026-04-17
+
+### Changed
+- When `display.usageOnNewLine: true` is set, insert a blank line between the main session row and the Usage/Weekly row so the two rows are visually separated.
+
 ## [0.2.23] - 2026-04-17
 
 ### Changed

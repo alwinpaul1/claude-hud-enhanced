@@ -306,6 +306,9 @@ function renderCompact(ctx) {
     }
     const usageLine = renderUsageSecondLine(ctx);
     if (usageLine) {
+        if (lines.length > 0) {
+            lines.push('');
+        }
         lines.push(usageLine);
     }
     return lines;
