@@ -2,6 +2,18 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.19] - 2026-04-17
+
+### Changed
+- Plan auto-detection (`src/oauth.ts`) now mirrors upstream's robustness:
+  - macOS Keychain uses multiple service names (`Claude Code-credentials` plus hashed suffix for custom `CLAUDE_CONFIG_DIR`), tries account-name then anonymous lookup, uses absolute `/usr/bin/security` path, and skips expired tokens (`expiresAt <= now`).
+  - Keychain failure backoff (60s) prevents repeated prompts on every ~300ms statusline tick.
+
+### Added
+- **Linux**: Best-effort libsecret support via `secret-tool lookup service "Claude Code-credentials" account $USER`. No-op if `secret-tool` is not installed.
+- **Windows**: Best-effort Windows Credential Manager support via PowerShell + `Get-StoredCredential`. No-op if the CredentialManager module is unavailable.
+- File fallback (`~/.claude/.credentials.json`) still runs last on all platforms.
+
 ## [0.2.18] - 2026-04-17
 
 ### Added
