@@ -1,5 +1,5 @@
 import { DEFAULT_ELEMENT_ORDER } from '../config.js';
-import { renderSessionLine } from './session-line.js';
+import { renderSessionLine, renderUsageSecondLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
 import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
@@ -303,6 +303,10 @@ function renderCompact(ctx) {
     const sessionLine = renderSessionLine(ctx);
     if (sessionLine) {
         lines.push(sessionLine);
+    }
+    const usageLine = renderUsageSecondLine(ctx);
+    if (usageLine) {
+        lines.push(usageLine);
     }
     return lines;
 }

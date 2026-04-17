@@ -41,6 +41,7 @@ export const DEFAULT_CONFIG = {
         showDuration: true,
         showTokenBreakdown: true,
         showUsage: true,
+        usageOnNewLine: true,
         usageBarEnabled: true,
         showTools: true,
         showAgents: true,
@@ -245,6 +246,9 @@ export function mergeConfig(userConfig) {
         showUsage: typeof migrated.display?.showUsage === 'boolean'
             ? migrated.display.showUsage
             : DEFAULT_CONFIG.display.showUsage,
+        usageOnNewLine: typeof migrated.display?.usageOnNewLine === 'boolean'
+            ? migrated.display.usageOnNewLine
+            : DEFAULT_CONFIG.display.usageOnNewLine,
         usageBarEnabled: typeof migrated.display?.usageBarEnabled === 'boolean'
             ? migrated.display.usageBarEnabled
             : DEFAULT_CONFIG.display.usageBarEnabled,

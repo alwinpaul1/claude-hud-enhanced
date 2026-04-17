@@ -144,7 +144,8 @@ export function renderSessionLine(ctx: RenderContext): string {
   }
 
   // Usage limits display (shown when enabled in config, respects usageThreshold)
-  if (display?.showUsage !== false && ctx.usageData && !providerLabel) {
+  const usageOnNewLine = display?.usageOnNewLine !== false;
+  if (!usageOnNewLine && display?.showUsage !== false && ctx.usageData && !providerLabel) {
     if (isLimitReached(ctx.usageData)) {
       const fiveHourReached = ctx.usageData.fiveHour === 100;
       const sevenDayReached = ctx.usageData.sevenDay === 100;
@@ -261,6 +262,94 @@ export function renderSessionLine(ctx: RenderContext): string {
   }
 
   return line;
+}
+
+/**
+ * Build just the usage+weekly parts. Used by renderSessionLine (inline) and
+ * by renderCompact (as its own second row when display.usageOnNewLine is on).
+ */
+export function renderUsageSecondLine(ctx: RenderContext): string | null {
+  const display = ctx.config?.display;
+  if (display?.usageOnNewLine === false) return null;
+  if (display?.showUsage === false) return null;
+  if (!ctx.usageData) return null;
+  if (getProviderLabel(ctx.stdin)) return null;
+
+  const colors = ctx.config?.colors;
+  const barWidth = getAdaptiveBarWidth();
+  const parts: string[] = [];
+
+  if (isLimitReached(ctx.usageData)) {
+    const fiveHourReached = ctx.usageData.fiveHour === 100;
+    const sevenDayReached = ctx.usageData.sevenDay === 100;
+    const resetTime = fiveHourReached
+      ? formatResetTimeOfDay(ctx.usageData.fiveHourResetAt)
+      : formatResetDateTime(ctx.usageData.sevenDayResetAt);
+    parts.push(critical(`⚠ ${t('status.limitReached')}${resetTime ? ` (${t('format.resets')} ${resetTime})` : ''}`, colors));
+
+    const usageBarEnabled = display?.usageBarEnabled ?? true;
+    if (fiveHourReached && !sevenDayReached && ctx.usageData.sevenDay !== null) {
+      parts.push(formatUsageWindowPart({
+        label: t('label.weekly'),
+        percent: ctx.usageData.sevenDay,
+        resetAt: ctx.usageData.sevenDayResetAt,
+        colors,
+        usageBarEnabled,
+        barWidth,
+        forceLabel: true,
+        resetStyle: 'datetime',
+      }));
+    }
+  } else {
+    const usageThreshold = display?.usageThreshold ?? 0;
+    const fiveHour = ctx.usageData.fiveHour;
+    const sevenDay = ctx.usageData.sevenDay;
+    const effectiveUsage = Math.max(fiveHour ?? 0, sevenDay ?? 0);
+
+    if (effectiveUsage >= usageThreshold) {
+      const usageBarEnabled = display?.usageBarEnabled ?? true;
+      if (fiveHour === null && sevenDay !== null) {
+        parts.push(formatUsageWindowPart({
+          label: t('label.weekly'),
+          percent: sevenDay,
+          resetAt: ctx.usageData.sevenDayResetAt,
+          colors,
+          usageBarEnabled,
+          barWidth,
+          forceLabel: true,
+          resetStyle: 'datetime',
+        }));
+      } else {
+        const fiveHourPart = formatUsageWindowPart({
+          label: '5h',
+          percent: fiveHour,
+          resetAt: ctx.usageData.fiveHourResetAt,
+          colors,
+          usageBarEnabled,
+          barWidth,
+          resetStyle: 'time',
+        });
+        const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
+        if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
+          parts.push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+          parts.push(formatUsageWindowPart({
+            label: t('label.weekly'),
+            percent: sevenDay,
+            resetAt: ctx.usageData.sevenDayResetAt,
+            colors,
+            usageBarEnabled,
+            barWidth,
+            forceLabel: true,
+            resetStyle: 'datetime',
+          }));
+        } else {
+          parts.push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+        }
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : null;
 }
 
 function formatTokens(n: number): string {

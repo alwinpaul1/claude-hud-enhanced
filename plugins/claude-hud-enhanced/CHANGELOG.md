@@ -2,6 +2,12 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.22] - 2026-04-17
+
+### Changed
+- `Usage` and `Weekly` segments now render on their own second row by default in `compact` layout, keeping the main session line (model + context bar + project + git + counts) clean.
+- New config `display.usageOnNewLine` (default `true`). Set to `false` to restore the old single-line layout where usage is appended to the main row.
+
 ## [0.2.21] - 2026-04-17
 
 ### Removed

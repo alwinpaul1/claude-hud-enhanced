@@ -56,6 +56,7 @@ export interface HudConfig {
         showDuration: boolean;
         showTokenBreakdown: boolean;
         showUsage: boolean;
+        usageOnNewLine: boolean;
         usageBarEnabled: boolean;
         showTools: boolean;
         showAgents: boolean;
