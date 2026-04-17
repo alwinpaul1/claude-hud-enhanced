@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.17] - 2026-04-17
+
+### Changed
+- `display.showConfigCounts` now defaults to `false`. The `N CLAUDE.md | N MCPs | N hooks` segment is hidden out of the box; set `display.showConfigCounts: true` in the plugin config to opt back in.
+
 ## [0.2.16] - 2026-04-17
 
 ### Fixed

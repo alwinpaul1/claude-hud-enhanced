@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG = {
         showProject: true,
         showContextBar: true,
         contextValue: 'percent',
-        showConfigCounts: true,
+        showConfigCounts: false,
         showCost: false,
         showDuration: true,
         showSpeed: true,

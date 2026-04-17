@@ -107,7 +107,7 @@ export function renderSessionLine(ctx) {
         parts.push(label(`CC v${ctx.claudeCodeVersion}`, colors));
     }
     // Config counts (respects environmentThreshold)
-    if (display?.showConfigCounts !== false) {
+    if (display?.showConfigCounts === true) {
         const totalCounts = ctx.claudeMdCount + ctx.rulesCount + ctx.mcpCount + ctx.hooksCount;
         const envThreshold = display?.environmentThreshold ?? 0;
         if (totalCounts > 0 && totalCounts >= envThreshold) {

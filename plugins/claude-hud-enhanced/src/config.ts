@@ -123,7 +123,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showProject: true,
     showContextBar: true,
     contextValue: 'percent',
-    showConfigCounts: true,
+    showConfigCounts: false,
     showCost: false,
     showDuration: true,
     showSpeed: true,
