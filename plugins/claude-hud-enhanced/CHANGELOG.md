@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.7] - 2026-04-17
+
+### Changed
+- `display.showSessionTokens` now defaults to `false`. The inline `tok: X` summary and the dedicated session-tokens line are hidden by default — context usage and Usage/Weekly windows already tell the story. Users who want cumulative session tokens can opt back in via config.
+
 ## [0.2.6] - 2026-04-17
 
 ### Changed

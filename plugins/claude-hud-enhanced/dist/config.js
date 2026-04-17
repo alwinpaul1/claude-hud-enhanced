@@ -45,7 +45,7 @@ export const DEFAULT_CONFIG = {
         showSessionName: true,
         showClaudeCodeVersion: false,
         showMemoryUsage: true,
-        showSessionTokens: true,
+        showSessionTokens: false,
         showOutputStyle: true,
         autocompactBuffer: 'enabled',
         usageThreshold: 0,
