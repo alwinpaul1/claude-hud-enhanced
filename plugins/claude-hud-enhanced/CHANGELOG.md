@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.5] - 2026-04-17
+
+### Changed
+- `display.showClaudeCodeVersion` now defaults to `false` — the Claude Code version label is no longer shown in the HUD unless explicitly enabled in `~/.claude/plugins/claude-hud/config.json`. Keeps the statusline shorter and avoids redundancy with `claude --version` etc.
+
 ## [0.2.4] - 2026-04-17
 
 ### Changed

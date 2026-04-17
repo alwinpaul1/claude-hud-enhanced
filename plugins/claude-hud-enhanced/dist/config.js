@@ -43,7 +43,7 @@ export const DEFAULT_CONFIG = {
         showAgents: true,
         showTodos: true,
         showSessionName: true,
-        showClaudeCodeVersion: true,
+        showClaudeCodeVersion: false,
         showMemoryUsage: true,
         showSessionTokens: true,
         showOutputStyle: true,

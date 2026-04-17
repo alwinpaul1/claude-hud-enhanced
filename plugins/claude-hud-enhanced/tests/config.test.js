@@ -100,10 +100,10 @@ test('mergeConfig preserves explicit showSessionName=true', () => {
   assert.equal(config.display.showSessionName, true);
 });
 
-test('mergeConfig defaults showClaudeCodeVersion to true', () => {
+test('mergeConfig defaults showClaudeCodeVersion to false', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.showClaudeCodeVersion, true);
-  assert.equal(DEFAULT_CONFIG.display.showClaudeCodeVersion, true);
+  assert.equal(config.display.showClaudeCodeVersion, false);
+  assert.equal(DEFAULT_CONFIG.display.showClaudeCodeVersion, false);
 });
 
 test('mergeConfig preserves explicit showClaudeCodeVersion=true', () => {

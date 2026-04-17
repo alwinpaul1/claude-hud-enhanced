@@ -134,7 +134,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showAgents: true,
     showTodos: true,
     showSessionName: true,
-    showClaudeCodeVersion: true,
+    showClaudeCodeVersion: false,
     showMemoryUsage: true,
     showSessionTokens: true,
     showOutputStyle: true,
