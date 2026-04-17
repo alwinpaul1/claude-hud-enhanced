@@ -1,7 +1,6 @@
 import type { RenderContext } from '../types.js';
 import { isLimitReached } from '../types.js';
 import { getContextPercent, getBufferedPercent, getModelName, formatModelName, getProviderLabel, getTotalTokens } from '../stdin.js';
-import { getOutputSpeed } from '../speed-tracker.js';
 import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, getContextColor, getQuotaColor, quotaBar, custom as customColor, RESET } from './colors.js';
 import { getAdaptiveBarWidth } from '../utils/terminal.js';
 import { renderCostEstimate } from './lines/cost.js';
@@ -227,14 +226,6 @@ export function renderSessionLine(ctx: RenderContext): string {
     const total = st.inputTokens + st.outputTokens + st.cacheCreationTokens + st.cacheReadTokens;
     if (total > 0) {
       parts.push(label(`tok: ${formatTokens(total)}`, colors));
-    }
-  }
-
-  // Session duration
-  if (display?.showSpeed) {
-    const speed = getOutputSpeed(ctx.stdin);
-    if (speed !== null) {
-      parts.push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors));
     }
   }
 

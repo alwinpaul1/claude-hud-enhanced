@@ -16,8 +16,6 @@ export type MessageKey =
   | "format.resetsIn"
   | "format.in"
   | "format.cache"
-  | "format.out"
-  | "format.tokPerSec"
   // Init
   | "init.initializing"
   | "init.macosNote";

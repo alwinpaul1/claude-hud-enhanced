@@ -35,7 +35,6 @@ function baseContext() {
         contextValue: 'percent',
         showConfigCounts: true,
         showDuration: true,
-        showSpeed: false,
         showTokenBreakdown: true,
         showUsage: true,
         usageBarEnabled: false,

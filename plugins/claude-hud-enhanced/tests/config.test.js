@@ -51,7 +51,6 @@ test('loadConfig returns valid config structure', async () => {
   assert.ok(['percent', 'tokens', 'remaining', 'both'].includes(config.display.contextValue), 'contextValue should be valid');
   assert.equal(typeof config.display.showConfigCounts, 'boolean');
   assert.equal(typeof config.display.showDuration, 'boolean');
-  assert.equal(typeof config.display.showSpeed, 'boolean');
   assert.equal(typeof config.display.showTokenBreakdown, 'boolean');
   assert.equal(typeof config.display.showUsage, 'boolean');
   assert.equal(typeof config.display.showTools, 'boolean');
@@ -227,7 +226,7 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
       JSON.stringify({
         lineLayout: 'compact',
         pathLevels: 2,
-        display: { showSpeed: true },
+        display: { showTokenBreakdown: false },
       }),
       'utf8'
     );
@@ -235,7 +234,7 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
     const config = await loadConfig();
     assert.equal(config.lineLayout, 'compact');
     assert.equal(config.pathLevels, 2);
-    assert.equal(config.display.showSpeed, true);
+    assert.equal(config.display.showTokenBreakdown, false);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(customConfigDir, { recursive: true, force: true });

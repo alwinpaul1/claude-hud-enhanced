@@ -2,6 +2,14 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.21] - 2026-04-17
+
+### Removed
+- **Output speed display (`out: X.X tok/s`)** — removed entirely. Deleted `src/speed-tracker.ts`, the `display.showSpeed` config field, `format.out` / `format.tokPerSec` i18n keys, render blocks in `session-line.ts` and `project.ts`, and the `speed-tracker.test.js` test suite.
+
+### Changed
+- `display.showClaudeMdCount` now defaults to `true`. `N CLAUDE.md` is shown alongside `N MCPs | N hooks` by default.
+
 ## [0.2.20] - 2026-04-17
 
 ### Changed

@@ -23,7 +23,6 @@ test("t() returns Chinese strings when language is zh", () => {
   assert.equal(t("status.allTodosComplete"), "全部完成");
   assert.equal(t("format.in"), "输入");
   assert.equal(t("format.cache"), "缓存");
-  assert.equal(t("format.out"), "输出");
   // Restore
   setLanguage("en");
 });

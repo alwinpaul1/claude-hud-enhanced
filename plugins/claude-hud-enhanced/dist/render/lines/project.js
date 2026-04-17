@@ -1,9 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getModelName, formatModelName, getProviderLabel } from '../../stdin.js';
-import { getOutputSpeed } from '../../speed-tracker.js';
 import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor } from '../colors.js';
-import { t } from '../../i18n/index.js';
 import { renderCostEstimate } from './cost.js';
 function hyperlink(uri, text) {
     const esc = '\x1b';
@@ -75,12 +73,6 @@ export function renderProjectLine(ctx) {
     }
     if (ctx.extraLabel) {
         parts.push(label(ctx.extraLabel, colors));
-    }
-    if (display?.showSpeed) {
-        const speed = getOutputSpeed(ctx.stdin);
-        if (speed !== null) {
-            parts.push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors));
-        }
     }
     if (display?.showDuration !== false && ctx.sessionDuration) {
         parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));

@@ -54,7 +54,6 @@ export interface HudConfig {
         showHooksCount: boolean;
         showCost: boolean;
         showDuration: boolean;
-        showSpeed: boolean;
         showTokenBreakdown: boolean;
         showUsage: boolean;
         usageBarEnabled: boolean;

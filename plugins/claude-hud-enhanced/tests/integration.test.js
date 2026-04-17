@@ -48,7 +48,6 @@ test("CLI renders expected output for a basic transcript", async (t) => {
           showMemoryUsage: false,
           showCost: false,
           showDuration: false,
-          showSpeed: false,
           showClaudeCodeVersion: false,
         },
       }),

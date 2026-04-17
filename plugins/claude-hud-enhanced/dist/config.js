@@ -33,13 +33,12 @@ export const DEFAULT_CONFIG = {
         showContextBar: true,
         contextValue: 'percent',
         showConfigCounts: false,
-        showClaudeMdCount: false,
+        showClaudeMdCount: true,
         showRulesCount: false,
         showMcpCount: true,
         showHooksCount: true,
         showCost: false,
         showDuration: true,
-        showSpeed: true,
         showTokenBreakdown: true,
         showUsage: true,
         usageBarEnabled: true,
@@ -240,9 +239,6 @@ export function mergeConfig(userConfig) {
         showDuration: typeof migrated.display?.showDuration === 'boolean'
             ? migrated.display.showDuration
             : DEFAULT_CONFIG.display.showDuration,
-        showSpeed: typeof migrated.display?.showSpeed === 'boolean'
-            ? migrated.display.showSpeed
-            : DEFAULT_CONFIG.display.showSpeed,
         showTokenBreakdown: typeof migrated.display?.showTokenBreakdown === 'boolean'
             ? migrated.display.showTokenBreakdown
             : DEFAULT_CONFIG.display.showTokenBreakdown,

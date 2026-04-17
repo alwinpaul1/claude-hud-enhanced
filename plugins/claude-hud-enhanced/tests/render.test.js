@@ -50,7 +50,7 @@ function baseContext() {
       pathLevels: 1,
       elementOrder: ['project', 'context', 'usage', 'memory', 'environment', 'tools', 'agents', 'todos'],
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false, pushWarningThreshold: 0, pushCriticalThreshold: 0 },
-      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageBarEnabled: false, showTools: true, showAgents: true, showTodos: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showOutputStyle: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
+      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showTokenBreakdown: true, showUsage: true, usageBarEnabled: false, showTools: true, showAgents: true, showTodos: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showOutputStyle: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
       colors: {
         context: 'green',
         usage: 'brightBlue',
@@ -96,30 +96,6 @@ function withColumns(stream, columns, fn) {
 
 function withTerminal(columns, fn) {
   return withColumns(process.stdout, columns, fn);
-}
-
-async function withDeterministicSpeedCache(fn) {
-  const tempConfigDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-render-'));
-  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
-  const originalNow = Date.now;
-  const cachePath = path.join(tempConfigDir, 'plugins', 'claude-hud', '.speed-cache.json');
-
-  process.env.CLAUDE_CONFIG_DIR = tempConfigDir;
-  await mkdir(path.dirname(cachePath), { recursive: true });
-  await writeFile(cachePath, JSON.stringify({ outputTokens: 1000, timestamp: 1000 }), 'utf8');
-  Date.now = () => 2000;
-
-  try {
-    await fn();
-  } finally {
-    Date.now = originalNow;
-    if (originalConfigDir === undefined) {
-      delete process.env.CLAUDE_CONFIG_DIR;
-    } else {
-      process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
-    }
-    await rm(tempConfigDir, { recursive: true, force: true });
-  }
 }
 
 test('renderSessionLine adds token breakdown when context is high', () => {
@@ -656,45 +632,6 @@ test('renderProjectLine omits duration when showDuration is false', () => {
   ctx.sessionDuration = '12m 34s';
   const line = renderProjectLine(ctx);
   assert.ok(!line?.includes('12m 34s'), 'should not include session duration when disabled');
-});
-
-test('renderProjectLine includes speed when showSpeed is true and speed is available', async () => {
-  await withDeterministicSpeedCache(async () => {
-    const ctx = baseContext();
-    ctx.stdin.cwd = '/tmp/my-project';
-    ctx.stdin.context_window.current_usage.output_tokens = 2000;
-    ctx.config.display.showSpeed = true;
-
-    const line = renderProjectLine(ctx);
-    assert.ok(line?.includes('out: 1000.0 tok/s'), 'should include deterministic speed');
-  });
-});
-
-test('renderProjectLine omits speed when showSpeed is false', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.config.display.showSpeed = false;
-  ctx.stdin.context_window.current_usage.output_tokens = 5000;
-  const line = renderProjectLine(ctx);
-  assert.ok(!line?.includes('tok/s'), 'should not include speed when disabled');
-});
-
-test('render expanded layout includes speed and duration on the project line', async () => {
-  await withDeterministicSpeedCache(async () => {
-    const ctx = baseContext();
-    ctx.config.lineLayout = 'expanded';
-    ctx.stdin.cwd = '/tmp/my-project';
-    ctx.stdin.context_window.current_usage.output_tokens = 2000;
-    ctx.config.display.showSpeed = true;
-    ctx.sessionDuration = '12m 34s';
-
-    const lines = withTerminal(120, () => captureRenderLines(ctx));
-    const projectLine = lines.find(line => line.includes('my-project'));
-
-    assert.ok(projectLine, 'expected an expanded project line');
-    assert.ok(projectLine.includes('out: 1000.0 tok/s'), 'should include deterministic speed');
-    assert.ok(projectLine.includes('⏱️  12m 34s'), 'should include session duration');
-  });
 });
 
 test('renderSessionLine omits project name when showProject is false', () => {

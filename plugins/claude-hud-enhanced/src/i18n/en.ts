@@ -20,8 +20,6 @@ export const en: Messages = {
   "format.resetsIn": "resets in",
   "format.in": "in",
   "format.cache": "cache",
-  "format.out": "out",
-  "format.tokPerSec": "tok/s",
 
   // Init
   "init.initializing": "[claude-hud] Initializing...",

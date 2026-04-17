@@ -16,8 +16,6 @@ export const zh = {
     "format.resetsIn": "重置剩余",
     "format.in": "输入",
     "format.cache": "缓存",
-    "format.out": "输出",
-    "format.tokPerSec": "tok/s",
     // Init
     "init.initializing": "[claude-hud] 正在初始化...",
     "init.macosNote": "[claude-hud] 注意：在 macOS 上，您可能需要重启 Claude Code 才能显示 HUD。",
