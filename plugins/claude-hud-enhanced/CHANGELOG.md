@@ -2,6 +2,12 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.20] - 2026-04-17
+
+### Changed
+- Split `showConfigCounts` into per-type toggles: `showClaudeMdCount`, `showRulesCount`, `showMcpCount`, `showHooksCount`. **MCPs and hooks now show by default**; CLAUDE.md and rules are opt-in.
+- `showConfigCounts: true` (the legacy master) still forces all four on for backwards compatibility.
+
 ## [0.2.19] - 2026-04-17
 
 ### Changed

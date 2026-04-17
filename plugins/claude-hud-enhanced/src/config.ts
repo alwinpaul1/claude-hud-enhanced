@@ -78,6 +78,10 @@ export interface HudConfig {
     showContextBar: boolean;
     contextValue: ContextValueMode;
     showConfigCounts: boolean;
+    showClaudeMdCount: boolean;
+    showRulesCount: boolean;
+    showMcpCount: boolean;
+    showHooksCount: boolean;
     showCost: boolean;
     showDuration: boolean;
     showSpeed: boolean;
@@ -125,6 +129,10 @@ export const DEFAULT_CONFIG: HudConfig = {
     showContextBar: true,
     contextValue: 'percent',
     showConfigCounts: false,
+    showClaudeMdCount: false,
+    showRulesCount: false,
+    showMcpCount: true,
+    showHooksCount: true,
     showCost: false,
     showDuration: true,
     showSpeed: true,
@@ -333,6 +341,18 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showConfigCounts: typeof migrated.display?.showConfigCounts === 'boolean'
       ? migrated.display.showConfigCounts
       : DEFAULT_CONFIG.display.showConfigCounts,
+    showClaudeMdCount: typeof migrated.display?.showClaudeMdCount === 'boolean'
+      ? migrated.display.showClaudeMdCount
+      : DEFAULT_CONFIG.display.showClaudeMdCount,
+    showRulesCount: typeof migrated.display?.showRulesCount === 'boolean'
+      ? migrated.display.showRulesCount
+      : DEFAULT_CONFIG.display.showRulesCount,
+    showMcpCount: typeof migrated.display?.showMcpCount === 'boolean'
+      ? migrated.display.showMcpCount
+      : DEFAULT_CONFIG.display.showMcpCount,
+    showHooksCount: typeof migrated.display?.showHooksCount === 'boolean'
+      ? migrated.display.showHooksCount
+      : DEFAULT_CONFIG.display.showHooksCount,
     showCost: typeof migrated.display?.showCost === 'boolean'
       ? migrated.display.showCost
       : DEFAULT_CONFIG.display.showCost,

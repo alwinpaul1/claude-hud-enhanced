@@ -7,24 +7,25 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const totalCounts =
     ctx.claudeMdCount + ctx.rulesCount + ctx.mcpCount + ctx.hooksCount;
   const threshold = display?.environmentThreshold ?? 0;
-  const showCounts = display?.showConfigCounts === true;
+  const showAll = display?.showConfigCounts === true;
+  const showClaudeMd = showAll || display?.showClaudeMdCount === true;
+  const showRules = showAll || display?.showRulesCount === true;
+  const showMcp = showAll || display?.showMcpCount !== false;
+  const showHooks = showAll || display?.showHooksCount !== false;
   const showOutputStyle = display?.showOutputStyle === true;
   const parts: string[] = [];
 
-  if (showCounts && totalCounts >= threshold && totalCounts > 0) {
-    if (ctx.claudeMdCount > 0) {
+  if (totalCounts >= threshold && totalCounts > 0) {
+    if (showClaudeMd && ctx.claudeMdCount > 0) {
       parts.push(`${ctx.claudeMdCount} CLAUDE.md`);
     }
-
-    if (ctx.rulesCount > 0) {
+    if (showRules && ctx.rulesCount > 0) {
       parts.push(`${ctx.rulesCount} ${t("label.rules")}`);
     }
-
-    if (ctx.mcpCount > 0) {
+    if (showMcp && ctx.mcpCount > 0) {
       parts.push(`${ctx.mcpCount} MCPs`);
     }
-
-    if (ctx.hooksCount > 0) {
+    if (showHooks && ctx.hooksCount > 0) {
       parts.push(`${ctx.hooksCount} ${t("label.hooks")}`);
     }
   }

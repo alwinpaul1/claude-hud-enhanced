@@ -118,25 +118,27 @@ export function renderSessionLine(ctx: RenderContext): string {
     parts.push(label(`CC v${ctx.claudeCodeVersion}`, colors));
   }
 
-  // Config counts (respects environmentThreshold)
-  if (display?.showConfigCounts === true) {
+  // Config counts (respects environmentThreshold + per-type toggles)
+  {
     const totalCounts = ctx.claudeMdCount + ctx.rulesCount + ctx.mcpCount + ctx.hooksCount;
     const envThreshold = display?.environmentThreshold ?? 0;
+    const showAll = display?.showConfigCounts === true;
+    const showClaudeMd = showAll || display?.showClaudeMdCount === true;
+    const showRules = showAll || display?.showRulesCount === true;
+    const showMcp = showAll || display?.showMcpCount !== false;
+    const showHooks = showAll || display?.showHooksCount !== false;
 
     if (totalCounts > 0 && totalCounts >= envThreshold) {
-      if (ctx.claudeMdCount > 0) {
+      if (showClaudeMd && ctx.claudeMdCount > 0) {
         parts.push(label(`${ctx.claudeMdCount} CLAUDE.md`, colors));
       }
-
-      if (ctx.rulesCount > 0) {
+      if (showRules && ctx.rulesCount > 0) {
         parts.push(label(`${ctx.rulesCount} ${t('label.rules')}`, colors));
       }
-
-      if (ctx.mcpCount > 0) {
+      if (showMcp && ctx.mcpCount > 0) {
         parts.push(label(`${ctx.mcpCount} MCPs`, colors));
       }
-
-      if (ctx.hooksCount > 0) {
+      if (showHooks && ctx.hooksCount > 0) {
         parts.push(label(`${ctx.hooksCount} ${t('label.hooks')}`, colors));
       }
     }
