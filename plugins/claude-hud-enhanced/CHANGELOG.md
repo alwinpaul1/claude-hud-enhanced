@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.11] - 2026-04-17
+
+### Changed
+- `display.showSessionName` now defaults to `false`. The auto-generated session slug (e.g. `breezy-enchanting-map`) cluttered the compact line without adding actionable context. Users who want it can opt back in via `display.showSessionName: true`.
+
 ## [0.2.10] - 2026-04-17
 
 ### Changed
