@@ -183,9 +183,9 @@ test('getContextColor and getQuotaColor respect custom semantic overrides', () =
 
   assert.equal(getContextColor(10, colors), '\x1b[36m');
   assert.equal(getContextColor(70, colors), '\x1b[94m');
-  assert.equal(getQuotaColor(25, colors), '\x1b[35m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[35m');
-  assert.equal(getQuotaColor(95, colors), '\x1b[35m');
+  assert.equal(getQuotaColor(25, colors), '\x1b[36m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[94m');
+  assert.equal(getQuotaColor(95, colors), '\x1b[31m');
 });
 
 test('getContextColor and getQuotaColor resolve 256-color indices', () => {
@@ -200,9 +200,9 @@ test('getContextColor and getQuotaColor resolve 256-color indices', () => {
   assert.equal(getContextColor(10, colors), '\x1b[38;5;82m');
   assert.equal(getContextColor(70, colors), '\x1b[38;5;220m');
   assert.equal(getContextColor(90, colors), '\x1b[38;5;196m');
-  assert.equal(getQuotaColor(25, colors), '\x1b[38;5;214m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[38;5;214m');
-  assert.equal(getQuotaColor(95, colors), '\x1b[38;5;214m');
+  assert.equal(getQuotaColor(25, colors), '\x1b[38;5;82m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[38;5;220m');
+  assert.equal(getQuotaColor(95, colors), '\x1b[38;5;196m');
 });
 
 test('getContextColor and getQuotaColor resolve hex color strings', () => {
@@ -216,8 +216,8 @@ test('getContextColor and getQuotaColor resolve hex color strings', () => {
 
   assert.equal(getContextColor(10, colors), '\x1b[38;2;51;255;0m');
   assert.equal(getContextColor(70, colors), '\x1b[38;2;255;135;215m');
-  assert.equal(getQuotaColor(25, colors), '\x1b[38;2;255;176;0m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[38;2;255;176;0m');
+  assert.equal(getQuotaColor(25, colors), '\x1b[38;2;51;255;0m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[38;2;255;135;215m');
 });
 
 test('renderSessionLine includes config counts when present', () => {
@@ -1391,10 +1391,11 @@ test('renderUsageLine uses custom usage palette overrides', () => {
 
   const line = withTerminal(120, () => renderUsageLine(ctx));
   assert.ok(line, 'should render usage line');
-  assert.ok(line.includes('\x1b[36m███'), `expected custom usage bar color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[36m25%\x1b[0m'), `expected custom usage percentage color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[36m████████'), `quota bar at 80% should use flat usage color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[36m80%\x1b[0m'), `quota percentage at 80% should use flat usage color, got: ${JSON.stringify(line)}`);
+  // Usage quota now follows context thresholds: <70 context (green), 70-85 warning (yellow), >=85 critical (red)
+  assert.ok(line.includes('\x1b[32m███'), `quota bar at 25% should use context (green) color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[32m25%\x1b[0m'), `quota percent at 25% should use context color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[33m████████'), `quota bar at 80% should use warning (yellow) color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[33m80%\x1b[0m'), `quota percent at 80% should use warning color, got: ${JSON.stringify(line)}`);
 });
 
 test('renderSessionLine hides usage when showUsage config is false (hybrid toggle)', () => {

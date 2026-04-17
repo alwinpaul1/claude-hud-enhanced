@@ -122,8 +122,10 @@ export function getContextColor(percent: number, colors?: Partial<HudColorOverri
   return resolveAnsi(colors?.context, GREEN);
 }
 
-export function getQuotaColor(_percent: number, colors?: Partial<HudColorOverrides>): string {
-  return resolveAnsi(colors?.usage, BRIGHT_BLUE);
+export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string {
+  if (percent >= 85) return resolveAnsi(colors?.critical, RED);
+  if (percent >= 70) return resolveAnsi(colors?.warning, YELLOW);
+  return resolveAnsi(colors?.context, GREEN);
 }
 
 export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {

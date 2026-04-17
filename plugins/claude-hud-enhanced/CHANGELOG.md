@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.10] - 2026-04-17
+
+### Changed
+- Usage/Weekly quota colors now follow the same green/yellow/red thresholds as the context bar, matching the pre-upstream-sync-backup `getContextColor` mapping exactly: `<70` → `colors.context` (green), `70–84` → `colors.warning` (yellow), `>=85` → `colors.critical` (red). Replaces both the magenta upstream default (0.2.8) and the flat blue attempt (0.2.9) with the threshold palette the fork originally used.
+
 ## [0.2.9] - 2026-04-17
 
 ### Changed
