@@ -69,6 +69,7 @@ export interface HudConfig {
         modelFormat: ModelFormatMode;
         modelOverride: string;
         customLine: string;
+        wrapLines: boolean;
     };
     colors: HudColorOverrides;
 }

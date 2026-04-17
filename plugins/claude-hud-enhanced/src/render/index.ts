@@ -485,7 +485,10 @@ export function render(ctx: RenderContext): void {
   }
 
   const physicalLines = lines.flatMap(line => line.split('\n'));
-  const visibleLines = physicalLines.flatMap(line => wrapLineToWidth(line, terminalWidth));
+  const wrapLines = ctx.config?.display?.wrapLines ?? false;
+  const visibleLines = wrapLines
+    ? physicalLines.flatMap(line => wrapLineToWidth(line, terminalWidth))
+    : physicalLines;
 
   for (const line of visibleLines) {
     const outputLine = `${RESET}${line}`;

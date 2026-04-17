@@ -46,6 +46,7 @@ function baseContext() {
         usageThreshold: 0,
         sevenDayThreshold: 80,
         environmentThreshold: 0,
+        wrapLines: true,
       },
     },
     extraLabel: null,

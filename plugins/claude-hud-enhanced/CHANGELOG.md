@@ -2,6 +2,14 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.1] - 2026-04-17
+
+### Changed
+- **Default behavior**: the HUD now emits one logical line per rendered row and defers to the terminal's natural soft-wrap — matching the pre-sync horizontal look. The previous hard-split at ` | ` boundaries when a line exceeded terminal width is now opt-in via `display.wrapLines: true`.
+
+### Added
+- `display.wrapLines` config option (default `false`). Set to `true` to restore the 0.2.0 behavior of hard-splitting long lines at ` | ` boundaries when they exceed terminal width.
+
 ## [0.2.0] - 2026-04-17
 
 ### Added

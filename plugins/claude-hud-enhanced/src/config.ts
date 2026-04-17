@@ -99,6 +99,7 @@ export interface HudConfig {
     modelFormat: ModelFormatMode;
     modelOverride: string;
     customLine: string;
+    wrapLines: boolean;
   };
   colors: HudColorOverrides;
 }
@@ -144,6 +145,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     modelFormat: 'full',
     modelOverride: '',
     customLine: '',
+    wrapLines: false,
   },
   colors: {
     context: 'green',
@@ -386,6 +388,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     customLine: typeof migrated.display?.customLine === 'string'
       ? migrated.display.customLine.slice(0, 80)
       : DEFAULT_CONFIG.display.customLine,
+    wrapLines: typeof migrated.display?.wrapLines === 'boolean'
+      ? migrated.display.wrapLines
+      : DEFAULT_CONFIG.display.wrapLines,
   };
 
   const colors = {

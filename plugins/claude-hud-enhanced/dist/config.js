@@ -54,6 +54,7 @@ export const DEFAULT_CONFIG = {
         modelFormat: 'full',
         modelOverride: '',
         customLine: '',
+        wrapLines: false,
     },
     colors: {
         context: 'green',
@@ -273,6 +274,9 @@ export function mergeConfig(userConfig) {
         customLine: typeof migrated.display?.customLine === 'string'
             ? migrated.display.customLine.slice(0, 80)
             : DEFAULT_CONFIG.display.customLine,
+        wrapLines: typeof migrated.display?.wrapLines === 'boolean'
+            ? migrated.display.wrapLines
+            : DEFAULT_CONFIG.display.wrapLines,
     };
     const colors = {
         context: validateColorValue(migrated.colors?.context)
