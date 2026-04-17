@@ -1,19 +1,36 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 
 const execFileAsync = promisify(execFile);
+
+export interface LineDiff {
+  added: number;
+  deleted: number;
+}
+
+export interface TrackedFile {
+  basename: string;
+  fullPath: string;
+  type: 'modified' | 'added' | 'deleted';
+  lineDiff?: LineDiff;
+}
+
+export interface FileStats {
+  modified: number;
+  added: number;
+  deleted: number;
+  untracked: number;
+  trackedFiles: TrackedFile[];
+}
 
 export interface GitStatus {
   branch: string;
   isDirty: boolean;
   ahead: number;
   behind: number;
-  uncommittedCount: number;
-  singleFileName?: string;  // When only 1 file is uncommitted
-  hasUpstream: boolean;
-  lastFetchAgo?: string;  // e.g., "<1m ago", "5m ago", "2h ago"
+  fileStats?: FileStats;
+  lineDiff?: LineDiff;
+  branchUrl?: string;
 }
 
 export async function getGitBranch(cwd?: string): Promise<string | null> {
@@ -44,104 +61,150 @@ export async function getGitStatus(cwd?: string): Promise<GitStatus | null> {
     const branch = branchOut.trim();
     if (!branch) return null;
 
-    // Check for dirty state and count uncommitted files
+    // Check for dirty state and parse file stats
     let isDirty = false;
-    let uncommittedCount = 0;
-    let singleFileName: string | undefined;
+    let fileStats: FileStats | undefined;
+    let lineDiff: LineDiff | undefined;
     try {
       const { stdout: statusOut } = await execFileAsync(
         'git',
-        ['status', '--porcelain'],
+        ['--no-optional-locks', 'status', '--porcelain'],
         { cwd, timeout: 1000, encoding: 'utf8' }
       );
-      const lines = statusOut.trim().split('\n').filter(Boolean);
-      uncommittedCount = lines.length;
-      isDirty = uncommittedCount > 0;
-
-      // When only 1 file uncommitted, extract the filename
-      if (uncommittedCount === 1 && lines[0]) {
-        singleFileName = lines[0].slice(3).trim();  // Remove status prefix (e.g., " M ", "?? ")
+      const trimmed = statusOut.trim();
+      isDirty = trimmed.length > 0;
+      if (isDirty) {
+        fileStats = parseFileStats(trimmed);
       }
     } catch {
       // Ignore errors, assume clean
     }
 
-    // Check for upstream and get ahead/behind counts
+    // Get per-file and total line diffs
+    if (isDirty) {
+      try {
+        const { stdout: numstatOut } = await execFileAsync(
+          'git',
+          ['diff', '--numstat', 'HEAD'],
+          { cwd, timeout: 2000, encoding: 'utf8' }
+        );
+        const { totalDiff, perFileDiff } = parseNumstat(numstatOut);
+        lineDiff = totalDiff;
+        if (fileStats) {
+          applyLineDiffsToFiles(fileStats.trackedFiles, perFileDiff);
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    // Get ahead/behind counts
     let ahead = 0;
     let behind = 0;
-    let hasUpstream = false;
     try {
-      const { stdout: upstreamOut } = await execFileAsync(
+      const { stdout: revOut } = await execFileAsync(
         'git',
-        ['rev-parse', '--abbrev-ref', '@{upstream}'],
+        ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'],
         { cwd, timeout: 1000, encoding: 'utf8' }
       );
-      hasUpstream = upstreamOut.trim().length > 0;
-
-      if (hasUpstream) {
-        const { stdout: revOut } = await execFileAsync(
-          'git',
-          ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'],
-          { cwd, timeout: 1000, encoding: 'utf8' }
-        );
-        const parts = revOut.trim().split(/\s+/);
-        if (parts.length === 2) {
-          behind = parseInt(parts[0], 10) || 0;
-          ahead = parseInt(parts[1], 10) || 0;
-        }
+      const parts = revOut.trim().split(/\s+/);
+      if (parts.length === 2) {
+        behind = parseInt(parts[0], 10) || 0;
+        ahead = parseInt(parts[1], 10) || 0;
       }
     } catch {
-      // No upstream or error
-      hasUpstream = false;
+      // No upstream or error, keep 0/0
     }
 
-    // Get last fetch time
-    let lastFetchAgo: string | undefined;
+    // Build GitHub branch URL from remote
+    let branchUrl: string | undefined;
     try {
-      const gitDir = await findGitDir(cwd);
-      if (gitDir) {
-        const fetchHeadPath = path.join(gitDir, 'FETCH_HEAD');
-        if (fs.existsSync(fetchHeadPath)) {
-          const stats = fs.statSync(fetchHeadPath);
-          const fetchTime = stats.mtimeMs;
-          const now = Date.now();
-          const diffMs = now - fetchTime;
-          const diffSecs = Math.floor(diffMs / 1000);
-
-          if (diffSecs < 60) {
-            lastFetchAgo = '<1m ago';
-          } else if (diffSecs < 3600) {
-            lastFetchAgo = `${Math.floor(diffSecs / 60)}m ago`;
-          } else if (diffSecs < 86400) {
-            lastFetchAgo = `${Math.floor(diffSecs / 3600)}h ago`;
-          } else {
-            lastFetchAgo = `${Math.floor(diffSecs / 86400)}d ago`;
-          }
-        }
+      const { stdout: remoteOut } = await execFileAsync(
+        'git',
+        ['remote', 'get-url', 'origin'],
+        { cwd, timeout: 1000, encoding: 'utf8' }
+      );
+      const remote = remoteOut.trim();
+      const httpsBase = remote
+        .replace(/^git@([^:]+):/, 'https://$1/')
+        .replace(/\.git$/, '');
+      if (httpsBase.startsWith('https://')) {
+        branchUrl = `${httpsBase}/tree/${branch}`;
       }
     } catch {
-      // Ignore fetch time errors
+      // No remote or not GitHub
     }
 
-    return { branch, isDirty, ahead, behind, uncommittedCount, singleFileName, hasUpstream, lastFetchAgo };
+    return { branch, isDirty, ahead, behind, fileStats, lineDiff, branchUrl };
   } catch {
     return null;
   }
 }
 
-async function findGitDir(cwd: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['rev-parse', '--git-dir'],
-      { cwd, timeout: 1000, encoding: 'utf8' }
-    );
-    const gitDir = stdout.trim();
-    if (path.isAbsolute(gitDir)) {
-      return gitDir;
+/**
+ * Parse git status --porcelain output and count file stats (Starship-compatible format)
+ * Status codes: M=modified, A=added, D=deleted, ??=untracked
+ */
+function parseFileStats(porcelainOutput: string): FileStats {
+  const stats: FileStats = { modified: 0, added: 0, deleted: 0, untracked: 0, trackedFiles: [] };
+  const lines = porcelainOutput.split('\n').filter(Boolean);
+
+  for (const line of lines) {
+    if (line.length < 2) continue;
+
+    const index = line[0];    // staged status
+    const worktree = line[1]; // unstaged status
+
+    if (line.startsWith('??')) {
+      stats.untracked++;
+    } else if (index === 'A') {
+      stats.added++;
+      const fullPath = line.slice(2).trimStart();
+      stats.trackedFiles.push({ basename: fullPath.split('/').pop() ?? fullPath, fullPath, type: 'added' });
+    } else if (index === 'D' || worktree === 'D') {
+      stats.deleted++;
+      const fullPath = line.slice(2).trimStart();
+      stats.trackedFiles.push({ basename: fullPath.split('/').pop() ?? fullPath, fullPath, type: 'deleted' });
+    } else if (index === 'M' || worktree === 'M' || index === 'R' || index === 'C') {
+      // M=modified, R=renamed (counts as modified), C=copied (counts as modified)
+      stats.modified++;
+      // For renames, git porcelain shows "old -> new"; take the destination path
+      const fullPath = line.slice(2).trimStart().split(' -> ').pop() ?? line.slice(2).trimStart();
+      stats.trackedFiles.push({ basename: fullPath.split('/').pop() ?? fullPath, fullPath, type: 'modified' });
     }
-    return path.join(cwd, gitDir);
-  } catch {
-    return null;
+  }
+
+  return stats;
+}
+
+/**
+ * Parse `git diff --numstat HEAD` output.
+ * Returns total line diff and a map of fullPath -> LineDiff.
+ */
+function parseNumstat(numstatOutput: string): { totalDiff: LineDiff; perFileDiff: Map<string, LineDiff> } {
+  const totalDiff: LineDiff = { added: 0, deleted: 0 };
+  const perFileDiff = new Map<string, LineDiff>();
+
+  for (const line of numstatOutput.trim().split('\n').filter(Boolean)) {
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const added = parseInt(parts[0], 10);
+    const deleted = parseInt(parts[1], 10);
+    const filePath = parts[2];
+    if (Number.isNaN(added) || Number.isNaN(deleted)) continue; // binary file
+    totalDiff.added += added;
+    totalDiff.deleted += deleted;
+    perFileDiff.set(filePath, { added, deleted });
+  }
+
+  return { totalDiff, perFileDiff };
+}
+
+function applyLineDiffsToFiles(files: TrackedFile[], perFileDiff: Map<string, LineDiff>): void {
+  for (const file of files) {
+    const diff = perFileDiff.get(file.fullPath);
+    if (diff) {
+      file.lineDiff = diff;
+    }
   }
 }

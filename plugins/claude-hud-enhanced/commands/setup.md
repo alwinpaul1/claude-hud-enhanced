@@ -1,36 +1,141 @@
 ---
-description: Configure claude-hud-enhanced as your statusline
+description: Configure claude-hud as your statusline
 allowed-tools: Bash, Read, Edit, AskUserQuestion
 ---
 
 **Note**: Placeholders like `{RUNTIME_PATH}`, `{SOURCE}`, and `{GENERATED_COMMAND}` should be substituted with actual detected values.
 
-## Step 1: Detect Platform & Runtime
+## Step 0: Detect Ghost Installation (Run First)
 
-**macOS/Linux** (if `uname -s` returns "Darwin", "Linux", or a MINGW*/MSYS*/CYGWIN* variant):
+Check for inconsistent plugin state that can occur after failed installations:
 
-> **Git Bash/MSYS2/Cygwin users on Windows**: Follow these macOS/Linux instructions, not the Windows section below. Your environment provides bash and Unix-like tools.
+**macOS/Linux**:
+```bash
+# Check 1: Cache exists?
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CACHE_EXISTS=$(ls -d "$CLAUDE_DIR/plugins/cache/claude-hud" 2>/dev/null && echo "YES" || echo "NO")
 
-1. Get plugin path:
+# Check 2: Registry entry exists?
+REGISTRY_EXISTS=$(grep -q "claude-hud" "$CLAUDE_DIR/plugins/installed_plugins.json" 2>/dev/null && echo "YES" || echo "NO")
+
+# Check 3: Temp files left behind?
+TEMP_FILES=$(ls -d "$CLAUDE_DIR/plugins/cache/temp_local_"* 2>/dev/null | head -1)
+
+echo "Cache: $CACHE_EXISTS | Registry: $REGISTRY_EXISTS | Temp: ${TEMP_FILES:-none}"
+```
+
+**Windows (PowerShell)**:
+```powershell
+$claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
+$cache = Test-Path (Join-Path $claudeDir "plugins\cache\claude-hud")
+$registry = (Get-Content (Join-Path $claudeDir "plugins\installed_plugins.json") -ErrorAction SilentlyContinue) -match "claude-hud"
+$temp = Get-ChildItem (Join-Path $claudeDir "plugins\cache\temp_local_*") -ErrorAction SilentlyContinue
+Write-Host "Cache: $cache | Registry: $registry | Temp: $($temp.Count) files"
+```
+
+### Interpreting Results
+
+| Cache | Registry | Meaning | Action |
+|-------|----------|---------|--------|
+| YES | YES | Normal install (may still be broken) | Continue to Step 1 |
+| YES | NO | Ghost install - cache orphaned | Clean up cache |
+| NO | YES | Ghost install - registry stale | Clean up registry |
+| NO | NO | Not installed | Continue to Step 1 |
+
+If **temp files exist**, a previous install was interrupted. Clean them up.
+
+### Cleanup Commands
+
+If ghost installation detected, ask user if they want to reset. If yes:
+
+**macOS/Linux**:
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+# Remove orphaned cache
+rm -rf "$CLAUDE_DIR/plugins/cache/claude-hud"
+
+# Remove temp files from failed installs
+rm -rf "$CLAUDE_DIR/plugins/cache/temp_local_"*
+
+# Reset registry (removes ALL plugins - warn user first!)
+# Only run if user confirms they have no other plugins they want to keep:
+echo '{"version": 2, "plugins": {}}' > "$CLAUDE_DIR/plugins/installed_plugins.json"
+```
+
+**Windows (PowerShell)**:
+```powershell
+$claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
+
+# Remove orphaned cache
+Remove-Item -Recurse -Force (Join-Path $claudeDir "plugins\cache\claude-hud") -ErrorAction SilentlyContinue
+
+# Remove temp files
+Remove-Item -Recurse -Force (Join-Path $claudeDir "plugins\cache\temp_local_*") -ErrorAction SilentlyContinue
+
+# Reset registry (removes ALL plugins - warn user first!)
+'{"version": 2, "plugins": {}}' | Set-Content (Join-Path $claudeDir "plugins\installed_plugins.json")
+```
+
+After cleanup, tell user to **restart Claude Code** and run `/plugin install claude-hud` again.
+
+### Linux: Cross-Device Filesystem Check
+
+**On Linux only**, if install keeps failing, check for EXDEV issue:
+```bash
+[ "$(df --output=source ~ /tmp 2>/dev/null | tail -2 | uniq | wc -l)" = "2" ] && echo "CROSS_DEVICE"
+```
+
+If this outputs `CROSS_DEVICE`, `/tmp` and home are on different filesystems. This causes `EXDEV: cross-device link not permitted` during installation. Workaround:
+```bash
+mkdir -p ~/.cache/tmp && TMPDIR=~/.cache/tmp claude /plugin install claude-hud
+```
+
+This is a [Claude Code platform limitation](https://github.com/anthropics/claude-code/issues/14799).
+
+---
+
+## Step 1: Detect Platform, Shell, and Runtime
+
+**IMPORTANT**: Use the environment context values (`Platform:` and `Shell:`), not `uname -s` or ad-hoc checks. The Bash tool may report MINGW/MSYS on Windows, so branch only by the context values.
+
+| Platform | Shell | Command Format |
+|----------|-------|----------------|
+| `darwin` | any | bash (macOS instructions) |
+| `linux` | any | bash (Linux instructions) |
+| `win32` | `bash` (Git Bash, MSYS2) | bash - use macOS/Linux instructions. Never use PowerShell commands with bash. |
+| `win32` | `powershell`, `pwsh`, or `cmd` | PowerShell (use Windows + PowerShell instructions) |
+
+---
+
+**macOS/Linux** (Platform: `darwin` or `linux`):
+
+1. Get plugin path (sorted by dotted numeric version, not modification time):
    ```bash
-   ls ~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced/ 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+   ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | awk -F/ '{ print $(NF-1) "\t" $(0) }' | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1 | cut -f2-
    ```
-   If empty, the plugin is not installed. **On Linux only** (if `uname -s` returns "Linux"), check for cross-device filesystem issue:
-   ```bash
-   [ "$(df --output=source ~/.claude /tmp 2>/dev/null | tail -2 | uniq | wc -l)" = "2" ] && echo "CROSS_DEVICE"
-   ```
-   If this outputs `CROSS_DEVICE`, explain that `/tmp` and `~/.claude` are on different filesystems, which causes `EXDEV: cross-device link not permitted` during installation. Provide the fix:
-   ```bash
-   mkdir -p ~/.cache/tmp && TMPDIR=~/.cache/tmp /plugin install claude-hud
-   ```
-   After they run this, re-check the plugin path and continue setup. For non-Linux systems (macOS, etc.), simply tell user to install via marketplace first.
+   If empty, the plugin is not installed. Go back to Step 0 to check for ghost installation or EXDEV issues. If Step 0 was clean, ask the user to install via `/plugin install claude-hud` first.
 
-2. Get runtime absolute path (prefer bun for performance, fallback to node):
-   ```bash
-   command -v bun 2>/dev/null || command -v node 2>/dev/null
-   ```
+2. Get runtime absolute path:
+   - On `darwin` or `linux`, prefer bun for performance and fall back to node:
+     ```bash
+     command -v bun 2>/dev/null || command -v node 2>/dev/null
+     ```
+   - On `win32` + `bash`, prefer node first and only fall back to bun because Bun is currently unstable for frequent statusLine invocations on Windows:
+     ```bash
+     command -v node 2>/dev/null || command -v bun 2>/dev/null
+     ```
 
-   If empty, stop and tell user to install Node.js or Bun.
+   If empty, stop setup and explain that the current shell cannot find `bun` or `node`.
+   - On **Windows + Git Bash/MSYS2**, explicitly explain that the current Git Bash session could not find `bun` or `node`, even if Claude Code itself is installed.
+   - If `winget` is available, recommend:
+     ```bash
+     winget install OpenJS.NodeJS.LTS
+     ```
+   - Otherwise ask the user to install one of these:
+     - Node.js LTS from https://nodejs.org/ (recommended on Windows)
+     - Bun from https://bun.sh/
+   - After installation, ask the user to restart their shell and re-run `/claude-hud-enhanced:setup`.
 
 3. Verify the runtime exists:
    ```bash
@@ -44,67 +149,59 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
    ```
    If result is "bun", use `src/index.ts` (bun has native TypeScript support). Otherwise use `dist/index.js` (pre-compiled).
 
-5. Generate command (quotes around runtime path handle spaces, `exec` replaces shell to preserve stdin pipe):
+5. Generate command (quotes around runtime path handle spaces):
+
+   **When runtime is bun** - add `--env-file /dev/null` to prevent Bun from auto-loading project `.env` files:
    ```
-   bash -c 'B=~/.claude/plugins/cache/claude-hud-enhanced/claude-hud-enhanced; V=$(ls "$B" 2>/dev/null | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); exec "{RUNTIME_PATH}" "$B/$V/{SOURCE}"'
+   bash -c 'plugin_dir=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | awk -F/ '"'"'{ print $(NF-1) "\t" $(0) }'"'"' | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1 | cut -f2-); exec "{RUNTIME_PATH}" --env-file /dev/null "${plugin_dir}{SOURCE}"'
    ```
 
-**Windows** (Platform: `win32`):
+   **When runtime is node**:
+   ```
+   bash -c 'plugin_dir=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/claude-hud/claude-hud/*/ 2>/dev/null | awk -F/ '"'"'{ print $(NF-1) "\t" $(0) }'"'"' | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1 | cut -f2-); exec "{RUNTIME_PATH}" "${plugin_dir}{SOURCE}"'
+   ```
 
-**First, detect the shell**: Check the `Shell:` value from the environment context (shown in the system prompt).
-- If Shell is `bash` (Git Bash, MSYS2, Cygwin): Use the **macOS/Linux instructions above** — they work identically since these provide a POSIX-compatible environment.
-- If Shell is `powershell`, `pwsh`, or `cmd`: Use the **PowerShell instructions below**.
-- If unsure, check: `echo $BASH_VERSION` — if it outputs a version string, use the macOS/Linux instructions.
+**Windows + Git Bash** (Platform: `win32`, Shell: `bash`):
 
-**PowerShell instructions** (only when Shell is NOT bash):
+Use the macOS/Linux bash command format above, but on Windows prefer `node` first and only fall back to `bun`. Do not use PowerShell commands when the shell is bash. Claude Code invokes statusLine commands through bash, which will interpret PowerShell variables like `$env` and `$p` before PowerShell ever sees them.
+
+**Windows + PowerShell** (Platform: `win32`, Shell: `powershell`, `pwsh`, or `cmd`):
 
 1. Get plugin path:
    ```powershell
-   (Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\claude-hud-enhanced\claude-hud-enhanced" | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1).FullName
+   $claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
+   (Get-ChildItem (Join-Path $claudeDir "plugins\cache\claude-hud\claude-hud") -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1).FullName
    ```
-   If empty or errors, the plugin is not installed. Tell user to install via marketplace first.
+   If empty or errors, the plugin is not installed. Ask the user to install via marketplace first.
 
-2. Get runtime absolute path (prefer bun, fallback to node):
+2. Get runtime absolute path (prefer node, fallback to bun on Windows):
    ```powershell
-   if (Get-Command bun -ErrorAction SilentlyContinue) { (Get-Command bun).Source } elseif (Get-Command node -ErrorAction SilentlyContinue) { (Get-Command node).Source } else { Write-Error "Neither bun nor node found" }
+   if (Get-Command node -ErrorAction SilentlyContinue) { (Get-Command node).Source } elseif (Get-Command bun -ErrorAction SilentlyContinue) { (Get-Command bun).Source } else { Write-Error "Neither node nor bun found" }
    ```
 
-   If neither found, stop and tell user to install Node.js or Bun.
+   If neither found, stop setup and explain that the current PowerShell session cannot find `bun` or `node`.
+   - If `winget` is available, recommend:
+     ```powershell
+     winget install OpenJS.NodeJS.LTS
+     ```
+   - Otherwise ask the user to install either Node.js LTS or Bun, then restart PowerShell and re-run `/claude-hud-enhanced:setup`.
+   - On Windows, prefer Node.js when both are available because Bun is currently unstable for repeated statusLine execution.
 
-3. **Resolve to actual `.exe` binary** (critical for Windows):
-   The path from `Get-Command` may point to a shell wrapper script (e.g. `D:\nvm4w\nodejs\bun` — a bash script, not an executable). Verify the runtime is a real `.exe`:
-   ```powershell
-   # Check if the file is an actual executable
-   [System.IO.Path]::GetExtension("{RUNTIME_PATH}")
+3. Check if runtime is bun (by filename). If bun, use `src\index.ts`. Otherwise use `dist\index.js`.
+
+4. Generate command (note: quotes around runtime path handle spaces in paths):
+
+   **When runtime is bun** - add `--env-file NUL` to prevent Bun from auto-loading project `.env` files:
    ```
-   If the extension is NOT `.exe`, resolve the real binary:
-   - For **bun**: Look for `bun.exe` nearby — check `{RUNTIME_DIR}\bun.exe` and `{RUNTIME_DIR}\node_modules\bun\bin\bun.exe`
-   - For **node**: Look for `node.exe` — check `{RUNTIME_DIR}\node.exe`
-   ```powershell
-   # Example: resolve bun wrapper to real bun.exe
-   $bunDir = Split-Path (Get-Command bun).Source
-   $candidates = @(
-     (Join-Path $bunDir "bun.exe"),
-     (Join-Path $bunDir "node_modules\bun\bin\bun.exe")
-   )
-   $resolved = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-   if ($resolved) { $resolved } else { Write-Error "Could not find bun.exe" }
+   powershell -Command "& {$claudeDir=if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }; $p=(Get-ChildItem (Join-Path $claudeDir 'plugins\cache\claude-hud\claude-hud') -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1).FullName; & '{RUNTIME_PATH}' '--env-file' 'NUL' (Join-Path $p '{SOURCE}')}"
    ```
-   Use the resolved `.exe` path as `{RUNTIME_PATH}`.
 
-4. Check if runtime is bun (by filename). If bun, use `src\index.ts`. Otherwise use `dist\index.js`.
-
-5. Generate command — **use the `.exe` directly, NOT a PowerShell wrapper**:
-
-   The statusLine command runs every ~300ms. Using `powershell -Command "..."` spawns a visible console window each time, causing constant black window flickering. Instead, generate a direct executable command:
+   **When runtime is node**:
    ```
-   {RUNTIME_PATH} {PLUGIN_PATH}\{SOURCE}
+   powershell -Command "& {$claudeDir=if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }; $p=(Get-ChildItem (Join-Path $claudeDir 'plugins\cache\claude-hud\claude-hud') -Directory | Where-Object { $_.Name -match '^\d+(\.\d+)+$' } | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1).FullName; & '{RUNTIME_PATH}' (Join-Path $p '{SOURCE}')}"
    ```
-   Where `{PLUGIN_PATH}` is the **full static path** from step 1 (e.g. `C:\Users\Name\.claude\plugins\cache\claude-hud-enhanced\claude-hud-enhanced\0.1.1`), and `{RUNTIME_PATH}` is the resolved `.exe` from step 3.
 
-   **Important**: Unlike macOS/Linux, the Windows command uses a static plugin path (no dynamic lookup). This is necessary because dynamic lookup requires a shell wrapper, which causes window flashing. The tradeoff is that after a plugin update, the user may need to re-run `/claude-hud-enhanced:setup`.
-
-**WSL (Windows Subsystem for Linux)**: If running in WSL, use the macOS/Linux instructions. Ensure the plugin is installed in the Linux environment (`~/.claude/plugins/...`), not the Windows side.
+**WSL (Windows Subsystem for Linux)**: If running in WSL, use the macOS/Linux instructions. Ensure the plugin is installed in the Linux environment (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/...`), not the Windows side.
 
 ## Step 2: Test Command
 
@@ -117,8 +214,8 @@ Run the generated command. It should produce output (the HUD lines) within a few
 ## Step 3: Apply Configuration
 
 Read the settings file and merge in the statusLine config, preserving all existing settings:
-- **macOS/Linux/Git Bash**: `~/.claude/settings.json`
-- **Windows (native PowerShell)**: `$env:USERPROFILE\.claude\settings.json`
+- **Platform `darwin` or `linux`, or Platform `win32` + Shell `bash`**: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`
+- **Platform `win32` + Shell `powershell`, `pwsh`, or `cmd`**: `settings.json` inside `$env:CLAUDE_CONFIG_DIR` when set, otherwise `Join-Path $HOME ".claude"`
 
 If the file doesn't exist, create it. If it contains invalid JSON, report the error and do not overwrite.
 If a write fails with `File has been unexpectedly modified`, re-read the file and retry the merge once.
@@ -132,29 +229,81 @@ If a write fails with `File has been unexpectedly modified`, re-read the file an
 }
 ```
 
-**Note**: On macOS/Linux, the generated command dynamically finds and runs the latest installed plugin version — updates are automatic. On Windows (PowerShell), the command uses a static path to avoid window flashing, so re-run `/claude-hud-enhanced:setup` after plugin updates. If the HUD suddenly stops working on any platform, re-run setup to verify the plugin is still installed.
+**JSON safety**: Write `settings.json` with a real JSON serializer or editor API, not manual string concatenation.
+If you must inspect the saved JSON manually, the embedded bash command must preserve escaped backslashes inside the awk fragment.
+For example, the saved JSON should contain `\\$(NF-1)` and `\\$0`, not `\$(NF-1)` and `\$0`.
 
-## Step 4: Verify With User
+
+After successfully writing the config, tell the user:
+
+> ✅ Config written. **Please restart Claude Code now** — quit and run `claude` again in your terminal.
+> Once restarted, run `/claude-hud-enhanced:setup` again to complete Step 4 and verify the HUD is working.
+
+**Windows note**: Keep the restart guidance separate from runtime installation guidance.
+- If the user just installed Node.js or Bun, they should restart their shell first so `bun` or `node` is available in `PATH`.
+- After `statusLine` is written successfully, they should fully quit Claude Code and launch a fresh session before judging whether the HUD setup worked.
+
+**Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud-enhanced:setup` to verify the plugin is still installed.
+
+## Step 4: Optional Features
+
+After the statusLine is applied, ask the user if they'd like to enable additional HUD features beyond the default 2-line display.
 
 Use AskUserQuestion:
-- Question: "The HUD should now appear below your input field. Is it working?"
-- Options: "Yes, I see it" / "No, something's wrong"
+- header: "Extras"
+- question: "Enable any optional HUD features? (all hidden by default)"
+- multiSelect: true
+- options:
+  - "Tools activity" — Shows running/completed tools (◐ Edit: file.ts | ✓ Read ×3)
+  - "Agents & Todos" — Shows subagent status and todo progress
+  - "Session info" — Shows session duration and config counts (CLAUDE.md, rules, MCPs)
+  - "Session name" — Shows session slug or custom title from /rename
+  - "Custom line" — Display a custom phrase in the HUD
 
-**If yes**: Ask the user if they'd like to ⭐ star the claude-hud-enhanced repository on GitHub to support the project. If they agree and `gh` CLI is available, run: `gh api -X PUT /user/starred/alwinpaul1/claude-hud-enhanced`. Only run the star command if they explicitly say yes.
+**If user selects any options**, write `plugins/claude-hud/config.json` inside the Claude config directory (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}` on bash, `$env:CLAUDE_CONFIG_DIR` or `Join-Path $HOME ".claude"` on PowerShell). Create directories if needed:
+
+| Selection | Config keys |
+|-----------|------------|
+| Tools activity | `display.showTools: true` |
+| Agents & Todos | `display.showAgents: true, display.showTodos: true` |
+| Session info | `display.showDuration: true, display.showConfigCounts: true` |
+| Session name | `display.showSessionName: true` |
+| Custom line | `display.customLine: "<user's text>"` — ask user for the text (max 80 chars) |
+
+Merge with existing config if the file already exists. Only write keys the user selected — don't write `false` for unselected items (defaults handle that).
+
+**If user selects nothing** (or picks "Other" and says skip/none), do not create a config file. The defaults are fine.
+
+---
+
+## Step 5: Verify & Finish
+
+**First, confirm the user has restarted Claude Code** since Step 3 wrote the config. If they haven't, ask them to restart before proceeding — the HUD cannot appear in the same session where setup was run.
+ 
+Use AskUserQuestion:
+- Question: "Setup complete! The HUD should appear below your input field. Is it working?"
+- Options: "Yes, it's working" / "No, something's wrong"
+
+**If yes**: Ask the user if they'd like to ⭐ star the claude-hud-enhanced repository on GitHub to support the project. If they agree and `gh` CLI is available, first check whether their `gh` version supports `gh repo star`. If it does, run `gh repo star alwinpaul1/claude-hud-enhanced`. Otherwise fall back to `gh api -X PUT /user/starred/alwinpaul1/claude-hud-enhanced`. Only run the star command if they explicitly say yes.
 
 **If no**: Debug systematically:
 
-1. **Verify config was applied**:
-   - Read settings file (`~/.claude/settings.json` or `$env:USERPROFILE\.claude\settings.json` on Windows)
-   - Check statusLine.command exists and looks correct
-   - If command contains a hardcoded version path (not using dynamic semver lookup), it may be a stale config from a previous setup
+1. **Restart Claude Code** (most common cause on macOS):
+    - The statusLine config requires a restart to take effect
+    - Quit Claude Code completely and run `claude` again, then re-run `/claude-hud-enhanced:setup` to verify
+    - If you've already restarted, continue below
 
-2. **Test the command manually** and capture error output:
+2. **Verify config was applied**:
+   - Read settings file (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json` on bash, or `settings.json` inside `$env:CLAUDE_CONFIG_DIR` when set, otherwise `Join-Path $HOME ".claude"` on PowerShell)
+   - Check statusLine.command exists and looks correct
+   - If command contains a hardcoded version path (not using the dynamic version-lookup command), it may be a stale config from a previous setup
+
+3. **Test the command manually** and capture error output:
    ```bash
    {GENERATED_COMMAND} 2>&1
    ```
 
-3. **Common issues to check**:
+4. **Common issues to check**:
 
    **"command not found" or empty output**:
    - Runtime path might be wrong: `ls -la {RUNTIME_PATH}`
@@ -163,34 +312,21 @@ Use AskUserQuestion:
    - Solution: re-detect with `command -v bun` or `command -v node`, and verify with `realpath {RUNTIME_PATH}` (or `readlink -f {RUNTIME_PATH}`) to get the true absolute path
 
    **"No such file or directory" for plugin**:
-   - Plugin might not be installed: `ls ~/.claude/plugins/cache/claude-hud-enhanced/`
+   - Plugin might not be installed: `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/claude-hud/"`
    - Solution: reinstall plugin via marketplace
 
-   **Windows: "bash not recognized"**:
-   - Wrong command type for Windows
-   - Solution: use the PowerShell command variant, or if using Git Bash, re-run setup
+   **Windows shell mismatch (for example, "bash not recognized")**:
+   - Command format does not match `Platform:` + `Shell:`
+   - Solution: re-run Step 1 branch logic and use the matching variant
 
    **Windows: PowerShell execution policy error**:
    - Run: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
-
-   **Windows: Black window flashing every ~300ms**:
-   - The statusLine command is wrapped in `powershell -Command "..."`, which spawns a visible console window on each invocation
-   - Solution: re-run `/claude-hud-enhanced:setup` — the fix generates a direct `.exe` command without a PowerShell wrapper
-
-   **Windows: bun not executing / "not recognized"**:
-   - `bun` may resolve to a bash shell wrapper script (common with nvm4w), not an actual `.exe`
-   - Solution: find the real `bun.exe` binary (often at `{bun_dir}\node_modules\bun\bin\bun.exe`) and use that path
-
-   **Windows: HUD shows "[claude-hud-enhanced] Initializing..." and never updates**:
-   - stdin pipe not reaching the runtime. This can happen when Claude Code spawns the process directly on Windows
-   - Solution: wrap the command with `bash -c exec`: `bash -c 'exec {RUNTIME_PATH} {PLUGIN_PATH}/{SOURCE}'`
-   - This preserves the stdin pipe correctly through process replacement
 
    **Permission denied**:
    - Runtime not executable: `chmod +x {RUNTIME_PATH}`
 
    **WSL confusion**:
    - If using WSL, ensure plugin is installed in Linux environment, not Windows
-   - Check: `ls ~/.claude/plugins/cache/claude-hud-enhanced/`
+   - Check: `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/claude-hud/"`
 
-4. **If still stuck**: Show the user the exact command that was generated and the error, so they can report it or debug further
+5. **If still stuck**: Show the user the exact command that was generated and the error, so they can report it or debug further

@@ -1,10 +1,11 @@
 /**
  * Autocompact buffer percentage.
  *
- * NOTE: This value (22.5% = 45k/200k) is empirically derived from community
- * observations of Claude Code's autocompact behavior. It is NOT officially
- * documented by Anthropic and may change in future Claude Code versions.
- * If users report mismatches, this value may need adjustment.
+ * NOTE: This value is applied as a percentage of Claude Code's reported
+ * context window size. The `33k/200k` example is just the 200k-window case.
+ * It is empirically derived from current Claude Code `/context` output, is
+ * not officially documented by Anthropic, and may need adjustment if users
+ * report mismatches in future Claude Code versions.
  */
-export declare const AUTOCOMPACT_BUFFER_PERCENT = 0.225;
+export declare const AUTOCOMPACT_BUFFER_PERCENT = 0.165;
 //# sourceMappingURL=constants.d.ts.map

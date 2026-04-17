@@ -1,141 +1,216 @@
-import { isLimitReached, getMostRestrictiveQuota } from '../types.js';
-import { getContextPercent, getModelName, getUsedTokens } from '../stdin.js';
-import { coloredBar, cyan, dim, magenta, red, yellow, getContextColor, RESET, accent } from './colors.js';
+import { isLimitReached } from '../types.js';
+import { getContextPercent, getBufferedPercent, getModelName, formatModelName, getProviderLabel, getTotalTokens } from '../stdin.js';
+import { getOutputSpeed } from '../speed-tracker.js';
+import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, getContextColor, getQuotaColor, quotaBar, custom as customColor, RESET } from './colors.js';
+import { getAdaptiveBarWidth } from '../utils/terminal.js';
+import { renderCostEstimate } from './lines/cost.js';
+import { t } from '../i18n/index.js';
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
-// ANSI color codes for enhanced display
-const ORANGE = '\x1b[38;5;208m'; // For warnings
-const BLUE = '\x1b[38;5;39m'; // For info
 /**
  * Renders the full session line (model + context bar + project + git + counts + usage + duration).
- * Used for default and separators layouts.
+ * Used for compact layout mode.
  */
 export function renderSessionLine(ctx) {
-    const model = getModelName(ctx.stdin);
-    const percent = getContextPercent(ctx.stdin);
+    const model = formatModelName(getModelName(ctx.stdin), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
+    const rawPercent = getContextPercent(ctx.stdin);
+    const bufferedPercent = getBufferedPercent(ctx.stdin);
+    const autocompactMode = ctx.config?.display?.autocompactBuffer ?? 'enabled';
+    const percent = autocompactMode === 'disabled' ? rawPercent : bufferedPercent;
+    if (DEBUG && autocompactMode === 'disabled') {
+        console.error(`[claude-hud:context] autocompactBuffer=disabled, showing raw ${rawPercent}% (buffered would be ${bufferedPercent}%)`);
+    }
+    const colors = ctx.config?.colors;
+    const barWidth = getAdaptiveBarWidth();
+    const bar = coloredBar(percent, barWidth, colors);
     const parts = [];
     const display = ctx.config?.display;
+    const contextValueMode = display?.contextValue ?? 'percent';
+    const contextValue = formatContextValue(ctx, percent, contextValueMode);
+    const contextValueDisplay = `${getContextColor(percent, colors)}${contextValue}${RESET}`;
     // Model and context bar (FIRST)
-    // Plan name only shows if showUsage is enabled (respects hybrid toggle)
-    const showPlanName = display?.showUsage !== false && ctx.usageData?.planName;
-    // Calculate used tokens and total tokens for display with colored progress bar
-    // Use getUsedTokens which matches /context command calculation
-    const totalTokens = getUsedTokens(ctx.stdin);
-    const contextSize = ctx.stdin.context_window?.context_window_size ?? 0;
-    const bar = coloredBar(percent);
-    const tokenDisplay = `${getContextColor(percent)}${formatTokens(totalTokens)}/${formatTokens(contextSize)}${RESET}`;
-    const percentDisplay = `${getContextColor(percent)}${percent}%${RESET}`;
-    if (display?.showModel !== false) {
-        const tier = ctx.usageData?.maxPlanInfo?.tier;
-        const planLabel = showPlanName ? ` | ${tier ?? ctx.usageData.planName}` : '';
-        parts.push(`${accent(`[${model}${planLabel}]`)} ${bar} ${percentDisplay} ${tokenDisplay}`);
+    const providerLabel = getProviderLabel(ctx.stdin);
+    const modelQualifier = providerLabel ?? undefined;
+    const modelDisplay = modelQualifier ? `${model} | ${modelQualifier}` : model;
+    if (display?.showModel !== false && display?.showContextBar !== false) {
+        parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${bar} ${contextValueDisplay}`);
+    }
+    else if (display?.showModel !== false) {
+        parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${contextValueDisplay}`);
+    }
+    else if (display?.showContextBar !== false) {
+        parts.push(`${bar} ${contextValueDisplay}`);
     }
     else {
-        parts.push(`${bar} ${percentDisplay} ${tokenDisplay}`);
+        parts.push(contextValueDisplay);
     }
-    // Project path (SECOND)
-    if (ctx.stdin.cwd) {
+    // Project path + git status (SECOND)
+    let projectPart = null;
+    if (display?.showProject !== false && ctx.stdin.cwd) {
         // Split by both Unix (/) and Windows (\) separators for cross-platform support
         const segments = ctx.stdin.cwd.split(/[/\\]/).filter(Boolean);
         const pathLevels = ctx.config?.pathLevels ?? 1;
         // Always join with forward slash for consistent display
         // Handle root path (/) which results in empty segments
         const projectPath = segments.length > 0 ? segments.slice(-pathLevels).join('/') : '/';
-        // Build git status string
-        let gitPart = '';
-        const gitConfig = ctx.config?.gitStatus;
-        const showGit = gitConfig?.enabled ?? true;
-        if (showGit && ctx.gitStatus) {
-            const gitParts = [ctx.gitStatus.branch];
-            // Show dirty indicator
-            if ((gitConfig?.showDirty ?? true) && ctx.gitStatus.isDirty) {
-                gitParts.push('*');
-            }
-            // Show ahead/behind (with space separator for readability)
-            if (gitConfig?.showAheadBehind) {
-                if (ctx.gitStatus.ahead > 0) {
-                    gitParts.push(` ↑${ctx.gitStatus.ahead}`);
-                }
-                if (ctx.gitStatus.behind > 0) {
-                    gitParts.push(` ↓${ctx.gitStatus.behind}`);
-                }
-            }
-            gitPart = ` ${magenta('git:(')}${cyan(gitParts.join(''))}${magenta(')')}`;
-        }
-        parts.push(`${yellow(projectPath)}${gitPart}`);
+        projectPart = projectColor(projectPath, colors);
     }
-    // Config counts
+    let gitPart = '';
+    const gitConfig = ctx.config?.gitStatus;
+    const showGit = gitConfig?.enabled ?? true;
+    if (showGit && ctx.gitStatus) {
+        const gitParts = [ctx.gitStatus.branch];
+        // Show dirty indicator
+        if ((gitConfig?.showDirty ?? true) && ctx.gitStatus.isDirty) {
+            gitParts.push('*');
+        }
+        // Show ahead/behind (with space separator for readability)
+        if (gitConfig?.showAheadBehind) {
+            if (ctx.gitStatus.ahead > 0) {
+                gitParts.push(` ↑${ctx.gitStatus.ahead}`);
+            }
+            if (ctx.gitStatus.behind > 0) {
+                gitParts.push(` ↓${ctx.gitStatus.behind}`);
+            }
+        }
+        // Show file stats in Starship-compatible format (!modified +added ✘deleted ?untracked)
+        if (gitConfig?.showFileStats && ctx.gitStatus.fileStats) {
+            const { modified, added, deleted, untracked } = ctx.gitStatus.fileStats;
+            const statParts = [];
+            if (modified > 0)
+                statParts.push(`!${modified}`);
+            if (added > 0)
+                statParts.push(`+${added}`);
+            if (deleted > 0)
+                statParts.push(`✘${deleted}`);
+            if (untracked > 0)
+                statParts.push(`?${untracked}`);
+            if (statParts.length > 0) {
+                gitParts.push(` ${statParts.join(' ')}`);
+            }
+        }
+        gitPart = `${gitColor('git:(', colors)}${gitBranchColor(gitParts.join(''), colors)}${gitColor(')', colors)}`;
+    }
+    if (projectPart && gitPart) {
+        parts.push(`${projectPart} ${gitPart}`);
+    }
+    else if (projectPart) {
+        parts.push(projectPart);
+    }
+    else if (gitPart) {
+        parts.push(gitPart);
+    }
+    // Session name (custom title from /rename, or auto-generated slug)
+    if (display?.showSessionName && ctx.transcript.sessionName) {
+        parts.push(label(ctx.transcript.sessionName, colors));
+    }
+    if (display?.showClaudeCodeVersion && ctx.claudeCodeVersion) {
+        parts.push(label(`CC v${ctx.claudeCodeVersion}`, colors));
+    }
+    // Config counts (respects environmentThreshold)
     if (display?.showConfigCounts !== false) {
-        if (ctx.claudeMdCount > 0) {
-            parts.push(dim(`${ctx.claudeMdCount} CLAUDE.md`));
-        }
-        if (ctx.rulesCount > 0) {
-            parts.push(dim(`${ctx.rulesCount} rules`));
-        }
-        if (ctx.mcpCount > 0) {
-            parts.push(dim(`${ctx.mcpCount} MCPs`));
-        }
-        if (ctx.hooksCount > 0) {
-            parts.push(dim(`${ctx.hooksCount} hooks`));
+        const totalCounts = ctx.claudeMdCount + ctx.rulesCount + ctx.mcpCount + ctx.hooksCount;
+        const envThreshold = display?.environmentThreshold ?? 0;
+        if (totalCounts > 0 && totalCounts >= envThreshold) {
+            if (ctx.claudeMdCount > 0) {
+                parts.push(label(`${ctx.claudeMdCount} CLAUDE.md`, colors));
+            }
+            if (ctx.rulesCount > 0) {
+                parts.push(label(`${ctx.rulesCount} ${t('label.rules')}`, colors));
+            }
+            if (ctx.mcpCount > 0) {
+                parts.push(label(`${ctx.mcpCount} MCPs`, colors));
+            }
+            if (ctx.hooksCount > 0) {
+                parts.push(label(`${ctx.hooksCount} ${t('label.hooks')}`, colors));
+            }
         }
     }
-    // Usage limits display (shown when enabled in config)
-    if (display?.showUsage !== false && ctx.usageData?.planName) {
-        if (ctx.usageData.apiUnavailable) {
-            parts.push(yellow(`usage: ⚠`));
-        }
-        else if (isLimitReached(ctx.usageData)) {
-            // Show which limit is reached with reset time
-            const fiveHourReached = ctx.usageData.fiveHour === 100;
-            let fiveHourResetDisplay = '';
-            if (fiveHourReached && ctx.usageData.fiveHourResetAt) {
-                const resetTime = formatResetTimeOnly(ctx.usageData.fiveHourResetAt);
-                fiveHourResetDisplay = resetTime ? ` Resets ${resetTime}` : '';
-            }
-            // Always show 7-day usage with reset date/time alongside the limit reached warning
-            let sevenDayDisplay = '';
-            if (ctx.usageData.sevenDay !== null) {
-                const sevenDayReset = formatResetDateTime(ctx.usageData.sevenDayResetAt);
-                sevenDayDisplay = sevenDayReset
-                    ? ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)} (${sevenDayReset})`
-                    : ` | 7d: ${formatUsagePercent(ctx.usageData.sevenDay)}`;
-            }
-            parts.push(red(`⚠ 5h limit${fiveHourResetDisplay}`) + sevenDayDisplay);
+    // Usage limits display (shown when enabled in config, respects usageThreshold)
+    if (display?.showUsage !== false && ctx.usageData && !providerLabel) {
+        if (isLimitReached(ctx.usageData)) {
+            const resetTime = ctx.usageData.fiveHour === 100
+                ? formatResetTime(ctx.usageData.fiveHourResetAt)
+                : formatResetTime(ctx.usageData.sevenDayResetAt);
+            parts.push(critical(`⚠ ${t('status.limitReached')}${resetTime ? ` (${t('format.resets')} ${resetTime})` : ''}`, colors));
         }
         else {
-            // Build usage display with time-to-reset countdown
-            const fiveHourDisplay = formatUsagePercent(ctx.usageData.fiveHour);
-            const fiveHourReset = ctx.usageData.fiveHourResetIn ?? formatResetTime(ctx.usageData.fiveHourResetAt);
-            const fiveHourPart = fiveHourReset
-                ? `5h: ${fiveHourDisplay} (${fiveHourReset})`
-                : `5h: ${fiveHourDisplay}`;
-            // Always show 7-day usage if available with reset date/time
+            const usageThreshold = display?.usageThreshold ?? 0;
+            const fiveHour = ctx.usageData.fiveHour;
             const sevenDay = ctx.usageData.sevenDay;
-            if (sevenDay !== null) {
-                const sevenDayDisplay = formatUsagePercent(sevenDay);
-                const sevenDayReset = formatResetDateTime(ctx.usageData.sevenDayResetAt);
-                const sevenDayPart = sevenDayReset
-                    ? `7d: ${sevenDayDisplay} (${sevenDayReset})`
-                    : `7d: ${sevenDayDisplay}`;
-                parts.push(`${fiveHourPart} | ${sevenDayPart}`);
-            }
-            else {
-                parts.push(fiveHourPart);
+            const effectiveUsage = Math.max(fiveHour ?? 0, sevenDay ?? 0);
+            if (effectiveUsage >= usageThreshold) {
+                const usageBarEnabled = display?.usageBarEnabled ?? true;
+                if (fiveHour === null && sevenDay !== null) {
+                    const weeklyOnlyPart = formatUsageWindowPart({
+                        label: t('label.weekly'),
+                        percent: sevenDay,
+                        resetAt: ctx.usageData.sevenDayResetAt,
+                        colors,
+                        usageBarEnabled,
+                        barWidth,
+                        forceLabel: true,
+                    });
+                    parts.push(weeklyOnlyPart);
+                }
+                else {
+                    const fiveHourPart = formatUsageWindowPart({
+                        label: '5h',
+                        percent: fiveHour,
+                        resetAt: ctx.usageData.fiveHourResetAt,
+                        colors,
+                        usageBarEnabled,
+                        barWidth,
+                    });
+                    const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
+                    if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
+                        const sevenDayPart = formatUsageWindowPart({
+                            label: t('label.weekly'),
+                            percent: sevenDay,
+                            resetAt: ctx.usageData.sevenDayResetAt,
+                            colors,
+                            usageBarEnabled,
+                            barWidth,
+                            forceLabel: true,
+                        });
+                        parts.push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+                        parts.push(sevenDayPart);
+                    }
+                    else {
+                        parts.push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+                    }
+                }
             }
         }
-        // Show model-specific quotas if any are > 50% utilized
-        const modelQuota = getMostRestrictiveQuota(ctx.usageData);
-        if (modelQuota && modelQuota.utilization !== null && modelQuota.utilization >= 50) {
-            const quotaDisplay = formatModelQuota(modelQuota);
-            parts.push(quotaDisplay);
-        }
-        // Show compaction buffer threshold if different from default
-        if (ctx.usageData.compactionInfo?.isEnabled && ctx.usageData.compactionInfo.bufferPercent !== 80) {
-            parts.push(dim(`compact@${ctx.usageData.compactionInfo.bufferPercent}%`));
+    }
+    // Session token usage (cumulative)
+    if (display?.showSessionTokens && ctx.transcript.sessionTokens) {
+        const st = ctx.transcript.sessionTokens;
+        const total = st.inputTokens + st.outputTokens + st.cacheCreationTokens + st.cacheReadTokens;
+        if (total > 0) {
+            parts.push(label(`tok: ${formatTokens(total)} (in: ${formatTokens(st.inputTokens)}, out: ${formatTokens(st.outputTokens)})`, colors));
         }
     }
     // Session duration
+    if (display?.showSpeed) {
+        const speed = getOutputSpeed(ctx.stdin);
+        if (speed !== null) {
+            parts.push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors));
+        }
+    }
     if (display?.showDuration !== false && ctx.sessionDuration) {
-        parts.push(dim(`⏱️  ${ctx.sessionDuration}`));
+        parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));
+    }
+    const costEstimate = renderCostEstimate(ctx);
+    if (costEstimate) {
+        parts.push(costEstimate);
+    }
+    if (ctx.extraLabel) {
+        parts.push(label(ctx.extraLabel, colors));
+    }
+    // Custom line (static user-defined text)
+    const customLine = display?.customLine;
+    if (customLine) {
+        parts.push(customColor(customLine, colors));
     }
     let line = parts.join(' | ');
     // Token breakdown at high context
@@ -144,7 +219,7 @@ export function renderSessionLine(ctx) {
         if (usage) {
             const input = formatTokens(usage.input_tokens ?? 0);
             const cache = formatTokens((usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0));
-            line += dim(` (in: ${input}, cache: ${cache})`);
+            line += label(` (${t('format.in')}: ${input}, ${t('format.cache')}: ${cache})`, colors);
         }
     }
     return line;
@@ -158,12 +233,46 @@ function formatTokens(n) {
     }
     return n.toString();
 }
-function formatUsagePercent(percent) {
-    if (percent === null) {
-        return dim('--');
+function formatContextValue(ctx, percent, mode) {
+    const totalTokens = getTotalTokens(ctx.stdin);
+    const size = ctx.stdin.context_window?.context_window_size ?? 0;
+    if (mode === 'tokens') {
+        if (size > 0) {
+            return `${formatTokens(totalTokens)}/${formatTokens(size)}`;
+        }
+        return formatTokens(totalTokens);
     }
-    const color = getContextColor(percent);
+    if (mode === 'both') {
+        if (size > 0) {
+            return `${percent}% (${formatTokens(totalTokens)}/${formatTokens(size)})`;
+        }
+        return `${percent}%`;
+    }
+    if (mode === 'remaining') {
+        return `${Math.max(0, 100 - percent)}%`;
+    }
+    return `${percent}%`;
+}
+function formatUsagePercent(percent, colors) {
+    if (percent === null) {
+        return label('--', colors);
+    }
+    const color = getQuotaColor(percent, colors);
     return `${color}${percent}%${RESET}`;
+}
+function formatUsageWindowPart({ label: windowLabel, percent, resetAt, colors, usageBarEnabled, barWidth, forceLabel = false, }) {
+    const usageDisplay = formatUsagePercent(percent, colors);
+    const reset = formatResetTime(resetAt);
+    const styledLabel = label(windowLabel, colors);
+    if (usageBarEnabled) {
+        const body = reset
+            ? `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay} (${reset} / ${windowLabel})`
+            : `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay}`;
+        return forceLabel ? `${styledLabel} ${body}` : body;
+    }
+    return reset
+        ? `${styledLabel} ${usageDisplay} (${t('format.resetsIn')} ${reset})`
+        : `${styledLabel} ${usageDisplay}`;
 }
 function formatResetTime(resetAt) {
     if (!resetAt)
@@ -177,71 +286,13 @@ function formatResetTime(resetAt) {
         return `${diffMins}m`;
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
-    // Handle days for longer durations (7-day reset)
     if (hours >= 24) {
         const days = Math.floor(hours / 24);
-        const remainingHours = hours % 24;
-        return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+        const remHours = hours % 24;
+        if (remHours > 0)
+            return `${days}d ${remHours}h`;
+        return `${days}d`;
     }
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}
-/**
- * Format reset time as readable date/time: "Resets Fri 12:29 PM"
- * Used for 7-day weekly reset display
- */
-function formatResetDateTime(resetAt) {
-    if (!resetAt)
-        return '';
-    const now = new Date();
-    if (resetAt.getTime() <= now.getTime())
-        return '';
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dayName = days[resetAt.getDay()];
-    let hours = resetAt.getHours();
-    const mins = resetAt.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    // Convert to 12-hour format
-    hours = hours % 12;
-    hours = hours ? hours : 12; // 0 should be 12
-    const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
-    return `Resets ${dayName} ${hours}:${minsStr} ${ampm}`;
-}
-/**
- * Format reset time as just time: "2:30 PM"
- * Used for 5-hour reset display (same day, so no need for day name)
- */
-function formatResetTimeOnly(resetAt) {
-    if (!resetAt)
-        return '';
-    const now = new Date();
-    if (resetAt.getTime() <= now.getTime())
-        return '';
-    let hours = resetAt.getHours();
-    const mins = resetAt.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    // Convert to 12-hour format
-    hours = hours % 12;
-    hours = hours ? hours : 12; // 0 should be 12
-    const minsStr = mins < 10 ? `0${mins}` : `${mins}`;
-    return `${hours}:${minsStr} ${ampm}`;
-}
-/**
- * Format model-specific quota display
- * Shows model name, utilization, and weekly hours if available
- */
-function formatModelQuota(quota) {
-    const util = quota.utilization ?? 0;
-    const color = getContextColor(util);
-    // Short name for display
-    const shortName = quota.displayName
-        .replace('Claude ', '')
-        .replace(' ', '')
-        .substring(0, 8);
-    let display = `${color}${shortName}: ${util}%${RESET}`;
-    // Add weekly hours if available (compute-intensive models like Opus 4.5)
-    if (quota.weeklyHoursUsed !== null && quota.weeklyHoursLimit !== null) {
-        display += dim(` (${quota.weeklyHoursUsed}/${quota.weeklyHoursLimit}h/wk)`);
-    }
-    return display;
 }
 //# sourceMappingURL=session-line.js.map

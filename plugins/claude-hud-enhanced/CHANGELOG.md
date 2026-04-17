@@ -2,6 +2,32 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.0] - 2026-04-17
+
+### Added
+- Full synchronization with upstream `jarrodwatts/claude-hud` v0.0.12, pulling 418 upstream commits into the marketplace layout
+- Rewritten multi-line render architecture (`src/render/lines/*`)
+- Native stdin cost field (`cost.total_cost_usd`) with safe fallback to offline estimate
+- Offline estimated cost display via `display.showCost` for known Anthropic model families
+- i18n support — English default, opt-in Chinese (`zh`) HUD labels
+- Session token cumulative usage summary
+- Output speed tracking (tok/s) and output-style display toggle
+- Git per-file diffs with OSC 8 clickable hyperlinks and dedicated files line
+- Configurable `display.modelFormat` (full/compact/short) and `display.modelOverride`
+- `display.customLine` support for a short custom HUD phrase
+- Configurable element colors (256-color indices and hex values)
+- `--extra-cmd` CLI argument for custom status labels
+- Bedrock provider detection and `vm_stat`-based macOS memory reporting
+
+### Changed
+- Usage now derived solely from Claude Code's stdin `rate_limits` — OAuth polling, cache/lock behavior, and credential-derived plan labels removed
+- Bounded stdin reads to prevent statusline hangs
+- Narrow-terminal wrapping and OSC hyperlink width handling improved
+- Plugin detection, config caching, and transcript-derived metadata hardened with broader test coverage
+
+### Removed
+- Legacy fork patches superseded upstream: 120s failure cache TTL, `api.claude.ai` endpoint fix, hand-rolled plan-name stripping, bespoke 5h/7d reset format (upstream's `render/lines/usage.ts` now owns these)
+
 ## [0.1.7] - 2026-03-07
 
 ### Fixed

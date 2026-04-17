@@ -1,100 +1,272 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as net from 'net';
+import * as tls from 'tls';
 import * as https from 'https';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { createDebug } from './debug.js';
+import { getClaudeConfigDir, getHudPluginDir } from './claude-config-dir.js';
 const debug = createDebug('usage');
-/** Resolve Claude Code version once at module load for User-Agent */
-function getClaudeCodeVersion() {
-    const home = os.homedir();
-    // 1. Try symlink: ~/.local/bin/claude -> ~/.local/share/claude/versions/X.Y.Z (macOS/Linux)
-    try {
-        const target = fs.readlinkSync(path.join(home, '.local', 'bin', 'claude'));
-        const m = target.match(/(\d+\.\d+\.\d+)/);
-        if (m)
-            return m[1];
-    }
-    catch { /* ignore */ }
-    // 2. Scan versions directory for highest semver (works on all platforms)
-    const versionsDirs = [
-        path.join(home, '.local', 'share', 'claude', 'versions'), // macOS/Linux
-        path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'claude-code', 'versions'), // Windows
-    ];
-    for (const dir of versionsDirs) {
-        try {
-            const entries = fs.readdirSync(dir).filter(e => /^\d+\.\d+\.\d+$/.test(e));
-            if (entries.length > 0) {
-                entries.sort((a, b) => {
-                    const [a1, a2, a3] = a.split('.').map(Number);
-                    const [b1, b2, b3] = b.split('.').map(Number);
-                    return (b1 - a1) || (b2 - a2) || (b3 - a3);
-                });
-                return entries[0];
-            }
-        }
-        catch { /* ignore */ }
-    }
-    return 'unknown';
-}
-const CLAUDE_CODE_VERSION = getClaudeCodeVersion();
+const LEGACY_KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
 // File-based cache (HUD runs as new process each render, so in-memory cache won't persist)
-const CACHE_TTL_MS = 60_000; // 60 seconds
-const CACHE_FAILURE_TTL_MS = 120_000; // 120 seconds for failed requests (avoid 429 rate limits)
-// Cache version — tied to plugin version so updates auto-invalidate stale caches
-// Read from package.json so it stays in sync automatically
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CACHE_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version;
-function getCachePath(homeDir) {
-    return path.join(homeDir, '.claude', 'plugins', 'claude-hud', '.usage-cache.json');
+const CACHE_TTL_MS = 5 * 60_000; // 5 minutes — matches Anthropic usage API rate limit window
+const CACHE_FAILURE_TTL_MS = 15_000; // 15 seconds for failed requests
+const CACHE_RATE_LIMITED_BASE_MS = 60_000; // 60s base for 429 backoff
+const CACHE_RATE_LIMITED_MAX_MS = 5 * 60_000; // 5 min max backoff
+const CACHE_LOCK_STALE_MS = 30_000;
+const CACHE_LOCK_WAIT_MS = 2_000;
+const CACHE_LOCK_POLL_MS = 50;
+const KEYCHAIN_TIMEOUT_MS = 3000;
+const KEYCHAIN_BACKOFF_MS = 60_000; // Backoff on keychain failures to avoid re-prompting
+const USAGE_API_TIMEOUT_MS_DEFAULT = 15_000;
+export const USAGE_API_USER_AGENT = 'claude-code/2.1';
+/**
+ * Check if user is using a custom API endpoint instead of the default Anthropic API.
+ * When using custom providers (e.g., via cc-switch), the OAuth usage API is not applicable.
+ */
+function isUsingCustomApiEndpoint(env = process.env) {
+    const baseUrl = env.ANTHROPIC_BASE_URL?.trim() || env.ANTHROPIC_API_BASE_URL?.trim();
+    // No custom endpoint configured - using default Anthropic API
+    if (!baseUrl) {
+        return false;
+    }
+    try {
+        return new URL(baseUrl).origin !== 'https://api.anthropic.com';
+    }
+    catch {
+        return true;
+    }
 }
-function readCache(homeDir, now) {
+function getCachePath(homeDir) {
+    return path.join(getHudPluginDir(homeDir), '.usage-cache.json');
+}
+function getCacheLockPath(homeDir) {
+    return path.join(getHudPluginDir(homeDir), '.usage-cache.lock');
+}
+function hydrateCacheData(data) {
+    // JSON.stringify converts Date to ISO string, so we need to reconvert on read.
+    // new Date() handles both Date objects and ISO strings safely.
+    if (data.fiveHourResetAt) {
+        data.fiveHourResetAt = new Date(data.fiveHourResetAt);
+    }
+    if (data.sevenDayResetAt) {
+        data.sevenDayResetAt = new Date(data.sevenDayResetAt);
+    }
+    return data;
+}
+function getRateLimitedTtlMs(count) {
+    // Exponential backoff: 60s, 120s, 240s, capped at 5 min
+    return Math.min(CACHE_RATE_LIMITED_BASE_MS * Math.pow(2, Math.max(0, count - 1)), CACHE_RATE_LIMITED_MAX_MS);
+}
+function getRateLimitedRetryUntil(cache) {
+    if (cache.data.apiError !== 'rate-limited') {
+        return null;
+    }
+    if (cache.retryAfterUntil && cache.retryAfterUntil > cache.timestamp) {
+        return cache.retryAfterUntil;
+    }
+    if (cache.rateLimitedCount && cache.rateLimitedCount > 0) {
+        return cache.timestamp + getRateLimitedTtlMs(cache.rateLimitedCount);
+    }
+    return null;
+}
+function withRateLimitedSyncing(data) {
+    return {
+        ...data,
+        apiError: 'rate-limited',
+    };
+}
+function readCacheState(homeDir, now, ttls) {
     try {
         const cachePath = getCachePath(homeDir);
         if (!fs.existsSync(cachePath))
             return null;
         const content = fs.readFileSync(cachePath, 'utf8');
         const cache = JSON.parse(content);
-        // Invalidate cache from older plugin versions
-        if (cache.version !== CACHE_VERSION)
-            return null;
-        // Check TTL - use shorter TTL for failure results
-        const ttl = cache.data.apiUnavailable ? CACHE_FAILURE_TTL_MS : CACHE_TTL_MS;
-        if (now - cache.timestamp >= ttl)
-            return null;
-        // JSON.stringify converts Date to ISO string, so we need to reconvert on read.
-        // new Date() handles both Date objects and ISO strings safely.
-        const data = cache.data;
-        if (data.fiveHourResetAt) {
-            data.fiveHourResetAt = new Date(data.fiveHourResetAt);
+        // Only serve lastGoodData during rate-limit backoff. Other failures should remain visible.
+        const displayData = (cache.data.apiError === 'rate-limited' && cache.lastGoodData)
+            ? withRateLimitedSyncing(cache.lastGoodData)
+            : cache.data;
+        const rateLimitedRetryUntil = getRateLimitedRetryUntil(cache);
+        if (rateLimitedRetryUntil && now < rateLimitedRetryUntil) {
+            return { data: hydrateCacheData(displayData), timestamp: cache.timestamp, isFresh: true };
         }
-        if (data.sevenDayResetAt) {
-            data.sevenDayResetAt = new Date(data.sevenDayResetAt);
-        }
-        return data;
+        const ttl = cache.data.apiUnavailable ? ttls.failureCacheTtlMs : ttls.cacheTtlMs;
+        return {
+            data: hydrateCacheData(displayData),
+            timestamp: cache.timestamp,
+            isFresh: now - cache.timestamp < ttl,
+        };
     }
     catch {
         return null;
     }
 }
-function writeCache(homeDir, data, timestamp) {
+function readRateLimitedCount(homeDir) {
+    try {
+        const cachePath = getCachePath(homeDir);
+        if (!fs.existsSync(cachePath))
+            return 0;
+        const content = fs.readFileSync(cachePath, 'utf8');
+        const cache = JSON.parse(content);
+        return cache.rateLimitedCount ?? 0;
+    }
+    catch {
+        return 0;
+    }
+}
+function readLastGoodData(homeDir) {
+    try {
+        const cachePath = getCachePath(homeDir);
+        if (!fs.existsSync(cachePath))
+            return null;
+        const content = fs.readFileSync(cachePath, 'utf8');
+        const cache = JSON.parse(content);
+        return cache.lastGoodData ? hydrateCacheData(cache.lastGoodData) : null;
+    }
+    catch {
+        return null;
+    }
+}
+function readCachedPlanName(homeDir) {
+    try {
+        const cachePath = getCachePath(homeDir);
+        if (!fs.existsSync(cachePath))
+            return null;
+        const content = fs.readFileSync(cachePath, 'utf8');
+        const cache = JSON.parse(content);
+        return cache.data.planName ?? cache.lastGoodData?.planName ?? null;
+    }
+    catch {
+        return null;
+    }
+}
+function readCache(homeDir, now, ttls) {
+    const cache = readCacheState(homeDir, now, ttls);
+    return cache?.isFresh ? cache.data : null;
+}
+function writeCache(homeDir, data, timestamp, opts) {
     try {
         const cachePath = getCachePath(homeDir);
         const cacheDir = path.dirname(cachePath);
         if (!fs.existsSync(cacheDir)) {
             fs.mkdirSync(cacheDir, { recursive: true });
         }
-        const cache = { data, timestamp, version: CACHE_VERSION };
+        const cache = { data, timestamp };
+        if (opts?.rateLimitedCount && opts.rateLimitedCount > 0) {
+            cache.rateLimitedCount = opts.rateLimitedCount;
+        }
+        if (opts?.retryAfterUntil) {
+            cache.retryAfterUntil = opts.retryAfterUntil;
+        }
+        if (opts?.lastGoodData) {
+            cache.lastGoodData = opts.lastGoodData;
+        }
         fs.writeFileSync(cachePath, JSON.stringify(cache), 'utf8');
     }
     catch {
         // Ignore cache write failures
     }
 }
+function readLockTimestamp(lockPath) {
+    try {
+        if (!fs.existsSync(lockPath))
+            return null;
+        const raw = fs.readFileSync(lockPath, 'utf8').trim();
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    catch {
+        return null;
+    }
+}
+function tryAcquireCacheLock(homeDir) {
+    const lockPath = getCacheLockPath(homeDir);
+    const cacheDir = path.dirname(lockPath);
+    try {
+        if (!fs.existsSync(cacheDir)) {
+            fs.mkdirSync(cacheDir, { recursive: true });
+        }
+        const fd = fs.openSync(lockPath, 'wx');
+        try {
+            fs.writeFileSync(fd, String(Date.now()), 'utf8');
+        }
+        finally {
+            fs.closeSync(fd);
+        }
+        return 'acquired';
+    }
+    catch (error) {
+        const maybeError = error;
+        if (maybeError.code !== 'EEXIST') {
+            debug('Usage cache lock unavailable, continuing without coordination:', maybeError.message);
+            return 'unsupported';
+        }
+    }
+    const lockTimestamp = readLockTimestamp(lockPath);
+    // Unparseable timestamp — use mtime to distinguish a crash leftover from an active writer.
+    if (lockTimestamp === null) {
+        try {
+            const lockStat = fs.statSync(lockPath);
+            if (Date.now() - lockStat.mtimeMs < CACHE_LOCK_STALE_MS) {
+                return 'busy';
+            }
+        }
+        catch {
+            return tryAcquireCacheLock(homeDir);
+        }
+        try {
+            fs.unlinkSync(lockPath);
+        }
+        catch {
+            return 'busy';
+        }
+        return tryAcquireCacheLock(homeDir);
+    }
+    if (lockTimestamp != null && Date.now() - lockTimestamp > CACHE_LOCK_STALE_MS) {
+        try {
+            fs.unlinkSync(lockPath);
+        }
+        catch {
+            return 'busy';
+        }
+        return tryAcquireCacheLock(homeDir);
+    }
+    return 'busy';
+}
+function releaseCacheLock(homeDir) {
+    try {
+        const lockPath = getCacheLockPath(homeDir);
+        if (fs.existsSync(lockPath)) {
+            fs.unlinkSync(lockPath);
+        }
+    }
+    catch {
+        // Ignore lock cleanup failures
+    }
+}
+async function waitForFreshCache(homeDir, now, ttls, timeoutMs = CACHE_LOCK_WAIT_MS) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
+        const cached = readCache(homeDir, now(), ttls);
+        if (cached) {
+            return cached;
+        }
+        if (!fs.existsSync(getCacheLockPath(homeDir))) {
+            break;
+        }
+    }
+    return readCache(homeDir, now(), ttls);
+}
 const defaultDeps = {
     homeDir: () => os.homedir(),
     fetchApi: fetchUsageApi,
     now: () => Date.now(),
+    readKeychain: readKeychainCredentials,
+    ttls: { cacheTtlMs: CACHE_TTL_MS, failureCacheTtlMs: CACHE_FAILURE_TTL_MS },
 };
 /**
  * Get OAuth usage data from Anthropic API.
@@ -102,43 +274,71 @@ const defaultDeps = {
  * Returns { apiUnavailable: true, ... } if API call fails (to show warning in HUD).
  *
  * Uses file-based cache since HUD runs as a new process each render (~300ms).
- * Cache TTL: 60s for success, 120s for failures.
+ * Cache TTL is configurable via usage.cacheTtlSeconds / usage.failureCacheTtlSeconds in config.json
+ * (defaults: 60s for success, 15s for failures).
  */
 export async function getUsage(overrides = {}) {
     const deps = { ...defaultDeps, ...overrides };
     const now = deps.now();
     const homeDir = deps.homeDir();
-    // Check file-based cache first
-    const cached = readCache(homeDir, now);
-    if (cached) {
-        // Update time-to-reset countdowns (these change every render)
-        if (cached.fiveHourResetAt) {
-            cached.fiveHourResetIn = formatTimeToReset(cached.fiveHourResetAt, now);
-        }
-        if (cached.sevenDayResetAt) {
-            cached.sevenDayResetIn = formatTimeToReset(cached.sevenDayResetAt, now);
-        }
-        return cached;
+    // Skip usage API if user is using a custom provider
+    if (isUsingCustomApiEndpoint()) {
+        debug('Skipping usage API: custom API endpoint configured');
+        return null;
     }
+    // Check file-based cache first
+    const cacheState = readCacheState(homeDir, now, deps.ttls);
+    if (cacheState?.isFresh) {
+        return cacheState.data;
+    }
+    let holdsCacheLock = false;
+    const lockStatus = tryAcquireCacheLock(homeDir);
+    if (lockStatus === 'busy') {
+        if (cacheState) {
+            return cacheState.data;
+        }
+        return await waitForFreshCache(homeDir, deps.now, deps.ttls);
+    }
+    holdsCacheLock = lockStatus === 'acquired';
     try {
-        const credentials = readCredentials(homeDir, now);
+        const refreshedCache = readCache(homeDir, deps.now(), deps.ttls);
+        if (refreshedCache) {
+            return refreshedCache;
+        }
+        const credentials = readCredentials(homeDir, now, deps.readKeychain);
         if (!credentials) {
             return null;
         }
-        const { accessToken, subscriptionType, organizationUuid, rateLimitTier } = credentials;
-        // Determine plan name from subscriptionType (pass true since we have OAuth token)
-        const planName = getPlanName(subscriptionType, true);
+        const { accessToken, subscriptionType } = credentials;
+        // Determine plan name from subscriptionType
+        let planName = getPlanName(subscriptionType);
         if (!planName) {
-            // API user, no usage limits to show
-            debug('No plan name determined, likely API user');
-            return null;
+            // Only fall back to cache when subscriptionType is genuinely missing or
+            // empty after an OAuth refresh. Explicit values like "api" should remain
+            // API users with no usage display.
+            if (!subscriptionType.trim()) {
+                const cached = readCacheState(homeDir, now, deps.ttls);
+                if (cached?.data?.planName) {
+                    planName = cached.data.planName;
+                }
+            }
+            if (!planName) {
+                return null;
+            }
         }
-        // Fetch usage from Anthropic OAuth API
-        const apiResponse = await deps.fetchApi(accessToken, organizationUuid);
-        if (!apiResponse) {
-            // API call failed, cache the failure to prevent retry storms
-            // Still include maxPlanInfo from credentials so tier shows even when API is down
-            const maxPlanInfo = parseMaxPlanInfo(undefined, undefined, rateLimitTier);
+        // Fetch usage from API
+        const apiResult = await deps.fetchApi(accessToken);
+        if (!apiResult.data) {
+            const isRateLimited = apiResult.error === 'rate-limited';
+            const prevCount = readRateLimitedCount(homeDir);
+            const rateLimitedCount = isRateLimited ? prevCount + 1 : 0;
+            const retryAfterUntil = isRateLimited && apiResult.retryAfterSec
+                ? now + apiResult.retryAfterSec * 1000
+                : undefined;
+            const backoffOpts = {
+                rateLimitedCount: isRateLimited ? rateLimitedCount : undefined,
+                retryAfterUntil,
+            };
             const failureResult = {
                 planName,
                 fiveHour: null,
@@ -146,187 +346,335 @@ export async function getUsage(overrides = {}) {
                 fiveHourResetAt: null,
                 sevenDayResetAt: null,
                 apiUnavailable: true,
-                maxPlanInfo: maxPlanInfo.tier ? maxPlanInfo : undefined,
+                apiError: apiResult.error,
             };
-            writeCache(homeDir, failureResult, now);
+            if (isRateLimited) {
+                const staleCache = readCacheState(homeDir, now, deps.ttls);
+                const lastGood = readLastGoodData(homeDir);
+                const goodData = (staleCache && !staleCache.data.apiUnavailable)
+                    ? staleCache.data
+                    : lastGood;
+                if (goodData) {
+                    // Preserve the backoff state in cache, but keep rendering the last successful values
+                    // with a syncing hint so stale data is visible to the user.
+                    writeCache(homeDir, failureResult, now, { ...backoffOpts, lastGoodData: goodData });
+                    return withRateLimitedSyncing(goodData);
+                }
+            }
+            writeCache(homeDir, failureResult, now, backoffOpts);
             return failureResult;
         }
         // Parse response - API returns 0-100 percentage directly
         // Clamp to 0-100 and handle NaN/Infinity
-        const fiveHour = parseUtilization(apiResponse.five_hour?.utilization);
-        const sevenDay = parseUtilization(apiResponse.seven_day?.utilization);
-        const fiveHourResetAt = parseDate(apiResponse.five_hour?.resets_at);
-        const sevenDayResetAt = parseDate(apiResponse.seven_day?.resets_at);
-        // Parse enhanced 2026 features
-        const modelQuotas = parseModelQuotas(apiResponse.model_quotas);
-        const maxPlanInfo = parseMaxPlanInfo(apiResponse.max_plan_type, apiResponse.tokens_per_window, rateLimitTier);
-        const compactionInfo = parseCompactionInfo(apiResponse.compaction_buffer);
+        const fiveHour = parseUtilization(apiResult.data.five_hour?.utilization);
+        const sevenDay = parseUtilization(apiResult.data.seven_day?.utilization);
+        const fiveHourResetAt = parseDate(apiResult.data.five_hour?.resets_at);
+        const sevenDayResetAt = parseDate(apiResult.data.seven_day?.resets_at);
         const result = {
             planName,
             fiveHour,
             sevenDay,
             fiveHourResetAt,
             sevenDayResetAt,
-            // Enhanced data
-            modelQuotas: modelQuotas.length > 0 ? modelQuotas : undefined,
-            maxPlanInfo: maxPlanInfo.tier ? maxPlanInfo : undefined,
-            compactionInfo: compactionInfo.isEnabled ? compactionInfo : undefined,
-            organizationUuid,
-            // Time-to-reset countdowns
-            fiveHourResetIn: fiveHourResetAt ? formatTimeToReset(fiveHourResetAt, now) : undefined,
-            sevenDayResetIn: sevenDayResetAt ? formatTimeToReset(sevenDayResetAt, now) : undefined,
         };
-        // Write to file cache
-        writeCache(homeDir, result, now);
+        // Write to file cache — also store as lastGoodData for rate-limit resilience
+        writeCache(homeDir, result, now, { lastGoodData: result });
         return result;
     }
     catch (error) {
         debug('getUsage failed:', error);
         return null;
     }
-}
-/** Parse model quotas from API response */
-function parseModelQuotas(quotas) {
-    if (!quotas || !Array.isArray(quotas))
-        return [];
-    return quotas.map(q => ({
-        modelId: q.model_id ?? 'unknown',
-        displayName: q.display_name ?? q.model_id ?? 'Unknown Model',
-        weeklyHoursUsed: q.weekly_hours_used ?? null,
-        weeklyHoursLimit: q.weekly_hours_limit ?? null,
-        tokensUsed: q.tokens_used ?? null,
-        tokensLimit: q.tokens_limit ?? null,
-        utilization: parseUtilization(q.utilization),
-        resetsAt: parseDate(q.resets_at),
-    }));
-}
-/** Parse Max plan tier information */
-function parseMaxPlanInfo(maxPlanType, tokensPerWindow, rateLimitTier) {
-    let tier = null;
-    let calculatedTokens = null;
-    // Check explicit max_plan_type first
-    if (maxPlanType) {
-        const lower = maxPlanType.toLowerCase();
-        if (lower.includes('max20') || lower === '20') {
-            tier = 'Max20';
-            calculatedTokens = tokensPerWindow ?? 220_000;
-        }
-        else if (lower.includes('max5') || lower === '5') {
-            tier = 'Max5';
-            calculatedTokens = tokensPerWindow ?? 88_000;
+    finally {
+        if (holdsCacheLock) {
+            releaseCacheLock(homeDir);
         }
     }
-    // Fallback to rateLimitTier from credentials
-    if (!tier && rateLimitTier) {
-        const lower = rateLimitTier.toLowerCase();
-        if (lower.includes('max20') || lower.includes('max_20') || lower.includes('tier_20')) {
-            tier = 'Max20';
-            calculatedTokens = 220_000;
-        }
-        else if (lower.includes('max5') || lower.includes('max_5') || lower.includes('tier_5')) {
-            tier = 'Max5';
-            calculatedTokens = 88_000;
-        }
-    }
-    return {
-        tier,
-        tokensPerWindow: calculatedTokens,
-        isActive: tier !== null,
-    };
-}
-/** Parse compaction buffer settings */
-function parseCompactionInfo(bufferPercent) {
-    if (bufferPercent == null || !Number.isFinite(bufferPercent)) {
-        // Default to 80% if not specified (common default)
-        return { bufferPercent: 80, isEnabled: false };
-    }
-    return {
-        bufferPercent: Math.round(Math.max(50, Math.min(100, bufferPercent))),
-        isEnabled: true,
-    };
-}
-/** Format time remaining until reset as human-readable string */
-function formatTimeToReset(resetAt, now) {
-    const diffMs = resetAt.getTime() - now;
-    if (diffMs <= 0)
-        return 'now';
-    const totalMins = Math.ceil(diffMs / 60000);
-    if (totalMins < 60) {
-        return `${totalMins}m`;
-    }
-    const hours = Math.floor(totalMins / 60);
-    const mins = totalMins % 60;
-    if (hours < 24) {
-        return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-    }
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 /**
- * Read credentials from macOS Keychain using security command
- * This is where Claude Code stores credentials on macOS
+ * Get path for keychain failure backoff cache.
+ * Separate from usage cache to track keychain-specific failures.
  */
-function readKeychainCredentials() {
+function getKeychainBackoffPath(homeDir) {
+    return path.join(getHudPluginDir(homeDir), '.keychain-backoff');
+}
+/**
+ * Check if we're in keychain backoff period (recent failure/timeout).
+ * Prevents re-prompting user on every render cycle.
+ */
+function isKeychainBackoff(homeDir, now) {
+    try {
+        const backoffPath = getKeychainBackoffPath(homeDir);
+        if (!fs.existsSync(backoffPath))
+            return false;
+        const timestamp = parseInt(fs.readFileSync(backoffPath, 'utf8'), 10);
+        return now - timestamp < KEYCHAIN_BACKOFF_MS;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Record keychain failure for backoff.
+ */
+function recordKeychainFailure(homeDir, now) {
+    try {
+        const backoffPath = getKeychainBackoffPath(homeDir);
+        const dir = path.dirname(backoffPath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(backoffPath, String(now), 'utf8');
+    }
+    catch {
+        // Ignore write failures
+    }
+}
+/**
+ * Determine the macOS Keychain service name for Claude Code credentials.
+ * Claude Code uses the default service for ~/.claude and a hashed suffix for custom config directories.
+ */
+export function getKeychainServiceName(configDir, homeDir) {
+    const normalizedConfigDir = path.normalize(path.resolve(configDir));
+    const normalizedDefaultDir = path.normalize(path.resolve(path.join(homeDir, '.claude')));
+    if (normalizedConfigDir === normalizedDefaultDir) {
+        return LEGACY_KEYCHAIN_SERVICE_NAME;
+    }
+    const hash = createHash('sha256').update(normalizedConfigDir).digest('hex').slice(0, 8);
+    return `${LEGACY_KEYCHAIN_SERVICE_NAME}-${hash}`;
+}
+export function getKeychainServiceNames(configDir, homeDir, env = process.env) {
+    const serviceNames = [getKeychainServiceName(configDir, homeDir)];
+    const envConfigDir = env.CLAUDE_CONFIG_DIR?.trim();
+    if (envConfigDir) {
+        const normalizedDefaultDir = path.normalize(path.resolve(path.join(homeDir, '.claude')));
+        const normalizedEnvDir = path.normalize(path.resolve(envConfigDir));
+        if (normalizedEnvDir === normalizedDefaultDir) {
+            serviceNames.push(LEGACY_KEYCHAIN_SERVICE_NAME);
+        }
+        else {
+            const envHash = createHash('sha256').update(envConfigDir).digest('hex').slice(0, 8);
+            serviceNames.push(`${LEGACY_KEYCHAIN_SERVICE_NAME}-${envHash}`);
+        }
+    }
+    serviceNames.push(LEGACY_KEYCHAIN_SERVICE_NAME);
+    return [...new Set(serviceNames)];
+}
+function isMissingKeychainItemError(error) {
+    if (!error || typeof error !== 'object')
+        return false;
+    const maybeError = error;
+    if (maybeError.status === 44)
+        return true;
+    const message = typeof maybeError.message === 'string' ? maybeError.message.toLowerCase() : '';
+    if (message.includes('could not be found in the keychain'))
+        return true;
+    const stderr = typeof maybeError.stderr === 'string'
+        ? maybeError.stderr.toLowerCase()
+        : Buffer.isBuffer(maybeError.stderr)
+            ? maybeError.stderr.toString('utf8').toLowerCase()
+            : '';
+    return stderr.includes('could not be found in the keychain');
+}
+export function resolveKeychainCredentials(serviceNames, now, loadService, accountName) {
+    let shouldBackoff = false;
+    let allowGenericFallback = Boolean(accountName);
+    for (const serviceName of serviceNames) {
+        try {
+            const keychainData = accountName
+                ? loadService(serviceName, accountName)
+                : loadService(serviceName);
+            if (accountName)
+                allowGenericFallback = false;
+            const trimmedKeychainData = keychainData.trim();
+            if (!trimmedKeychainData)
+                continue;
+            const data = JSON.parse(trimmedKeychainData);
+            const credentials = parseCredentialsData(data, now);
+            if (credentials) {
+                return { credentials, shouldBackoff: false };
+            }
+        }
+        catch (error) {
+            if (!isMissingKeychainItemError(error)) {
+                if (accountName)
+                    allowGenericFallback = false;
+                shouldBackoff = true;
+            }
+        }
+    }
+    if (!accountName || !allowGenericFallback) {
+        return { credentials: null, shouldBackoff };
+    }
+    for (const serviceName of serviceNames) {
+        try {
+            const keychainData = loadService(serviceName).trim();
+            if (!keychainData)
+                continue;
+            const data = JSON.parse(keychainData);
+            const credentials = parseCredentialsData(data, now);
+            if (credentials) {
+                return { credentials, shouldBackoff: false };
+            }
+        }
+        catch (error) {
+            if (!isMissingKeychainItemError(error)) {
+                shouldBackoff = true;
+            }
+        }
+    }
+    return { credentials: null, shouldBackoff };
+}
+function getKeychainAccountName() {
+    try {
+        const username = os.userInfo().username.trim();
+        return username || null;
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * Read credentials from macOS Keychain.
+ * Claude Code stores OAuth credentials in the macOS Keychain with profile-specific service names.
+ * Returns null if not on macOS or credentials not found.
+ *
+ * Security: Uses execFileSync with absolute path to avoid shell injection and PATH hijacking.
+ */
+function readKeychainCredentials(now, homeDir) {
+    // Only available on macOS
     if (process.platform !== 'darwin') {
         return null;
     }
-    try {
-        const { execSync } = require('child_process');
-        const user = process.env.USER || os.userInfo().username;
-        const result = execSync(`security find-generic-password -a "${user}" -s "Claude Code-credentials" -w 2>/dev/null`, { encoding: 'utf8', timeout: 2000 }).trim();
-        if (result) {
-            const data = JSON.parse(result);
-            debug('Read credentials from macOS Keychain');
-            return data;
-        }
-    }
-    catch (error) {
-        debug('Keychain read failed (expected on non-macOS or if not stored):', error);
-    }
-    return null;
-}
-function readCredentials(homeDir, now) {
-    const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
-    let data = null;
-    // Try file first
-    if (fs.existsSync(credentialsPath)) {
-        try {
-            const content = fs.readFileSync(credentialsPath, 'utf8');
-            data = JSON.parse(content);
-            debug('Read credentials from file:', credentialsPath);
-        }
-        catch (error) {
-            debug('Failed to read credentials file:', error);
-        }
-    }
-    // Fallback to macOS Keychain if file doesn't exist or is invalid
-    if (!data || !data.claudeAiOauth?.accessToken) {
-        data = readKeychainCredentials();
-    }
-    if (!data) {
-        debug('No credentials found in file or Keychain');
+    // Check backoff to avoid re-prompting on every render after a failure
+    if (isKeychainBackoff(homeDir, now)) {
+        debug('Keychain in backoff period, skipping');
         return null;
     }
+    try {
+        const configDir = getClaudeConfigDir(homeDir);
+        const serviceNames = getKeychainServiceNames(configDir, homeDir);
+        const accountName = getKeychainAccountName();
+        debug('Trying keychain service names:', serviceNames);
+        if (accountName) {
+            debug('Trying keychain account name:', accountName);
+        }
+        const resolved = resolveKeychainCredentials(serviceNames, now, (serviceName, lookupAccountName) => execFileSync('/usr/bin/security', lookupAccountName
+            ? ['find-generic-password', '-s', serviceName, '-a', lookupAccountName, '-w']
+            : ['find-generic-password', '-s', serviceName, '-w'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: KEYCHAIN_TIMEOUT_MS }), accountName);
+        if (resolved.credentials) {
+            return resolved.credentials;
+        }
+        if (resolved.shouldBackoff) {
+            recordKeychainFailure(homeDir, now);
+        }
+        return null;
+    }
+    catch (error) {
+        // Security: Only log error message, not full error object (may contain stdout/stderr with tokens)
+        const message = error instanceof Error ? error.message : 'unknown error';
+        debug('Failed to read from macOS Keychain:', message);
+        // Record failure for backoff to avoid re-prompting
+        recordKeychainFailure(homeDir, now);
+        return null;
+    }
+}
+/**
+ * Read credentials from file (legacy method).
+ * Older versions of Claude Code stored credentials in {CLAUDE_CONFIG_DIR}/.credentials.json.
+ */
+function readFileCredentials(homeDir, now) {
+    const credentialsPath = path.join(getClaudeConfigDir(homeDir), '.credentials.json');
+    if (!fs.existsSync(credentialsPath)) {
+        return null;
+    }
+    try {
+        const content = fs.readFileSync(credentialsPath, 'utf8');
+        const data = JSON.parse(content);
+        return parseCredentialsData(data, now);
+    }
+    catch (error) {
+        debug('Failed to read credentials file:', error);
+        return null;
+    }
+}
+function readFileSubscriptionType(homeDir) {
+    const credentialsPath = path.join(getClaudeConfigDir(homeDir), '.credentials.json');
+    if (!fs.existsSync(credentialsPath)) {
+        return null;
+    }
+    try {
+        const content = fs.readFileSync(credentialsPath, 'utf8');
+        const data = JSON.parse(content);
+        const subscriptionType = data.claudeAiOauth?.subscriptionType;
+        const normalizedSubscriptionType = typeof subscriptionType === 'string'
+            ? subscriptionType.trim()
+            : '';
+        if (!normalizedSubscriptionType) {
+            return null;
+        }
+        return normalizedSubscriptionType;
+    }
+    catch (error) {
+        debug('Failed to read file subscriptionType:', error);
+        return null;
+    }
+}
+/**
+ * Parse and validate credentials data from either Keychain or file.
+ */
+function parseCredentialsData(data, now) {
     const accessToken = data.claudeAiOauth?.accessToken;
     const subscriptionType = data.claudeAiOauth?.subscriptionType ?? '';
-    const organizationUuid = data.oauthAccount?.organizationUuid;
-    const rateLimitTier = data.claudeAiOauth?.rateLimitTier;
     if (!accessToken) {
-        debug('No access token in credentials');
         return null;
     }
     // Check if token is expired (expiresAt is Unix ms timestamp)
     // Use != null to handle expiresAt=0 correctly (would be expired)
     const expiresAt = data.claudeAiOauth?.expiresAt;
     if (expiresAt != null && expiresAt <= now) {
-        debug('Access token expired at:', new Date(expiresAt));
+        debug('OAuth token expired');
         return null;
     }
-    debug('Credentials loaded, subscriptionType:', subscriptionType || '(not set)');
-    return { accessToken, subscriptionType, organizationUuid, rateLimitTier };
+    return { accessToken, subscriptionType };
 }
-function getPlanName(subscriptionType, hasOAuthToken = false) {
+/**
+ * Read OAuth credentials, trying macOS Keychain first (Claude Code 2.x),
+ * then falling back to file-based credentials (older versions).
+ *
+ * Token priority: Keychain token is authoritative (Claude Code 2.x stores current token there).
+ * SubscriptionType: Can be supplemented from file if keychain lacks it (display-only field).
+ */
+function readCredentials(homeDir, now, readKeychain) {
+    // Try macOS Keychain first (Claude Code 2.x)
+    const keychainCreds = readKeychain(now, homeDir);
+    if (keychainCreds) {
+        if (keychainCreds.subscriptionType) {
+            debug('Using credentials from macOS Keychain');
+            return keychainCreds;
+        }
+        // Keychain has token but no subscriptionType - try to supplement from file
+        const fileSubscriptionType = readFileSubscriptionType(homeDir);
+        if (fileSubscriptionType) {
+            debug('Using keychain token with file subscriptionType');
+            return {
+                accessToken: keychainCreds.accessToken,
+                subscriptionType: fileSubscriptionType,
+            };
+        }
+        // No subscriptionType available - use keychain token anyway
+        debug('Using keychain token without subscriptionType');
+        return keychainCreds;
+    }
+    // Fall back to file-based credentials (older versions or non-macOS)
+    const fileCreds = readFileCredentials(homeDir, now);
+    if (fileCreds) {
+        debug('Using credentials from file');
+        return fileCreds;
+    }
+    return null;
+}
+function getPlanName(subscriptionType) {
     const lower = subscriptionType.toLowerCase();
     if (lower.includes('max'))
         return 'Max';
@@ -334,19 +682,19 @@ function getPlanName(subscriptionType, hasOAuthToken = false) {
         return 'Pro';
     if (lower.includes('team'))
         return 'Team';
-    // API users have 'api' in their subscriptionType
-    if (lower.includes('api'))
-        return null;
-    // If we have OAuth credentials but no subscription type, assume Pro (most common)
-    // This happens when credentials are stored in Keychain without full metadata
-    if (!subscriptionType && hasOAuthToken) {
-        debug('No subscriptionType but has OAuth token, defaulting to Pro');
-        return 'Pro';
-    }
-    if (!subscriptionType)
+    // API users don't have subscriptionType or have 'api'
+    if (!subscriptionType || lower.includes('api'))
         return null;
     // Unknown subscription type - show it capitalized
     return subscriptionType.charAt(0).toUpperCase() + subscriptionType.slice(1);
+}
+export function getUsagePlanNameFallback(homeDir = os.homedir()) {
+    const subscriptionType = readFileSubscriptionType(homeDir);
+    if (subscriptionType) {
+        return getPlanName(subscriptionType);
+    }
+    const cachedPlanName = readCachedPlanName(homeDir);
+    return cachedPlanName ?? null;
 }
 /** Parse utilization value, clamping to 0-100 and handling NaN/Infinity */
 function parseUtilization(value) {
@@ -368,25 +716,156 @@ function parseDate(dateStr) {
     }
     return date;
 }
-/** Fetch from the original Anthropic OAuth usage endpoint */
-function fetchUsageApi(accessToken, organizationUuid) {
-    return new Promise((resolve) => {
-        const headers = {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            'anthropic-beta': 'oauth-2025-04-20',
-            'User-Agent': `claude-code/${CLAUDE_CODE_VERSION}`,
-        };
-        if (organizationUuid) {
-            headers['x-organization-uuid'] = organizationUuid;
+export function getUsageApiTimeoutMs(env = process.env) {
+    const raw = env.CLAUDE_HUD_USAGE_TIMEOUT_MS?.trim();
+    if (!raw)
+        return USAGE_API_TIMEOUT_MS_DEFAULT;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        debug('Invalid CLAUDE_HUD_USAGE_TIMEOUT_MS value:', raw);
+        return USAGE_API_TIMEOUT_MS_DEFAULT;
+    }
+    return parsed;
+}
+export function isNoProxy(hostname, env = process.env) {
+    const noProxy = env.NO_PROXY ?? env.no_proxy;
+    if (!noProxy)
+        return false;
+    const host = hostname.toLowerCase();
+    return noProxy.split(',').some((entry) => {
+        const pattern = entry.trim().toLowerCase();
+        if (!pattern)
+            return false;
+        if (pattern === '*')
+            return true;
+        if (host === pattern)
+            return true;
+        const suffix = pattern.startsWith('.') ? pattern : `.${pattern}`;
+        return host.endsWith(suffix);
+    });
+}
+export function getProxyUrl(hostname, env = process.env) {
+    if (isNoProxy(hostname, env)) {
+        debug('Proxy bypassed by NO_PROXY for host:', hostname);
+        return null;
+    }
+    const proxyEnv = env.HTTPS_PROXY
+        ?? env.https_proxy
+        ?? env.ALL_PROXY
+        ?? env.all_proxy
+        ?? env.HTTP_PROXY
+        ?? env.http_proxy;
+    if (!proxyEnv)
+        return null;
+    try {
+        const proxyUrl = new URL(proxyEnv);
+        if (proxyUrl.protocol !== 'http:' && proxyUrl.protocol !== 'https:') {
+            debug('Unsupported proxy protocol:', proxyUrl.protocol);
+            return null;
         }
+        return proxyUrl;
+    }
+    catch {
+        debug('Invalid proxy URL:', proxyEnv);
+        return null;
+    }
+}
+function createProxyTunnelAgent(proxyUrl) {
+    const proxyHost = proxyUrl.hostname;
+    const proxyPort = Number.parseInt(proxyUrl.port || (proxyUrl.protocol === 'https:' ? '443' : '80'), 10);
+    const proxyAuth = proxyUrl.username
+        ? `Basic ${Buffer.from(`${decodeURIComponent(proxyUrl.username)}:${decodeURIComponent(proxyUrl.password || '')}`).toString('base64')}`
+        : null;
+    return new class extends https.Agent {
+        createConnection(options, callback) {
+            const targetHost = String(options.host ?? options.hostname ?? 'localhost');
+            const targetPort = Number(options.port) || 443;
+            let settled = false;
+            const settle = (err, socket) => {
+                if (settled)
+                    return;
+                settled = true;
+                callback?.(err, socket);
+            };
+            const proxySocket = proxyUrl.protocol === 'https:'
+                ? tls.connect({ host: proxyHost, port: proxyPort, servername: proxyHost })
+                : net.connect(proxyPort, proxyHost);
+            proxySocket.once('error', (error) => {
+                settle(error, proxySocket);
+            });
+            proxySocket.once('connect', () => {
+                const connectHeaders = [
+                    `CONNECT ${targetHost}:${targetPort} HTTP/1.1`,
+                    `Host: ${targetHost}:${targetPort}`,
+                ];
+                if (proxyAuth) {
+                    connectHeaders.push(`Proxy-Authorization: ${proxyAuth}`);
+                }
+                connectHeaders.push('', '');
+                proxySocket.write(connectHeaders.join('\r\n'));
+                let responseBuffer = Buffer.alloc(0);
+                const onData = (chunk) => {
+                    responseBuffer = Buffer.concat([responseBuffer, chunk]);
+                    const headerEndIndex = responseBuffer.indexOf('\r\n\r\n');
+                    if (headerEndIndex === -1)
+                        return;
+                    proxySocket.removeListener('data', onData);
+                    const headerText = responseBuffer.subarray(0, headerEndIndex).toString('utf8');
+                    const statusLine = headerText.split('\r\n')[0] ?? '';
+                    if (!/^HTTP\/1\.[01] 200 /.test(statusLine)) {
+                        const error = new Error(`Proxy CONNECT rejected: ${statusLine || 'unknown status'}`);
+                        proxySocket.destroy(error);
+                        settle(error, proxySocket);
+                        return;
+                    }
+                    const tlsSocket = tls.connect({
+                        socket: proxySocket,
+                        servername: String(options.servername ?? targetHost),
+                        rejectUnauthorized: getProxyTunnelRejectUnauthorized(options.rejectUnauthorized),
+                    }, () => {
+                        settle(null, tlsSocket);
+                    });
+                    tlsSocket.once('error', (error) => {
+                        settle(error, tlsSocket);
+                    });
+                };
+                proxySocket.on('data', onData);
+            });
+            // Must not return the socket here. In Node.js _http_agent.js, createSocket()
+            // calls: `if (newSocket) oncreate(null, newSocket)` — returning a truthy value
+            // causes the HTTP request to be written to the raw proxy socket immediately,
+            // before the CONNECT tunnel is established. Only deliver the final TLS socket
+            // asynchronously via the callback after the CONNECT handshake succeeds.
+            return undefined;
+        }
+    }();
+}
+export function getProxyTunnelRejectUnauthorized(rejectUnauthorized, env = process.env) {
+    if (rejectUnauthorized === false) {
+        return false;
+    }
+    return env.NODE_TLS_REJECT_UNAUTHORIZED !== '0';
+}
+function fetchUsageApi(accessToken) {
+    return new Promise((resolve) => {
+        const host = 'api.anthropic.com';
+        const timeoutMs = getUsageApiTimeoutMs();
+        const proxyUrl = getProxyUrl(host);
         const options = {
-            hostname: 'api.anthropic.com',
+            hostname: host,
             path: '/api/oauth/usage',
             method: 'GET',
-            headers,
-            timeout: 5000,
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'anthropic-beta': 'oauth-2025-04-20',
+                'User-Agent': USAGE_API_USER_AGENT,
+            },
+            timeout: timeoutMs,
+            agent: proxyUrl ? createProxyTunnelAgent(proxyUrl) : undefined,
         };
+        if (proxyUrl) {
+            debug('Using proxy for usage API:', proxyUrl.origin);
+        }
         const req = https.request(options, (res) => {
             let data = '';
             res.on('data', (chunk) => {
@@ -394,32 +873,56 @@ function fetchUsageApi(accessToken, organizationUuid) {
             });
             res.on('end', () => {
                 if (res.statusCode !== 200) {
-                    debug('Anthropic API returned non-200 status:', res.statusCode);
-                    resolve(null);
+                    debug('API returned non-200 status:', res.statusCode);
+                    // Use a distinct error key for 429 so cache/render can handle it specially
+                    const error = res.statusCode === 429
+                        ? 'rate-limited'
+                        : res.statusCode ? `http-${res.statusCode}` : 'http-error';
+                    const retryAfterSec = res.statusCode === 429
+                        ? parseRetryAfterSeconds(res.headers['retry-after'])
+                        : undefined;
+                    if (retryAfterSec) {
+                        debug('Retry-After:', retryAfterSec, 'seconds');
+                    }
+                    resolve({ data: null, error, retryAfterSec });
                     return;
                 }
                 try {
                     const parsed = JSON.parse(data);
-                    debug('Anthropic API response:', parsed);
-                    resolve(parsed);
+                    resolve({ data: parsed });
                 }
                 catch (error) {
-                    debug('Failed to parse Anthropic API response:', error);
-                    resolve(null);
+                    debug('Failed to parse API response:', error);
+                    resolve({ data: null, error: 'parse' });
                 }
             });
         });
         req.on('error', (error) => {
-            debug('Anthropic API request error:', error);
-            resolve(null);
+            debug('API request error:', error);
+            resolve({ data: null, error: 'network' });
         });
         req.on('timeout', () => {
-            debug('Anthropic API request timeout');
+            debug('API request timeout');
             req.destroy();
-            resolve(null);
+            resolve({ data: null, error: 'timeout' });
         });
         req.end();
     });
+}
+export function parseRetryAfterSeconds(raw, nowMs = Date.now()) {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (!value)
+        return undefined;
+    const parsedSeconds = Number.parseInt(value, 10);
+    if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) {
+        return parsedSeconds;
+    }
+    const retryAtMs = Date.parse(value);
+    if (!Number.isFinite(retryAtMs)) {
+        return undefined;
+    }
+    const retryAfterSeconds = Math.ceil((retryAtMs - nowMs) / 1000);
+    return retryAfterSeconds > 0 ? retryAfterSeconds : undefined;
 }
 // Export for testing
 export function clearCache(homeDir) {
@@ -428,6 +931,10 @@ export function clearCache(homeDir) {
             const cachePath = getCachePath(homeDir);
             if (fs.existsSync(cachePath)) {
                 fs.unlinkSync(cachePath);
+            }
+            const lockPath = getCacheLockPath(homeDir);
+            if (fs.existsSync(lockPath)) {
+                fs.unlinkSync(lockPath);
             }
         }
         catch {

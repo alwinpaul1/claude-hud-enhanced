@@ -1,12 +1,24 @@
 import * as fs from 'fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as readline from 'readline';
-import type { TranscriptData, ToolEntry, AgentEntry, TodoItem } from './types.js';
+import { createHash } from 'node:crypto';
+import { getHudPluginDir } from './claude-config-dir.js';
+import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage } from './types.js';
 
 interface TranscriptLine {
-  type?: string;  // 'user' or 'assistant'
   timestamp?: string;
+  type?: string;
+  slug?: string;
+  customTitle?: string;
   message?: {
-    content?: ContentBlock[] | string;
+    content?: ContentBlock[];
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
   };
 }
 
@@ -14,10 +26,155 @@ interface ContentBlock {
   type: string;
   id?: string;
   name?: string;
-  text?: string;  // For text content blocks
   input?: Record<string, unknown>;
   tool_use_id?: string;
   is_error?: boolean;
+}
+
+interface TranscriptFileState {
+  mtimeMs: number;
+  size: number;
+}
+
+interface SerializedToolEntry extends Omit<ToolEntry, 'startTime' | 'endTime'> {
+  startTime: string;
+  endTime?: string;
+}
+
+interface SerializedAgentEntry extends Omit<AgentEntry, 'startTime' | 'endTime'> {
+  startTime: string;
+  endTime?: string;
+}
+
+interface SerializedTranscriptData {
+  tools: SerializedToolEntry[];
+  agents: SerializedAgentEntry[];
+  todos: TodoItem[];
+  sessionStart?: string;
+  sessionName?: string;
+  sessionTokens?: SessionTokenUsage;
+}
+
+interface TranscriptCacheFile {
+  transcriptPath: string;
+  transcriptState: TranscriptFileState;
+  data: SerializedTranscriptData;
+}
+
+let createReadStreamImpl: typeof fs.createReadStream = fs.createReadStream;
+
+function normalizeTokenCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(value));
+}
+
+function normalizeSessionTokens(tokens: unknown): SessionTokenUsage | undefined {
+  if (!tokens || typeof tokens !== 'object') {
+    return undefined;
+  }
+
+  const raw = tokens as Record<string, unknown>;
+  return {
+    inputTokens: normalizeTokenCount(raw.inputTokens),
+    outputTokens: normalizeTokenCount(raw.outputTokens),
+    cacheCreationTokens: normalizeTokenCount(raw.cacheCreationTokens),
+    cacheReadTokens: normalizeTokenCount(raw.cacheReadTokens),
+  };
+}
+
+function getTranscriptCachePath(transcriptPath: string, homeDir: string): string {
+  const hash = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
+  return path.join(getHudPluginDir(homeDir), 'transcript-cache', `${hash}.json`);
+}
+
+function readTranscriptFileState(transcriptPath: string): TranscriptFileState | null {
+  try {
+    const stat = fs.statSync(transcriptPath);
+    if (!stat.isFile()) {
+      return null;
+    }
+    return {
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData {
+  return {
+    tools: data.tools.map((tool) => ({
+      ...tool,
+      startTime: tool.startTime.toISOString(),
+      endTime: tool.endTime?.toISOString(),
+    })),
+    agents: data.agents.map((agent) => ({
+      ...agent,
+      startTime: agent.startTime.toISOString(),
+      endTime: agent.endTime?.toISOString(),
+    })),
+    todos: data.todos.map((todo) => ({ ...todo })),
+    sessionStart: data.sessionStart?.toISOString(),
+    sessionName: data.sessionName,
+    sessionTokens: data.sessionTokens,
+  };
+}
+
+function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptData {
+  return {
+    tools: data.tools.map((tool) => ({
+      ...tool,
+      startTime: new Date(tool.startTime),
+      endTime: tool.endTime ? new Date(tool.endTime) : undefined,
+    })),
+    agents: data.agents.map((agent) => ({
+      ...agent,
+      startTime: new Date(agent.startTime),
+      endTime: agent.endTime ? new Date(agent.endTime) : undefined,
+    })),
+    todos: data.todos.map((todo) => ({ ...todo })),
+    sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
+    sessionName: data.sessionName,
+    sessionTokens: normalizeSessionTokens(data.sessionTokens),
+  };
+}
+
+function readTranscriptCache(transcriptPath: string, state: TranscriptFileState): TranscriptData | null {
+  try {
+    const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
+    const raw = fs.readFileSync(cachePath, 'utf8');
+    const parsed = JSON.parse(raw) as TranscriptCacheFile;
+    if (
+      parsed.transcriptPath !== path.resolve(transcriptPath)
+      || parsed.transcriptState?.mtimeMs !== state.mtimeMs
+      || parsed.transcriptState?.size !== state.size
+    ) {
+      return null;
+    }
+
+    return deserializeTranscriptData(parsed.data);
+  } catch {
+    return null;
+  }
+}
+
+function writeTranscriptCache(transcriptPath: string, state: TranscriptFileState, data: TranscriptData): void {
+  try {
+    const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    const payload: TranscriptCacheFile = {
+      transcriptPath: path.resolve(transcriptPath),
+      transcriptState: state,
+      data: serializeTranscriptData(data),
+    };
+    fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
+  } catch {
+    // Cache failures are non-fatal; fall back to fresh parsing next time.
+  }
 }
 
 export async function parseTranscript(transcriptPath: string): Promise<TranscriptData> {
@@ -31,13 +188,33 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     return result;
   }
 
+  const transcriptState = readTranscriptFileState(transcriptPath);
+  if (!transcriptState) {
+    return result;
+  }
+
+  const cached = readTranscriptCache(transcriptPath, transcriptState);
+  if (cached) {
+    return cached;
+  }
+
   const toolMap = new Map<string, ToolEntry>();
   const agentMap = new Map<string, AgentEntry>();
   let latestTodos: TodoItem[] = [];
-  const userMessages: string[] = [];
+  const taskIdToIndex = new Map<string, number>();
+  let latestSlug: string | undefined;
+  let customTitle: string | undefined;
+  const sessionTokens: SessionTokenUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  };
+
+  let parsedCleanly = false;
 
   try {
-    const fileStream = fs.createReadStream(transcriptPath);
+    const fileStream = createReadStreamImpl(transcriptPath);
     const rl = readline.createInterface({
       input: fileStream,
       crlfDelay: Infinity,
@@ -48,19 +225,26 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
 
       try {
         const entry = JSON.parse(line) as TranscriptLine;
-        processEntry(entry, toolMap, agentMap, latestTodos, result);
-
-        // Extract user messages
-        if (entry.type === 'user' && entry.message?.content) {
-          const msgText = extractUserText(entry.message.content);
-          if (msgText && !isUnhelpfulMessage(msgText)) {
-            userMessages.push(msgText);
-          }
+        if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
+          customTitle = entry.customTitle;
+        } else if (typeof entry.slug === 'string') {
+          latestSlug = entry.slug;
         }
+        // Accumulate token usage from assistant messages
+        if (entry.type === 'assistant' && entry.message?.usage) {
+          const usage = entry.message.usage;
+          sessionTokens.inputTokens += normalizeTokenCount(usage.input_tokens);
+          sessionTokens.outputTokens += normalizeTokenCount(usage.output_tokens);
+          sessionTokens.cacheCreationTokens += normalizeTokenCount(usage.cache_creation_input_tokens);
+          sessionTokens.cacheReadTokens += normalizeTokenCount(usage.cache_read_input_tokens);
+        }
+        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result);
       } catch {
         // Skip malformed lines
       }
     }
+
+    parsedCleanly = true;
   } catch {
     // Return partial results on error
   }
@@ -68,45 +252,24 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   result.tools = Array.from(toolMap.values()).slice(-20);
   result.agents = Array.from(agentMap.values()).slice(-10);
   result.todos = latestTodos;
-
-  // Get the last user message
-  if (userMessages.length > 0) {
-    result.lastUserMessage = userMessages[userMessages.length - 1];
+  result.sessionName = customTitle ?? latestSlug;
+  result.sessionTokens = sessionTokens;
+  if (parsedCleanly) {
+    writeTranscriptCache(transcriptPath, transcriptState, result);
   }
 
   return result;
 }
 
-function extractUserText(content: ContentBlock[] | string): string {
-  if (typeof content === 'string') {
-    return content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-
-  if (Array.isArray(content)) {
-    const textParts: string[] = [];
-    for (const block of content) {
-      if (block.type === 'text' && block.text) {
-        textParts.push(block.text);
-      }
-    }
-    return textParts.join(' ').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-
-  return '';
-}
-
-function isUnhelpfulMessage(msg: string): boolean {
-  return (
-    msg.startsWith('[Request interrupted') ||
-    msg.startsWith('[Request cancelled') ||
-    msg === ''
-  );
+export function _setCreateReadStreamForTests(impl: typeof fs.createReadStream | null): void {
+  createReadStreamImpl = impl ?? fs.createReadStream;
 }
 
 function processEntry(
   entry: TranscriptLine,
   toolMap: Map<string, ToolEntry>,
   agentMap: Map<string, AgentEntry>,
+  taskIdToIndex: Map<string, number>,
   latestTodos: TodoItem[],
   result: TranscriptData
 ): void {
@@ -129,7 +292,7 @@ function processEntry(
         startTime: timestamp,
       };
 
-      if (block.name === 'Task') {
+      if (block.name === 'Task' || block.name === 'Agent') {
         const input = block.input as Record<string, unknown>;
         const agentEntry: AgentEntry = {
           id: block.id,
@@ -143,8 +306,62 @@ function processEntry(
       } else if (block.name === 'TodoWrite') {
         const input = block.input as { todos?: TodoItem[] };
         if (input?.todos && Array.isArray(input.todos)) {
+          // Build reverse map: content → taskIds from existing state
+          const contentToTaskIds = new Map<string, string[]>();
+          for (const [taskId, idx] of taskIdToIndex) {
+            if (idx < latestTodos.length) {
+              const content = latestTodos[idx].content;
+              const ids = contentToTaskIds.get(content) ?? [];
+              ids.push(taskId);
+              contentToTaskIds.set(content, ids);
+            }
+          }
+
           latestTodos.length = 0;
+          taskIdToIndex.clear();
           latestTodos.push(...input.todos);
+
+          // Re-register taskId mappings for items whose content matches
+          for (let i = 0; i < latestTodos.length; i++) {
+            const ids = contentToTaskIds.get(latestTodos[i].content);
+            if (ids) {
+              for (const taskId of ids) {
+                taskIdToIndex.set(taskId, i);
+              }
+              contentToTaskIds.delete(latestTodos[i].content);
+            }
+          }
+        }
+      } else if (block.name === 'TaskCreate') {
+        const input = block.input as Record<string, unknown>;
+        const subject = typeof input?.subject === 'string' ? input.subject : '';
+        const description = typeof input?.description === 'string' ? input.description : '';
+        const content = subject || description || 'Untitled task';
+        const status = normalizeTaskStatus(input?.status) ?? 'pending';
+        latestTodos.push({ content, status });
+
+        const rawTaskId = input?.taskId;
+        const taskId = typeof rawTaskId === 'string' || typeof rawTaskId === 'number'
+          ? String(rawTaskId)
+          : block.id;
+        if (taskId) {
+          taskIdToIndex.set(taskId, latestTodos.length - 1);
+        }
+      } else if (block.name === 'TaskUpdate') {
+        const input = block.input as Record<string, unknown>;
+        const index = resolveTaskIndex(input?.taskId, taskIdToIndex, latestTodos);
+        if (index !== null) {
+          const status = normalizeTaskStatus(input?.status);
+          if (status) {
+            latestTodos[index].status = status;
+          }
+
+          const subject = typeof input?.subject === 'string' ? input.subject : '';
+          const description = typeof input?.description === 'string' ? input.description : '';
+          const content = subject || description;
+          if (content) {
+            latestTodos[index].content = content;
+          }
         }
       } else {
         toolMap.set(block.id, toolEntry);
@@ -184,4 +401,46 @@ function extractTarget(toolName: string, input?: Record<string, unknown>): strin
       return cmd?.slice(0, 30) + (cmd?.length > 30 ? '...' : '');
   }
   return undefined;
+}
+
+function resolveTaskIndex(
+  taskId: unknown,
+  taskIdToIndex: Map<string, number>,
+  latestTodos: TodoItem[]
+): number | null {
+  if (typeof taskId === 'string' || typeof taskId === 'number') {
+    const key = String(taskId);
+    const mapped = taskIdToIndex.get(key);
+    if (typeof mapped === 'number') {
+      return mapped;
+    }
+
+    if (/^\d+$/.test(key)) {
+      const numericIndex = Number.parseInt(key, 10) - 1;
+      if (numericIndex >= 0 && numericIndex < latestTodos.length) {
+        return numericIndex;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeTaskStatus(status: unknown): TodoItem['status'] | null {
+  if (typeof status !== 'string') return null;
+
+  switch (status) {
+    case 'pending':
+    case 'not_started':
+      return 'pending';
+    case 'in_progress':
+    case 'running':
+      return 'in_progress';
+    case 'completed':
+    case 'complete':
+    case 'done':
+      return 'completed';
+    default:
+      return null;
+  }
 }
