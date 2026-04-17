@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.23] - 2026-04-17
+
+### Changed
+- `display.usageOnNewLine` default flipped back to `false`. The compact layout renders Usage/Weekly inline on the main row by default; set `usageOnNewLine: true` to opt into the two-row layout introduced in 0.2.22.
+
 ## [0.2.22] - 2026-04-17
 
 ### Changed
