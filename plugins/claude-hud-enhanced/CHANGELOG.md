@@ -2,6 +2,15 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.18] - 2026-04-17
+
+### Added
+- Auto-detect the user's plan (`Pro`, `Max 5x`, `Max 20x`, `Team`, `Enterprise`) from the OAuth credentials and append it as a qualifier next to the model: `[Opus 4.7 | Max 5x]`. Credentials are read from macOS Keychain (`security find-generic-password -s "Claude Code-credentials"`) or `~/.claude/.credentials.json` on Linux/Windows. Result is cached for 1 hour in `~/.claude/plugins/claude-hud/oauth-cache.json` so the shell-out only runs once per hour.
+- New config toggle `display.showPlan` (default `true`). Set to `false` to hide the plan qualifier.
+
+### Notes
+- If `display.modelOverride` is non-empty it still wins — the plan qualifier is suppressed so the user's override string is shown verbatim. Clear `modelOverride` to opt into auto-detection.
+
 ## [0.2.17] - 2026-04-17
 
 ### Changed

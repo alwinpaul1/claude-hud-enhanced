@@ -47,6 +47,7 @@ export const DEFAULT_CONFIG = {
         showMemoryUsage: true,
         showSessionTokens: false,
         showOutputStyle: true,
+        showPlan: true,
         autocompactBuffer: 'enabled',
         usageThreshold: 0,
         sevenDayThreshold: 80,
@@ -259,6 +260,9 @@ export function mergeConfig(userConfig) {
         showOutputStyle: typeof migrated.display?.showOutputStyle === 'boolean'
             ? migrated.display.showOutputStyle
             : DEFAULT_CONFIG.display.showOutputStyle,
+        showPlan: typeof migrated.display?.showPlan === 'boolean'
+            ? migrated.display.showPlan
+            : DEFAULT_CONFIG.display.showPlan,
         autocompactBuffer: validateAutocompactBuffer(migrated.display?.autocompactBuffer)
             ? migrated.display.autocompactBuffer
             : DEFAULT_CONFIG.display.autocompactBuffer,

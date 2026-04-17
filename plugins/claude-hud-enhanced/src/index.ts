@@ -7,6 +7,7 @@ import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
 import { getClaudeCodeVersion } from "./version.js";
 import { getMemoryUsage } from "./memory.js";
+import { getPlanLabel } from "./oauth.js";
 import { setLanguage, t } from "./i18n/index.js";
 import type { RenderContext } from "./types.js";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,7 @@ export type MainDeps = {
   runExtraCmd: typeof runExtraCmd;
   getClaudeCodeVersion: typeof getClaudeCodeVersion;
   getMemoryUsage: typeof getMemoryUsage;
+  getPlanLabel: typeof getPlanLabel;
   render: typeof render;
   now: () => number;
   log: (...args: unknown[]) => void;
@@ -42,6 +44,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     runExtraCmd,
     getClaudeCodeVersion,
     getMemoryUsage,
+    getPlanLabel,
     render,
     now: () => Date.now(),
     log: console.log,
@@ -96,6 +99,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
         ? await deps.getMemoryUsage()
         : null;
 
+    const planLabel = config.display.showPlan !== false ? deps.getPlanLabel() : null;
+
     const ctx: RenderContext = {
       stdin,
       transcript,
@@ -111,6 +116,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       extraLabel,
       outputStyle,
       claudeCodeVersion,
+      planLabel,
     };
 
     deps.render(ctx);

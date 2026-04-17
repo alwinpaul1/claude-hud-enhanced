@@ -113,4 +113,5 @@ export interface RenderContext {
   extraLabel: string | null;
   outputStyle?: string;
   claudeCodeVersion?: string;
+  planLabel: string | null;
 }

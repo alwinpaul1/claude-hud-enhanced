@@ -17,8 +17,9 @@ export function renderProjectLine(ctx) {
     if (display?.showModel !== false) {
         const model = formatModelName(getModelName(ctx.stdin), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
         const providerLabel = getProviderLabel(ctx.stdin);
-        const modelQualifier = providerLabel ?? undefined;
-        const modelDisplay = modelQualifier ? `${model} | ${modelQualifier}` : model;
+        const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
+        const qualifiers = [providerLabel, planLabel].filter((q) => !!q);
+        const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
         parts.push(modelColor(`[${modelDisplay}]`, colors));
     }
     let projectPart = null;

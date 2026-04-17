@@ -29,8 +29,9 @@ export function renderSessionLine(ctx) {
     const contextValueDisplay = `${getContextColor(percent, colors)}${contextValue}${RESET}`;
     // Model and context bar (FIRST)
     const providerLabel = getProviderLabel(ctx.stdin);
-    const modelQualifier = providerLabel ?? undefined;
-    const modelDisplay = modelQualifier ? `${model} | ${modelQualifier}` : model;
+    const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
+    const qualifiers = [providerLabel, planLabel].filter((q) => !!q);
+    const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
     if (display?.showModel !== false && display?.showContextBar !== false) {
         parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${bar} ${contextValueDisplay}`);
     }
