@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.12] - 2026-04-17
+
+### Changed
+- Drop the redundant window-label suffix from the countdown in the compact session line: `(55m / 5h)` → `(55m)`. The `5h` window was already implied by the `Usage` label + bar context. Weekly datetime format unchanged.
+
 ## [0.2.11] - 2026-04-17
 
 ### Changed

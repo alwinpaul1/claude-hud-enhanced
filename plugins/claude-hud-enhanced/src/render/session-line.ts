@@ -322,7 +322,7 @@ function formatUsageWindowPart({
   if (usageBarEnabled) {
     const suffix = resetStyle === 'datetime'
       ? `(${t('format.resets')} ${reset})`
-      : `(${reset} / ${windowLabel})`;
+      : `(${reset})`;
     const body = reset
       ? `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay} ${suffix}`
       : `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay}`;
