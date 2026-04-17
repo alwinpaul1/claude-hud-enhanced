@@ -205,7 +205,7 @@ export function renderSessionLine(ctx: RenderContext): string {
     const st = ctx.transcript.sessionTokens;
     const total = st.inputTokens + st.outputTokens + st.cacheCreationTokens + st.cacheReadTokens;
     if (total > 0) {
-      parts.push(label(`tok: ${formatTokens(total)} (in: ${formatTokens(st.inputTokens)}, out: ${formatTokens(st.outputTokens)})`, colors));
+      parts.push(label(`tok: ${formatTokens(total)}`, colors));
     }
   }
 

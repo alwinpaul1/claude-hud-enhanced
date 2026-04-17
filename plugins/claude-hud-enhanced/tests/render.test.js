@@ -1854,5 +1854,6 @@ test('renderSessionLine includes compact session token summary when enabled', ()
   };
 
   const line = stripAnsi(renderSessionLine(ctx));
-  assert.ok(line.includes('tok: 2k (in: 2k, out: 250)'), 'should include compact token summary');
+  assert.ok(line.includes('tok: 2k'), 'should include compact token summary');
+  assert.ok(!line.includes('(in:'), 'compact token summary should omit in/out breakdown');
 });

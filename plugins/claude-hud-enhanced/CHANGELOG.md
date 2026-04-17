@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.6] - 2026-04-17
+
+### Changed
+- Shorten the inline session-tokens summary in the compact session line from `tok: 83.1M (in: 842, out: 28k)` to just `tok: 83.1M`. The in/out breakdown was consistently getting truncated mid-word on realistic terminal widths. Users who still want the full breakdown get it on the dedicated session-tokens line (expanded layout or `showSessionTokens` as its own line).
+
 ## [0.2.5] - 2026-04-17
 
 ### Changed
