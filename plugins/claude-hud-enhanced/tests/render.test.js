@@ -184,7 +184,8 @@ test('getContextColor and getQuotaColor respect custom semantic overrides', () =
   assert.equal(getContextColor(10, colors), '\x1b[36m');
   assert.equal(getContextColor(70, colors), '\x1b[94m');
   assert.equal(getQuotaColor(25, colors), '\x1b[35m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[33m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[35m');
+  assert.equal(getQuotaColor(95, colors), '\x1b[35m');
 });
 
 test('getContextColor and getQuotaColor resolve 256-color indices', () => {
@@ -200,8 +201,8 @@ test('getContextColor and getQuotaColor resolve 256-color indices', () => {
   assert.equal(getContextColor(70, colors), '\x1b[38;5;220m');
   assert.equal(getContextColor(90, colors), '\x1b[38;5;196m');
   assert.equal(getQuotaColor(25, colors), '\x1b[38;5;214m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[38;5;97m');
-  assert.equal(getQuotaColor(95, colors), '\x1b[38;5;196m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[38;5;214m');
+  assert.equal(getQuotaColor(95, colors), '\x1b[38;5;214m');
 });
 
 test('getContextColor and getQuotaColor resolve hex color strings', () => {
@@ -216,7 +217,7 @@ test('getContextColor and getQuotaColor resolve hex color strings', () => {
   assert.equal(getContextColor(10, colors), '\x1b[38;2;51;255;0m');
   assert.equal(getContextColor(70, colors), '\x1b[38;2;255;135;215m');
   assert.equal(getQuotaColor(25, colors), '\x1b[38;2;255;176;0m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[38;2;175;135;255m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[38;2;255;176;0m');
 });
 
 test('renderSessionLine includes config counts when present', () => {
@@ -1392,8 +1393,8 @@ test('renderUsageLine uses custom usage palette overrides', () => {
   assert.ok(line, 'should render usage line');
   assert.ok(line.includes('\x1b[36m███'), `expected custom usage bar color, got: ${JSON.stringify(line)}`);
   assert.ok(line.includes('\x1b[36m25%\x1b[0m'), `expected custom usage percentage color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[35m████████'), `expected custom usage warning color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[35m80%\x1b[0m'), `expected custom usage warning percentage color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[36m████████'), `quota bar at 80% should use flat usage color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[36m80%\x1b[0m'), `quota percentage at 80% should use flat usage color, got: ${JSON.stringify(line)}`);
 });
 
 test('renderSessionLine hides usage when showUsage config is false (hybrid toggle)', () => {

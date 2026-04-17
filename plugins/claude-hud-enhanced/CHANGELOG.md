@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.9] - 2026-04-17
+
+### Changed
+- Usage/Weekly quota bars now render in a single flat color (`colors.usage`, bright blue by default) regardless of percent, matching the pre-sync-backup look. The previous threshold-based color change (blue → magenta at 75% → red at 90%) was distracting and duplicative with the percentage text. At-limit state still rendered separately by `critical` color.
+
 ## [0.2.8] - 2026-04-17
 
 ### Changed

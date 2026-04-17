@@ -99,11 +99,7 @@ export function getContextColor(percent, colors) {
         return resolveAnsi(colors?.warning, YELLOW);
     return resolveAnsi(colors?.context, GREEN);
 }
-export function getQuotaColor(percent, colors) {
-    if (percent >= 90)
-        return resolveAnsi(colors?.critical, RED);
-    if (percent >= 75)
-        return resolveAnsi(colors?.usageWarning, BRIGHT_MAGENTA);
+export function getQuotaColor(_percent, colors) {
     return resolveAnsi(colors?.usage, BRIGHT_BLUE);
 }
 export function quotaBar(percent, width = 10, colors) {
