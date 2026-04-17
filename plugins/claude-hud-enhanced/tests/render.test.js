@@ -1147,7 +1147,7 @@ test('renderSessionLine shows 7d reset countdown in text-only mode', () => {
 
   const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('Weekly 85%'), `should include 7d label and percentage: ${line}`);
-  assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in text-only mode: ${line}`);
+  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 7d reset datetime: ${line}`);
 });
 
 test('renderSessionLine respects sevenDayThreshold override', () => {
@@ -1231,7 +1231,7 @@ test('renderUsageLine shows 7d reset countdown in text-only mode', () => {
   const line = stripAnsi(renderUsageLine(ctx));
   assert.ok(line.includes('5h 45%'), `should include 5h text-only usage: ${line}`);
   assert.ok(line.includes('Weekly 85%'), `should include 7d text-only usage: ${line}`);
-  assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in text-only mode: ${line}`);
+  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 7d reset datetime: ${line}`);
 });
 
 test('renderUsageLine translates weekly label when Chinese is enabled', () => {
@@ -1249,7 +1249,7 @@ test('renderUsageLine translates weekly label when Chinese is enabled', () => {
   try {
     const line = stripAnsi(renderUsageLine(ctx) ?? '');
     assert.ok(line.includes('本周'));
-    assert.ok(line.includes('重置剩余'));
+    assert.ok(line.includes('重置于'));
   } finally {
     setLanguage('en');
   }
@@ -1271,7 +1271,7 @@ test('renderUsageLine shows 7d reset countdown in bar mode when above threshold'
   const line = stripAnsi(renderUsageLine(ctx));
   assert.ok(line.includes('45%'), `should include 5h percentage in bar mode: ${line}`);
   assert.ok(line.includes('85%'), `should include 7d percentage: ${line}`);
-  assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in bar mode: ${line}`);
+  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 7d reset datetime in bar mode: ${line}`);
   assert.ok(line.includes('|'), `should render both usage windows above the threshold: ${line}`);
 });
 

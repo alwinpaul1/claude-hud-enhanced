@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.4] - 2026-04-17
+
+### Changed
+- Weekly (7-day) usage reset now shows actual weekday + time (e.g. `(resets Fri 12:30 PM)`) instead of a countdown like `(6d 2h / Weekly)`. Matches the pre-sync-backup behavior. The 5-hour window keeps its shorter `(resets in 1h 58m)` countdown.
+
 ## [0.2.3] - 2026-04-17
 
 ### Changed

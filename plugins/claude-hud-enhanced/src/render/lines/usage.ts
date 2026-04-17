@@ -53,6 +53,7 @@ export function renderUsageLine(ctx: RenderContext): string | null {
       usageBarEnabled,
       barWidth,
       forceLabel: true,
+      resetStyle: "datetime",
     });
     return `${usageLabel} ${weeklyOnlyPart}`;
   }
@@ -75,6 +76,7 @@ export function renderUsageLine(ctx: RenderContext): string | null {
       usageBarEnabled,
       barWidth,
       forceLabel: true,
+      resetStyle: "datetime",
     });
     return `${usageLabel} ${fiveHourPart} | ${sevenDayPart}`;
   }
@@ -101,6 +103,7 @@ function formatUsageWindowPart({
   usageBarEnabled,
   barWidth,
   forceLabel = false,
+  resetStyle = "countdown",
 }: {
   label: string;
   percent: number | null;
@@ -109,21 +112,39 @@ function formatUsageWindowPart({
   usageBarEnabled: boolean;
   barWidth: number;
   forceLabel?: boolean;
+  resetStyle?: "countdown" | "datetime";
 }): string {
   const usageDisplay = formatUsagePercent(percent, colors);
-  const reset = formatResetTime(resetAt);
+  const reset = resetStyle === "datetime"
+    ? formatResetDateTime(resetAt)
+    : formatResetTime(resetAt);
+  const resetPrefix = resetStyle === "datetime"
+    ? t("format.resets")
+    : t("format.resetsIn");
   const styledLabel = label(windowLabel, colors);
 
   if (usageBarEnabled) {
     const body = reset
-      ? `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay} (${t("format.resetsIn")} ${reset})`
+      ? `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay} (${resetPrefix} ${reset})`
       : `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay}`;
     return forceLabel ? `${styledLabel} ${body}` : body;
   }
 
   return reset
-    ? `${styledLabel} ${usageDisplay} (${t("format.resetsIn")} ${reset})`
+    ? `${styledLabel} ${usageDisplay} (${resetPrefix} ${reset})`
     : `${styledLabel} ${usageDisplay}`;
+}
+
+function formatResetDateTime(resetAt: Date | null): string {
+  if (!resetAt) return "";
+  const now = new Date();
+  if (resetAt.getTime() <= now.getTime()) return "";
+  const weekday = resetAt.toLocaleDateString("en-US", { weekday: "short" });
+  const time = resetAt.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${weekday} ${time}`;
 }
 
 function formatResetTime(resetAt: Date | null): string {
