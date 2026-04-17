@@ -1,9 +1,9 @@
-# Claude HUD
+# Claude HUD Enhanced
 
-A Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress. Always visible below your input.
+An enhanced Claude Code plugin that shows what's happening — context usage, active tools, running agents, and todo progress. Always visible below your input.
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-hud?v=2)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-hud)](https://github.com/jarrodwatts/claude-hud/stargazers)
+[![License](https://img.shields.io/github/license/alwinpaul1/claude-hud-enhanced?v=2)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/alwinpaul1/claude-hud-enhanced)](https://github.com/alwinpaul1/claude-hud-enhanced/stargazers)
 
 ![Claude HUD in action](claude-hud-preview-5-2.png)
 
@@ -13,7 +13,7 @@ Inside a Claude Code instance, run the following commands:
 
 **Step 1: Add the marketplace**
 ```
-/plugin marketplace add jarrodwatts/claude-hud
+/plugin marketplace add alwinpaul1/claude-hud-enhanced
 ```
 
 **Step 2: Install the plugin**
@@ -36,7 +36,7 @@ Then run the install command below in that session. This is a [Claude Code platf
 </details>
 
 ```
-/plugin install claude-hud
+/plugin install claude-hud-enhanced
 ```
 
 After that, reload plugins:
@@ -48,7 +48,7 @@ After that, reload plugins:
 
 **Step 3: Configure the statusline**
 ```
-/claude-hud:setup
+/claude-hud-enhanced:setup
 ```
 
 <details>
@@ -58,7 +58,7 @@ On Windows, Node.js LTS is the recommended runtime for Claude HUD. If setup says
 ```powershell
 winget install OpenJS.NodeJS.LTS
 ```
-Then restart your shell and run `/claude-hud:setup` again.
+Then restart your shell and run `/claude-hud-enhanced:setup` again.
 
 </details>
 
@@ -90,7 +90,7 @@ Context █████░░░░░ 45% │ Usage ██░░░░░░░
 - **Line 1** — Model, provider label when positively identified (for example `Bedrock`), project path, git branch
 - **Line 2** — Context bar (green → yellow → red) and usage rate limits
 
-### Optional lines (enable via `/claude-hud:configure`)
+### Optional lines (enable via `/claude-hud-enhanced:configure`)
 ```
 ◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2        ← Tools activity
 ◐ explore [haiku]: Finding auth code (2m 15s)    ← Agent status
@@ -121,7 +121,7 @@ Claude Code → stdin JSON → claude-hud → stdout → displayed in your termi
 Customize your HUD anytime:
 
 ```
-/claude-hud:configure
+/claude-hud-enhanced:configure
 ```
 
 The guided flow handles layout, language, and common display toggles. Advanced overrides such as
@@ -144,9 +144,9 @@ After choosing a preset, you can turn individual elements on or off.
 ### Manual Configuration
 
 Edit `~/.claude/plugins/claude-hud/config.json` directly for advanced settings such as `colors.*`,
-`pathLevels`, and threshold overrides. Running `/claude-hud:configure` preserves those manual settings while still letting you change `language`, layout, and the common guided toggles.
+`pathLevels`, and threshold overrides. Running `/claude-hud-enhanced:configure` preserves those manual settings while still letting you change `language`, layout, and the common guided toggles.
 
-Chinese HUD labels are available as an explicit opt-in. English stays the default unless you choose `中文` in `/claude-hud:configure` or set `language` in config.
+Chinese HUD labels are available as an explicit opt-in. English stays the default unless you choose `中文` in `/claude-hud-enhanced:configure` or set `language` in config.
 
 ### Options
 
@@ -286,7 +286,7 @@ To disable, set `display.showUsage` to `false`.
 **Config not applying?**
 - Check for JSON syntax errors: invalid JSON silently falls back to defaults
 - Ensure valid values: `pathLevels` must be 1, 2, or 3; `lineLayout` must be `expanded` or `compact`
-- Delete config and run `/claude-hud:configure` to regenerate
+- Delete config and run `/claude-hud-enhanced:configure` to regenerate
 
 **Git status missing?**
 - Verify you're in a git repository
@@ -312,8 +312,8 @@ To disable, set `display.showUsage` to `false`.
 ## Development
 
 ```bash
-git clone https://github.com/jarrodwatts/claude-hud
-cd claude-hud
+git clone https://github.com/alwinpaul1/claude-hud-enhanced
+cd claude-hud-enhanced
 npm ci && npm run build
 npm test
 ```
@@ -330,4 +330,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jarrodwatts/claude-hud&type=Date)](https://star-history.com/#jarrodwatts/claude-hud&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=alwinpaul1/claude-hud-enhanced&type=Date)](https://star-history.com/#alwinpaul1/claude-hud-enhanced&Date)

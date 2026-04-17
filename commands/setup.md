@@ -135,7 +135,7 @@ This is a [Claude Code platform limitation](https://github.com/anthropics/claude
    - Otherwise ask the user to install one of these:
      - Node.js LTS from https://nodejs.org/ (recommended on Windows)
      - Bun from https://bun.sh/
-   - After installation, ask the user to restart their shell and re-run `/claude-hud:setup`.
+   - After installation, ask the user to restart their shell and re-run `/claude-hud-enhanced:setup`.
 
 3. Verify the runtime exists:
    ```bash
@@ -184,7 +184,7 @@ Use the macOS/Linux bash command format above, but on Windows prefer `node` firs
      ```powershell
      winget install OpenJS.NodeJS.LTS
      ```
-   - Otherwise ask the user to install either Node.js LTS or Bun, then restart PowerShell and re-run `/claude-hud:setup`.
+   - Otherwise ask the user to install either Node.js LTS or Bun, then restart PowerShell and re-run `/claude-hud-enhanced:setup`.
    - On Windows, prefer Node.js when both are available because Bun is currently unstable for repeated statusLine execution.
 
 3. Check if runtime is bun (by filename). If bun, use `src\index.ts`. Otherwise use `dist\index.js`.
@@ -237,13 +237,13 @@ For example, the saved JSON should contain `\\$(NF-1)` and `\\$0`, not `\$(NF-1)
 After successfully writing the config, tell the user:
 
 > ✅ Config written. **Please restart Claude Code now** — quit and run `claude` again in your terminal.
-> Once restarted, run `/claude-hud:setup` again to complete Step 4 and verify the HUD is working.
+> Once restarted, run `/claude-hud-enhanced:setup` again to complete Step 4 and verify the HUD is working.
 
 **Windows note**: Keep the restart guidance separate from runtime installation guidance.
 - If the user just installed Node.js or Bun, they should restart their shell first so `bun` or `node` is available in `PATH`.
 - After `statusLine` is written successfully, they should fully quit Claude Code and launch a fresh session before judging whether the HUD setup worked.
 
-**Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud:setup` to verify the plugin is still installed.
+**Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud-enhanced:setup` to verify the plugin is still installed.
 
 ## Step 4: Optional Features
 
@@ -284,13 +284,13 @@ Use AskUserQuestion:
 - Question: "Setup complete! The HUD should appear below your input field. Is it working?"
 - Options: "Yes, it's working" / "No, something's wrong"
 
-**If yes**: Ask the user if they'd like to ⭐ star the claude-hud repository on GitHub to support the project. If they agree and `gh` CLI is available, first check whether their `gh` version supports `gh repo star`. If it does, run `gh repo star jarrodwatts/claude-hud`. Otherwise fall back to `gh api -X PUT /user/starred/jarrodwatts/claude-hud`. Only run the star command if they explicitly say yes.
+**If yes**: Ask the user if they'd like to ⭐ star the claude-hud-enhanced repository on GitHub to support the project. If they agree and `gh` CLI is available, first check whether their `gh` version supports `gh repo star`. If it does, run `gh repo star alwinpaul1/claude-hud-enhanced`. Otherwise fall back to `gh api -X PUT /user/starred/alwinpaul1/claude-hud-enhanced`. Only run the star command if they explicitly say yes.
 
 **If no**: Debug systematically:
 
 1. **Restart Claude Code** (most common cause on macOS):
     - The statusLine config requires a restart to take effect
-    - Quit Claude Code completely and run `claude` again, then re-run `/claude-hud:setup` to verify
+    - Quit Claude Code completely and run `claude` again, then re-run `/claude-hud-enhanced:setup` to verify
     - If you've already restarted, continue below
 
 2. **Verify config was applied**:

@@ -4,6 +4,15 @@ All notable changes to Claude HUD will be documented in this file.
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-04-17
+
+### Changed
+- Full synchronization with upstream `jarrodwatts/claude-hud` v0.0.12, adopting the rewritten multi-line render architecture (`render/lines/*`), native stdin cost field, offline cost estimator, i18n (English + Chinese), session token summary, output-style toggle, OSC 8 clickable git file diffs, `vm_stat`-based macOS memory, narrow-terminal width handling, bounded stdin reads, and output speed tracking.
+- Rebranded manifest, commands, and README to `claude-hud-enhanced` while preserving upstream internal debug/log identifiers (`[claude-hud:*]`) and the existing `~/.claude/plugins/claude-hud/` config directory for backward compatibility.
+
+### Removed
+- Deprecated legacy patches now superseded upstream: custom 120s failure cache TTL, `api.claude.ai` endpoint removal, and hand-rolled plan-name stripping are no longer needed — upstream reads `rate_limits` from stdin, offers `display.modelFormat`, and dropped `usage-api.ts` entirely.
+
 ## [0.0.12] - 2026-04-04
 
 ### Added
