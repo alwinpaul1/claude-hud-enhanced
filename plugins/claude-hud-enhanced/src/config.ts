@@ -145,7 +145,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     modelFormat: 'full',
     modelOverride: '',
     customLine: '',
-    wrapLines: false,
+    wrapLines: true,
   },
   colors: {
     context: 'green',

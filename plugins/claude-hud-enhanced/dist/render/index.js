@@ -398,10 +398,10 @@ export function render(ctx) {
         lines.push(...activityLines);
     }
     const physicalLines = lines.flatMap(line => line.split('\n'));
-    const wrapLines = ctx.config?.display?.wrapLines ?? false;
+    const wrapLines = ctx.config?.display?.wrapLines ?? true;
     const visibleLines = wrapLines
-        ? physicalLines.flatMap(line => wrapLineToWidth(line, terminalWidth))
-        : physicalLines;
+        ? physicalLines
+        : physicalLines.flatMap(line => wrapLineToWidth(line, terminalWidth));
     for (const line of visibleLines) {
         const outputLine = `${RESET}${line}`;
         console.log(outputLine);

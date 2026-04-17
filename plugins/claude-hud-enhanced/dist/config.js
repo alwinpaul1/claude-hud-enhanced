@@ -54,7 +54,7 @@ export const DEFAULT_CONFIG = {
         modelFormat: 'full',
         modelOverride: '',
         customLine: '',
-        wrapLines: false,
+        wrapLines: true,
     },
     colors: {
         context: 'green',
