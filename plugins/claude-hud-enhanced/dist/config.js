@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG = {
         showModel: true,
         showProject: true,
         showContextBar: true,
-        contextValue: 'percent',
+        contextValue: 'both',
         showConfigCounts: false,
         showClaudeMdCount: true,
         showRulesCount: false,

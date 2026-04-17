@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.25] - 2026-04-17
+
+### Changed
+- `display.contextValue` default flipped from `'percent'` to `'both'`. The context bar now shows `29% (200k/1.0M)` out of the box instead of just `29%`. Set `contextValue: 'percent'` to get the old percentage-only display, or `'tokens'` / `'remaining'` for the other modes.
+
 ## [0.2.24] - 2026-04-17
 
 ### Changed
