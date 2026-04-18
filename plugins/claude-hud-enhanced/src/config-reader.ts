@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { createDebug } from './debug.js';
 import { getClaudeConfigDir, getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
 
@@ -143,7 +143,16 @@ export function detectSessionEffort(): string | undefined {
     if (process.platform === 'linux') {
       cmdline = fs.readFileSync(`/proc/${ppid}/cmdline`, 'utf8').replace(/\0/g, ' ');
     } else if (process.platform === 'darwin') {
-      cmdline = execSync(`ps -o args= -p ${ppid}`, { encoding: 'utf8', timeout: 500 }).trim();
+      cmdline = execFileSync('/bin/ps', ['-o', 'args=', '-p', String(ppid)], {
+        encoding: 'utf8',
+        timeout: 500,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } else if (process.platform === 'win32') {
+      cmdline = execSync(
+        `powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId=${ppid}\\").CommandLine"`,
+        { encoding: 'utf8', timeout: 1500 }
+      ).trim();
     }
 
     if (cmdline) {

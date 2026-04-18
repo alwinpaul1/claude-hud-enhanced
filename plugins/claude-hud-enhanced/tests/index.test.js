@@ -311,7 +311,6 @@ test("main uses stdin-native rate_limits when available", async () => {
       hooksCount: 0,
     }),
     getGitStatus: async () => null,
-    getUsageWithCache: () => null,
     render: (ctx) => {
       renderedContext = ctx;
     },
@@ -344,6 +343,7 @@ test("main leaves usageData null when stdin rate_limits are absent", async () =>
       hooksCount: 0,
     }),
     getGitStatus: async () => null,
+    getUsageWithCache: () => null,
     render: (ctx) => {
       renderedContext = ctx;
     },
