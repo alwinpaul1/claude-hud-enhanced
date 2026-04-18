@@ -268,9 +268,10 @@ function computeConfigCountsFresh(cwd) {
     }
     hooksCount += countHooksInFile(userSettings);
     outputStyle = readStringSetting(userSettings, 'outputStyle');
-    const effortLevel = readStringSetting(userSettings, 'effortLevel');
+    let effortLevel = readStringSetting(userSettings, 'effortLevel');
     const userLocalSettings = path.join(claudeDir, 'settings.local.json');
     outputStyle = readStringSetting(userLocalSettings, 'outputStyle') ?? outputStyle;
+    effortLevel = readStringSetting(userLocalSettings, 'effortLevel') ?? effortLevel;
     // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
     const userClaudeJson = getClaudeConfigJsonPath(homeDir);
     for (const name of getMcpServerNames(userClaudeJson)) {
