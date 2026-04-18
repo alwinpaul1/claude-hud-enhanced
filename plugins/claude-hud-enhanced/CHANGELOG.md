@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.28] - 2026-04-18
+
+### Added
+- Show thinking/effort level (`high`, `medium`, `low`) next to model and plan: `[Opus 4.7 (1M context) | Max 5x | high]`. Reads `effortLevel` from `~/.claude/settings.json`. New `display.showThinkingLevel` toggle (default `true`).
+
 ## [0.2.27] - 2026-04-18
 
 ### Changed

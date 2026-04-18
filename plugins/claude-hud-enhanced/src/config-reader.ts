@@ -13,6 +13,7 @@ export interface ConfigCounts {
   mcpCount: number;
   hooksCount: number;
   outputStyle?: string;
+  effortLevel?: string;
 }
 
 interface SentinelState {
@@ -316,6 +317,7 @@ function computeConfigCountsFresh(cwd?: string): ConfigCounts {
   }
   hooksCount += countHooksInFile(userSettings);
   outputStyle = readStringSetting(userSettings, 'outputStyle');
+  const effortLevel = readStringSetting(userSettings, 'effortLevel');
 
   const userLocalSettings = path.join(claudeDir, 'settings.local.json');
   outputStyle = readStringSetting(userLocalSettings, 'outputStyle') ?? outputStyle;
@@ -406,7 +408,7 @@ function computeConfigCountsFresh(cwd?: string): ConfigCounts {
   // A server with the same name in both user and project scope counts as 2 (separate configs).
   const mcpCount = userMcpServers.size + projectMcpServers.size;
 
-  return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle };
+  return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, effortLevel };
 }
 
 export async function countConfigs(cwd?: string): Promise<ConfigCounts> {

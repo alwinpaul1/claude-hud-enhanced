@@ -29,7 +29,8 @@ export function renderSessionLine(ctx) {
     // Model and context bar (FIRST)
     const providerLabel = getProviderLabel(ctx.stdin);
     const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
-    const qualifiers = [providerLabel, planLabel].filter((q) => !!q);
+    const effortLabel = display?.showThinkingLevel !== false && ctx.effortLevel ? ctx.effortLevel : null;
+    const qualifiers = [providerLabel, planLabel, effortLabel].filter((q) => !!q);
     const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
     if (display?.showModel !== false && display?.showContextBar !== false) {
         parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${bar} ${contextValueDisplay}`);

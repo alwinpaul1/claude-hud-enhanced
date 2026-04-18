@@ -97,6 +97,7 @@ export interface HudConfig {
     showSessionTokens: boolean;
     showOutputStyle: boolean;
     showPlan: boolean;
+    showThinkingLevel: boolean;
     autocompactBuffer: AutocompactBufferMode;
     usageThreshold: number;
     sevenDayThreshold: number;
@@ -148,6 +149,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showSessionTokens: false,
     showOutputStyle: true,
     showPlan: true,
+    showThinkingLevel: true,
     autocompactBuffer: 'enabled',
     usageThreshold: 0,
     sevenDayThreshold: 80,
@@ -398,6 +400,9 @@ showTokenBreakdown: typeof migrated.display?.showTokenBreakdown === 'boolean'
     showPlan: typeof migrated.display?.showPlan === 'boolean'
       ? migrated.display.showPlan
       : DEFAULT_CONFIG.display.showPlan,
+    showThinkingLevel: typeof migrated.display?.showThinkingLevel === 'boolean'
+      ? migrated.display.showThinkingLevel
+      : DEFAULT_CONFIG.display.showThinkingLevel,
     autocompactBuffer: validateAutocompactBuffer(migrated.display?.autocompactBuffer)
       ? migrated.display.autocompactBuffer
       : DEFAULT_CONFIG.display.autocompactBuffer,
