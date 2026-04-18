@@ -2,6 +2,12 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.32] - 2026-04-18
+
+### Fixed
+- CI failure on Node 20/Linux: Added `detectSessionEffort: () => undefined` mock to all 9 partial `MainDeps` test stubs in `index.test.js`. The real `detectSessionEffort` reads `/proc/{ppid}/cmdline` which behaves differently on CI runners vs local dev.
+- Windows session effort detection: Added `Get-CimInstance Win32_Process` PowerShell fallback for reading parent process command line.
+
 ## [0.2.31] - 2026-04-18
 
 ### Improved (via Codex + Claude collab)
