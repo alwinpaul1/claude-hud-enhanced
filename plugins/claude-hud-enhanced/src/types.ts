@@ -114,5 +114,4 @@ export interface RenderContext {
   outputStyle?: string;
   claudeCodeVersion?: string;
   planLabel: string | null;
-  effortLevel?: string;
 }

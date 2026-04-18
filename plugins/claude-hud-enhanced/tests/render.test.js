@@ -14,7 +14,7 @@ import { renderMemoryLine } from '../dist/render/lines/memory.js';
 import { renderIdentityLine } from '../dist/render/lines/identity.js';
 import { renderEnvironmentLine } from '../dist/render/lines/environment.js';
 import { renderSessionTokensLine } from '../dist/render/lines/session-tokens.js';
-import { effortDisplay, getContextColor, getQuotaColor } from '../dist/render/colors.js';
+import { getContextColor, getQuotaColor } from '../dist/render/colors.js';
 import { setLanguage } from '../dist/i18n/index.js';
 
 function stripAnsi(str) {
@@ -361,21 +361,6 @@ test('renderSessionLine applies modelOverride', () => {
   assert.ok(!line.includes('Claude Opus'));
 });
 
-test('effortDisplay uses semantic colors for low, medium, high tiers', () => {
-  assert.equal(effortDisplay('low'), '\x1b[31m⚙ low\x1b[0m');
-  assert.equal(effortDisplay('medium'), '\x1b[33m⚙ medium\x1b[0m');
-  assert.equal(effortDisplay('high'), '\x1b[32m⚙ high\x1b[0m');
-  assert.equal(effortDisplay('xhigh'), '\x1b[32m⚙ xhigh\x1b[0m');
-  assert.equal(effortDisplay('max'), '\x1b[32m⚙ max\x1b[0m');
-});
-
-test('renderSessionLine shows effort badge outside the model bracket', () => {
-  const ctx = baseContext();
-  ctx.effortLevel = 'medium';
-  const line = stripAnsi(renderSessionLine(ctx));
-  assert.ok(line.includes('[Opus] ⚙ medium'));
-});
-
 test('renderProjectLine includes session name when showSessionName is true', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
@@ -392,14 +377,6 @@ test('renderProjectLine includes Claude Code version when enabled', () => {
   ctx.claudeCodeVersion = '2.1.81';
   const line = stripAnsi(renderProjectLine(ctx));
   assert.ok(line.includes('CC v2.1.81'));
-});
-
-test('renderProjectLine shows effort badge outside the model bracket', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.effortLevel = 'high';
-  const line = stripAnsi(renderProjectLine(ctx) ?? '');
-  assert.ok(line.includes('[Opus] ⚙ high'));
 });
 
 test('renderMemoryLine shows approximate system RAM usage in expanded layout when enabled', () => {

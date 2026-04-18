@@ -1,7 +1,7 @@
 import { readStdin, getUsageFromStdin, getUsageWithCache } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
-import { countConfigs, detectSessionEffort } from "./config-reader.js";
+import { countConfigs } from "./config-reader.js";
 import { getGitStatus } from "./git.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
@@ -19,7 +19,6 @@ export type MainDeps = {
   getUsageWithCache: typeof getUsageWithCache;
   parseTranscript: typeof parseTranscript;
   countConfigs: typeof countConfigs;
-  detectSessionEffort: typeof detectSessionEffort;
   getGitStatus: typeof getGitStatus;
   loadConfig: typeof loadConfig;
   parseExtraCmdArg: typeof parseExtraCmdArg;
@@ -39,7 +38,6 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     getUsageWithCache,
     parseTranscript,
     countConfigs,
-    detectSessionEffort,
     getGitStatus,
     loadConfig,
     parseExtraCmdArg,
@@ -71,10 +69,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     const transcriptPath = stdin.transcript_path ?? "";
     const transcript = await deps.parseTranscript(transcriptPath);
 
-    const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, effortLevel: settingsEffort } =
+    const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } =
       await deps.countConfigs(stdin.cwd);
-    const sessionEffort = deps.detectSessionEffort();
-    const effortLevel = sessionEffort ?? settingsEffort;
 
     const config = await deps.loadConfig();
     setLanguage(config.language);
@@ -121,7 +117,6 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       outputStyle,
       claudeCodeVersion,
       planLabel,
-      effortLevel,
     };
 
     deps.render(ctx);

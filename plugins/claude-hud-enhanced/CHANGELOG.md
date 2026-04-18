@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.33] - 2026-04-18
+
+### Removed
+- **Effort/thinking level display** — removed entirely. Claude Code does not expose effort level through stdin (7+ open GitHub issues requesting it), and `settings.json` is unreliable (the "max" and "xhigh" values aren't serialized due to a Claude Code bug). Removed: `detectSessionEffort()`, `effortDisplay()`, `showThinkingLevel` config, `effortLevel` from `ConfigCounts`, and all related code/tests. Will re-add when Anthropic ships an `effort` field in the statusline stdin contract.
+
 ## [0.2.32] - 2026-04-18
 
 ### Fixed

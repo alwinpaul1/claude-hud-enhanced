@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getModelName, formatModelName, getProviderLabel } from '../../stdin.js';
-import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor, effortDisplay } from '../colors.js';
+import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor } from '../colors.js';
 import { renderCostEstimate } from './cost.js';
 function hyperlink(uri, text) {
     const esc = '\x1b';
@@ -18,10 +18,7 @@ export function renderProjectLine(ctx) {
         const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
         const qualifiers = [providerLabel, planLabel].filter((q) => !!q);
         const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
-        const effortSuffix = display?.showThinkingLevel !== false && ctx.effortLevel
-            ? ` ${effortDisplay(ctx.effortLevel, colors)}`
-            : '';
-        parts.push(`${modelColor(`[${modelDisplay}]`, colors)}${effortSuffix}`);
+        parts.push(modelColor(`[${modelDisplay}]`, colors));
     }
     let projectPart = null;
     if (display?.showProject !== false && ctx.stdin.cwd) {

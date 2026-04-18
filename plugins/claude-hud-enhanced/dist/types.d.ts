@@ -101,6 +101,5 @@ export interface RenderContext {
     outputStyle?: string;
     claudeCodeVersion?: string;
     planLabel: string | null;
-    effortLevel?: string;
 }
 //# sourceMappingURL=types.d.ts.map

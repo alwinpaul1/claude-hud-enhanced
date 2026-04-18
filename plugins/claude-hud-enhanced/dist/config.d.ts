@@ -67,7 +67,6 @@ export interface HudConfig {
         showSessionTokens: boolean;
         showOutputStyle: boolean;
         showPlan: boolean;
-        showThinkingLevel: boolean;
         autocompactBuffer: AutocompactBufferMode;
         usageThreshold: number;
         sevenDayThreshold: number;

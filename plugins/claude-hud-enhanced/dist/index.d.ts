@@ -1,7 +1,7 @@
 import { readStdin, getUsageFromStdin, getUsageWithCache } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
-import { countConfigs, detectSessionEffort } from "./config-reader.js";
+import { countConfigs } from "./config-reader.js";
 import { getGitStatus } from "./git.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
@@ -14,7 +14,6 @@ export type MainDeps = {
     getUsageWithCache: typeof getUsageWithCache;
     parseTranscript: typeof parseTranscript;
     countConfigs: typeof countConfigs;
-    detectSessionEffort: typeof detectSessionEffort;
     getGitStatus: typeof getGitStatus;
     loadConfig: typeof loadConfig;
     parseExtraCmdArg: typeof parseExtraCmdArg;

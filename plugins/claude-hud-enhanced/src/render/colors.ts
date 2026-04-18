@@ -116,22 +116,6 @@ export function critical(text: string, colors?: Partial<HudColorOverrides>): str
   return colorize(text, resolveAnsi(colors?.critical, RED));
 }
 
-export function effortDisplay(level: string, colors?: Partial<HudColorOverrides>): string {
-  const normalized = level.toLowerCase();
-  switch (normalized) {
-    case 'high':
-    case 'xhigh':
-    case 'max':
-      return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.context, GREEN));
-    case 'low':
-      return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.critical, RED));
-    case 'medium':
-      return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.warning, YELLOW));
-    default:
-      return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.label, DIM));
-  }
-}
-
 export function getContextColor(percent: number, colors?: Partial<HudColorOverrides>): string {
   if (percent >= 85) return resolveAnsi(colors?.critical, RED);
   if (percent >= 70) return resolveAnsi(colors?.warning, YELLOW);

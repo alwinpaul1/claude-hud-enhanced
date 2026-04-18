@@ -57,7 +57,6 @@ test("main logs an error when dependencies throw", async () => {
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     render: () => {},
@@ -81,7 +80,6 @@ test("main logs unknown error for non-Error throws", async () => {
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     render: () => {},
@@ -152,7 +150,6 @@ test("main executes the happy path with default dependencies", async () => {
         hooksCount: 0,
         outputStyle: "tech-leader",
       }),
-      detectSessionEffort: () => undefined,
       getGitStatus: async () => null,
       getUsageWithCache: () => null,
       render: (ctx) => {
@@ -165,35 +162,6 @@ test("main executes the happy path with default dependencies", async () => {
 
   assert.equal(renderedContext?.sessionDuration, "1m");
   assert.equal(renderedContext?.outputStyle, "tech-leader");
-});
-
-test("main prefers session effort over settings effort", async () => {
-  let renderedContext;
-
-  await main({
-    readStdin: async () => ({
-      model: { display_name: "Opus" },
-      context_window: {
-        context_window_size: 100,
-        current_usage: { input_tokens: 10 },
-      },
-    }),
-    parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
-    countConfigs: async () => ({
-      claudeMdCount: 0,
-      rulesCount: 0,
-      mcpCount: 0,
-      hooksCount: 0,
-      effortLevel: "high",
-    }),
-    detectSessionEffort: () => "low",
-    getGitStatus: async () => null,
-    render: (ctx) => {
-      renderedContext = ctx;
-    },
-  });
-
-  assert.equal(renderedContext?.effortLevel, "low");
 });
 
 test("main includes git status in render context", async () => {
@@ -215,7 +183,6 @@ test("main includes git status in render context", async () => {
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => ({
       branch: "feature/test",
       isDirty: false,
@@ -282,7 +249,6 @@ test("main includes usageData in render context", async () => {
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     render: (ctx) => {
       renderedContext = ctx;
@@ -315,7 +281,6 @@ test("main uses stdin-native rate_limits when available", async () => {
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     render: (ctx) => {
       renderedContext = ctx;
@@ -348,7 +313,6 @@ test("main leaves usageData null when stdin rate_limits are absent", async () =>
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     render: (ctx) => {
@@ -378,7 +342,6 @@ test("main includes Claude Code version in render context only when enabled", as
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     loadConfig: async () => ({
@@ -441,7 +404,6 @@ test("main skips Claude Code version lookup when disabled", async () => {
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     loadConfig: async () => ({
@@ -508,7 +470,6 @@ test("main includes memoryUsage in render context only for expanded layout when 
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     loadConfig: async () => ({
@@ -571,7 +532,6 @@ test("main skips memoryUsage lookup for compact layout even when enabled", async
       mcpCount: 0,
       hooksCount: 0,
     }),
-    detectSessionEffort: () => undefined,
     getGitStatus: async () => null,
     getUsageWithCache: () => null,
     loadConfig: async () => ({

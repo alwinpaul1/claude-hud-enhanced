@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'node:crypto';
-import { execFileSync, execSync } from 'node:child_process';
 import { createDebug } from './debug.js';
 import { getClaudeConfigDir, getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
 const debug = createDebug('config');
@@ -15,7 +14,6 @@ const CONFIG_COUNTS_SHAPE = {
     mcpCount: true,
     hooksCount: true,
     outputStyle: true,
-    effortLevel: true,
 };
 const CONFIG_CACHE_VERSION = Object.keys(CONFIG_COUNTS_SHAPE).sort().join(',');
 function getMcpServerNames(filePath) {
@@ -92,49 +90,6 @@ function readStringSetting(filePath, key) {
         debug(`Failed to read ${key} from ${filePath}:`, error);
     }
     return undefined;
-}
-let cachedSessionEffort = null;
-/**
- * Detect --effort flag from the parent Claude Code process args.
- * Cached per process lifetime since ppid doesn't change within a session.
- */
-export function detectSessionEffort() {
-    if (cachedSessionEffort !== null) {
-        return cachedSessionEffort;
-    }
-    cachedSessionEffort = undefined;
-    try {
-        const ppid = process.ppid;
-        if (!ppid || ppid <= 1)
-            return undefined;
-        let cmdline;
-        if (process.platform === 'linux') {
-            cmdline = fs.readFileSync(`/proc/${ppid}/cmdline`, 'utf8').replace(/\0/g, ' ');
-        }
-        else if (process.platform === 'darwin') {
-            cmdline = execFileSync('/bin/ps', ['-o', 'args=', '-p', String(ppid)], {
-                encoding: 'utf8',
-                timeout: 500,
-                stdio: ['ignore', 'pipe', 'ignore'],
-            }).trim();
-        }
-        else if (process.platform === 'win32') {
-            cmdline = execSync(`powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId=${ppid}\\").CommandLine"`, { encoding: 'utf8', timeout: 1500 }).trim();
-        }
-        if (cmdline) {
-            const match = cmdline.match(/--effort(?:=|\s+)(low|medium|high|xhigh|max)/i);
-            if (match) {
-                cachedSessionEffort = match[1].toLowerCase();
-            }
-        }
-    }
-    catch {
-        debug('Failed to detect session effort from parent process');
-    }
-    return cachedSessionEffort;
-}
-export function _resetSessionEffortCacheForTests() {
-    cachedSessionEffort = null;
 }
 function countRulesInDir(rulesDir) {
     if (!fs.existsSync(rulesDir))
@@ -327,10 +282,8 @@ function computeConfigCountsFresh(cwd) {
     }
     hooksCount += countHooksInFile(userSettings);
     outputStyle = readStringSetting(userSettings, 'outputStyle');
-    let effortLevel = readStringSetting(userSettings, 'effortLevel');
     const userLocalSettings = path.join(claudeDir, 'settings.local.json');
     outputStyle = readStringSetting(userLocalSettings, 'outputStyle') ?? outputStyle;
-    effortLevel = readStringSetting(userLocalSettings, 'effortLevel') ?? effortLevel;
     // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
     const userClaudeJson = getClaudeConfigJsonPath(homeDir);
     for (const name of getMcpServerNames(userClaudeJson)) {
@@ -380,7 +333,6 @@ function computeConfigCountsFresh(cwd) {
             }
             hooksCount += countHooksInFile(projectSettings);
             outputStyle = readStringSetting(projectSettings, 'outputStyle') ?? outputStyle;
-            effortLevel = readStringSetting(projectSettings, 'effortLevel') ?? effortLevel;
         }
         // {cwd}/.claude/settings.local.json (local project settings)
         const localSettings = path.join(cwd, '.claude', 'settings.local.json');
@@ -389,7 +341,6 @@ function computeConfigCountsFresh(cwd) {
         }
         hooksCount += countHooksInFile(localSettings);
         outputStyle = readStringSetting(localSettings, 'outputStyle') ?? outputStyle;
-        effortLevel = readStringSetting(localSettings, 'effortLevel') ?? effortLevel;
         // Get disabled .mcp.json servers from settings.local.json
         const disabledMcpJsonServers = getDisabledMcpServers(localSettings, 'disabledMcpjsonServers');
         for (const name of disabledMcpJsonServers) {
@@ -404,7 +355,7 @@ function computeConfigCountsFresh(cwd) {
     // Note: Deduplication only occurs within each scope, not across scopes.
     // A server with the same name in both user and project scope counts as 2 (separate configs).
     const mcpCount = userMcpServers.size + projectMcpServers.size;
-    return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, effortLevel };
+    return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle };
 }
 export async function countConfigs(cwd) {
     const homeDir = os.homedir();
