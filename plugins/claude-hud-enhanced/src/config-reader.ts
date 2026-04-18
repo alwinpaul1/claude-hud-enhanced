@@ -382,6 +382,7 @@ function computeConfigCountsFresh(cwd?: string): ConfigCounts {
       }
       hooksCount += countHooksInFile(projectSettings);
       outputStyle = readStringSetting(projectSettings, 'outputStyle') ?? outputStyle;
+      effortLevel = readStringSetting(projectSettings, 'effortLevel') ?? effortLevel;
     }
 
     // {cwd}/.claude/settings.local.json (local project settings)
@@ -391,6 +392,7 @@ function computeConfigCountsFresh(cwd?: string): ConfigCounts {
     }
     hooksCount += countHooksInFile(localSettings);
     outputStyle = readStringSetting(localSettings, 'outputStyle') ?? outputStyle;
+    effortLevel = readStringSetting(localSettings, 'effortLevel') ?? effortLevel;
 
     // Get disabled .mcp.json servers from settings.local.json
     const disabledMcpJsonServers = getDisabledMcpServers(localSettings, 'disabledMcpjsonServers');
