@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.29] - 2026-04-18
+
+### Fixed
+- Read `effortLevel` from the full settings cascade: `~/.claude/settings.json` → `settings.local.json` → `./.claude/settings.json` (project) → `./.claude/settings.local.json` (project local). Each layer overrides the previous.
+
 ## [0.2.28] - 2026-04-18
 
 ### Added
