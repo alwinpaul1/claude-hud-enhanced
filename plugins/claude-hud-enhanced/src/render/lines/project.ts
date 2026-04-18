@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { RenderContext } from '../../types.js';
 import { getModelName, formatModelName, getProviderLabel } from '../../stdin.js';
-import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor } from '../colors.js';
+import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor, effortDisplay } from '../colors.js';
 import { t } from '../../i18n/index.js';
 import { renderCostEstimate } from './cost.js';
 
@@ -21,10 +21,12 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     const model = formatModelName(getModelName(ctx.stdin), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
     const providerLabel = getProviderLabel(ctx.stdin);
     const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
-    const effortLabel = display?.showThinkingLevel !== false && ctx.effortLevel ? ctx.effortLevel : null;
-    const qualifiers = [providerLabel, planLabel, effortLabel].filter((q): q is string => !!q);
+    const qualifiers = [providerLabel, planLabel].filter((q): q is string => !!q);
     const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
-    parts.push(modelColor(`[${modelDisplay}]`, colors));
+    const effortSuffix = display?.showThinkingLevel !== false && ctx.effortLevel
+      ? ` ${effortDisplay(ctx.effortLevel, colors)}`
+      : '';
+    parts.push(`${modelColor(`[${modelDisplay}]`, colors)}${effortSuffix}`);
   }
 
   let projectPart: string | null = null;

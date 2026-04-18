@@ -15,6 +15,7 @@ export declare function label(text: string, colors?: Partial<HudColorOverrides>)
 export declare function custom(text: string, colors?: Partial<HudColorOverrides>): string;
 export declare function warning(text: string, colors?: Partial<HudColorOverrides>): string;
 export declare function critical(text: string, colors?: Partial<HudColorOverrides>): string;
+export declare function effortDisplay(level: string, colors?: Partial<HudColorOverrides>): string;
 export declare function getContextColor(percent: number, colors?: Partial<HudColorOverrides>): string;
 export declare function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string;
 export declare function quotaBar(percent: number, width?: number, colors?: Partial<HudColorOverrides>): string;

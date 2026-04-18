@@ -1,6 +1,6 @@
 {
   "name": "claude-hud-enhanced",
-  "version": "0.2.30",
+  "version": "0.2.31",
   "description": "Enhanced real-time statusline HUD for Claude Code - color themes, accurate token display, context health, tool activity, agent tracking, and todo progress",
   "type": "module",
   "main": "dist/index.js",

@@ -92,6 +92,21 @@ export function warning(text, colors) {
 export function critical(text, colors) {
     return colorize(text, resolveAnsi(colors?.critical, RED));
 }
+export function effortDisplay(level, colors) {
+    const normalized = level.toLowerCase();
+    switch (normalized) {
+        case 'high':
+        case 'xhigh':
+        case 'max':
+            return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.context, GREEN));
+        case 'low':
+            return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.critical, RED));
+        case 'medium':
+            return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.warning, YELLOW));
+        default:
+            return colorize(`⚙ ${normalized}`, resolveAnsi(colors?.label, DIM));
+    }
+}
 export function getContextColor(percent, colors) {
     if (percent >= 85)
         return resolveAnsi(colors?.critical, RED);

@@ -1,7 +1,7 @@
 import { readStdin, getUsageFromStdin, getUsageWithCache } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
-import { countConfigs } from "./config-reader.js";
+import { countConfigs, detectSessionEffort } from "./config-reader.js";
 import { getGitStatus } from "./git.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
@@ -18,6 +18,7 @@ export async function main(overrides = {}) {
         getUsageWithCache,
         parseTranscript,
         countConfigs,
+        detectSessionEffort,
         getGitStatus,
         loadConfig,
         parseExtraCmdArg,
@@ -45,7 +46,9 @@ export async function main(overrides = {}) {
         }
         const transcriptPath = stdin.transcript_path ?? "";
         const transcript = await deps.parseTranscript(transcriptPath);
-        const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, effortLevel } = await deps.countConfigs(stdin.cwd);
+        const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, effortLevel: settingsEffort } = await deps.countConfigs(stdin.cwd);
+        const sessionEffort = deps.detectSessionEffort();
+        const effortLevel = sessionEffort ?? settingsEffort;
         const config = await deps.loadConfig();
         setLanguage(config.language);
         const gitStatus = config.gitStatus.enabled

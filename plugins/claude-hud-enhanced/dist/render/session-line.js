@@ -1,6 +1,6 @@
 import { isLimitReached } from '../types.js';
 import { getContextPercent, getBufferedPercent, getModelName, formatModelName, getProviderLabel, getTotalTokens } from '../stdin.js';
-import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, getContextColor, getQuotaColor, quotaBar, custom as customColor, RESET } from './colors.js';
+import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, getContextColor, getQuotaColor, quotaBar, custom as customColor, effortDisplay, RESET } from './colors.js';
 import { getAdaptiveBarWidth } from '../utils/terminal.js';
 import { renderCostEstimate } from './lines/cost.js';
 import { t } from '../i18n/index.js';
@@ -29,17 +29,19 @@ export function renderSessionLine(ctx) {
     // Model and context bar (FIRST)
     const providerLabel = getProviderLabel(ctx.stdin);
     const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
-    const effortLabel = display?.showThinkingLevel !== false && ctx.effortLevel ? ctx.effortLevel : null;
-    const qualifiers = [providerLabel, planLabel, effortLabel].filter((q) => !!q);
+    const qualifiers = [providerLabel, planLabel].filter((q) => !!q);
     const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
+    const effortSuffix = display?.showThinkingLevel !== false && ctx.effortLevel
+        ? ` ${effortDisplay(ctx.effortLevel, colors)}`
+        : '';
     if (display?.showModel !== false && display?.showContextBar !== false) {
-        parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${bar} ${contextValueDisplay}`);
+        parts.push(`${modelColor(`[${modelDisplay}]`, colors)}${effortSuffix} ${bar} ${contextValueDisplay}`);
     }
     else if (display?.showModel !== false) {
-        parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${contextValueDisplay}`);
+        parts.push(`${modelColor(`[${modelDisplay}]`, colors)}${effortSuffix} ${contextValueDisplay}`);
     }
     else if (display?.showContextBar !== false) {
-        parts.push(`${bar} ${contextValueDisplay}`);
+        parts.push(`${effortSuffix ? effortSuffix.trimStart() + ' ' : ''}${bar} ${contextValueDisplay}`);
     }
     else {
         parts.push(contextValueDisplay);

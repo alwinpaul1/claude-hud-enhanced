@@ -2,6 +2,13 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.31] - 2026-04-18
+
+### Improved (via Codex + Claude collab)
+- **Auto-versioned config cache**: Replaced manual `CONFIG_CACHE_VERSION` number with TypeScript-enforced `CONFIG_COUNTS_SHAPE` mapped type. Adding a field to `ConfigCounts` without updating the shape object causes a build error, and the derived cache key changes automatically — no manual bump needed.
+- **Session-level effort detection**: New `detectSessionEffort()` reads the parent Claude Code process args via `/proc/{ppid}/cmdline` (Linux) or `ps -o args=` (macOS) to detect `--effort` flag overrides. Session effort takes priority over the persistent `settings.json` value.
+- **Visual effort display**: Effort level now renders with a color-coded gear icon outside the model brackets: `[Opus 4.7 | Max 5x] ⚙ high`. Colors: green for high, yellow for medium, red for low.
+
 ## [0.2.30] - 2026-04-18
 
 ### Fixed

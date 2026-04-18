@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { createDebug } from './debug.js';
 import { getClaudeConfigDir, getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
 
@@ -28,14 +29,24 @@ interface ConfigCacheKey {
 }
 
 interface ConfigCacheFile {
-  version?: number;
+  version?: number | string;
   key: ConfigCacheKey;
   data: ConfigCounts;
 }
 
-// Bump when ConfigCounts changes shape so stale caches from older plugin
-// versions are automatically rejected.
-const CONFIG_CACHE_VERSION = 2;
+// TypeScript enforces that every ConfigCounts key is listed here.
+// Adding a field to ConfigCounts without updating this object causes a build error,
+// and the derived cache version string changes automatically — no manual bump needed.
+const CONFIG_COUNTS_SHAPE: { [K in keyof Required<ConfigCounts>]: true } = {
+  claudeMdCount: true,
+  rulesCount: true,
+  mcpCount: true,
+  hooksCount: true,
+  outputStyle: true,
+  effortLevel: true,
+};
+
+const CONFIG_CACHE_VERSION = Object.keys(CONFIG_COUNTS_SHAPE).sort().join(',');
 
 // Valid keys for disabled MCP arrays in config files
 type DisabledMcpKey = 'disabledMcpServers' | 'disabledMcpjsonServers';
@@ -110,6 +121,46 @@ function readStringSetting(filePath: string, key: string): string | undefined {
     debug(`Failed to read ${key} from ${filePath}:`, error);
   }
   return undefined;
+}
+
+let cachedSessionEffort: string | undefined | null = null;
+
+/**
+ * Detect --effort flag from the parent Claude Code process args.
+ * Cached per process lifetime since ppid doesn't change within a session.
+ */
+export function detectSessionEffort(): string | undefined {
+  if (cachedSessionEffort !== null) {
+    return cachedSessionEffort;
+  }
+
+  cachedSessionEffort = undefined;
+  try {
+    const ppid = process.ppid;
+    if (!ppid || ppid <= 1) return undefined;
+
+    let cmdline: string | undefined;
+    if (process.platform === 'linux') {
+      cmdline = fs.readFileSync(`/proc/${ppid}/cmdline`, 'utf8').replace(/\0/g, ' ');
+    } else if (process.platform === 'darwin') {
+      cmdline = execSync(`ps -o args= -p ${ppid}`, { encoding: 'utf8', timeout: 500 }).trim();
+    }
+
+    if (cmdline) {
+      const match = cmdline.match(/--effort(?:=|\s+)(low|medium|high|xhigh|max)/i);
+      if (match) {
+        cachedSessionEffort = match[1].toLowerCase();
+      }
+    }
+  } catch {
+    debug('Failed to detect session effort from parent process');
+  }
+
+  return cachedSessionEffort;
+}
+
+export function _resetSessionEffortCacheForTests(): void {
+  cachedSessionEffort = null;
 }
 
 function countRulesInDir(rulesDir: string): number {
