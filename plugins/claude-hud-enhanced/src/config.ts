@@ -111,7 +111,7 @@ export interface HudConfig {
 
 export const DEFAULT_CONFIG: HudConfig = {
   language: 'en',
-  lineLayout: 'expanded',
+  lineLayout: 'compact',
   showSeparators: true,
   pathLevels: 1,
   elementOrder: [...DEFAULT_ELEMENT_ORDER],

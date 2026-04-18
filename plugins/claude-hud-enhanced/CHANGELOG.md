@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.26] - 2026-04-18
+
+### Changed
+- `lineLayout` default flipped from `'expanded'` to `'compact'`. All platforms (Windows, Linux, macOS) now show the clean single-line session row by default. Set `lineLayout: 'expanded'` to restore the multi-row layout.
+
 ## [0.2.25] - 2026-04-17
 
 ### Changed

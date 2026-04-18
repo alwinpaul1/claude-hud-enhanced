@@ -15,7 +15,7 @@ export const DEFAULT_ELEMENT_ORDER = [
 const KNOWN_ELEMENTS = new Set(DEFAULT_ELEMENT_ORDER);
 export const DEFAULT_CONFIG = {
     language: 'en',
-    lineLayout: 'expanded',
+    lineLayout: 'compact',
     showSeparators: true,
     pathLevels: 1,
     elementOrder: [...DEFAULT_ELEMENT_ORDER],
