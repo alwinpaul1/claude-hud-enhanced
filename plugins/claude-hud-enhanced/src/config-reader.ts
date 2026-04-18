@@ -28,9 +28,14 @@ interface ConfigCacheKey {
 }
 
 interface ConfigCacheFile {
+  version?: number;
   key: ConfigCacheKey;
   data: ConfigCounts;
 }
+
+// Bump when ConfigCounts changes shape so stale caches from older plugin
+// versions are automatically rejected.
+const CONFIG_CACHE_VERSION = 2;
 
 // Valid keys for disabled MCP arrays in config files
 type DisabledMcpKey = 'disabledMcpServers' | 'disabledMcpjsonServers';
@@ -264,6 +269,9 @@ function readConfigCache(cacheKey: Pick<ConfigCacheKey, 'cwd' | 'claudeConfigDir
     const cachePath = getConfigCachePath(cacheKey.cwd, cacheKey.claudeConfigDir, homeDir);
     const raw = fs.readFileSync(cachePath, 'utf8');
     const parsed = JSON.parse(raw) as ConfigCacheFile;
+    if (parsed.version !== CONFIG_CACHE_VERSION) {
+      return null;
+    }
     if (parsed.key?.cwd !== cacheKey.cwd || parsed.key?.claudeConfigDir !== cacheKey.claudeConfigDir) {
       return null;
     }
@@ -280,7 +288,7 @@ function writeConfigCache(key: ConfigCacheKey, data: ConfigCounts, homeDir: stri
   try {
     const cachePath = getConfigCachePath(key.cwd, key.claudeConfigDir, homeDir);
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    const payload: ConfigCacheFile = { key, data };
+    const payload: ConfigCacheFile = { version: CONFIG_CACHE_VERSION, key, data };
     fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
   } catch {
     // Cache write failures are non-fatal.

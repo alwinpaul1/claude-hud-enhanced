@@ -5,6 +5,9 @@ import { createHash } from 'node:crypto';
 import { createDebug } from './debug.js';
 import { getClaudeConfigDir, getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
 const debug = createDebug('config');
+// Bump when ConfigCounts changes shape so stale caches from older plugin
+// versions are automatically rejected.
+const CONFIG_CACHE_VERSION = 2;
 function getMcpServerNames(filePath) {
     if (!fs.existsSync(filePath))
         return new Set();
@@ -221,6 +224,9 @@ function readConfigCache(cacheKey, homeDir) {
         const cachePath = getConfigCachePath(cacheKey.cwd, cacheKey.claudeConfigDir, homeDir);
         const raw = fs.readFileSync(cachePath, 'utf8');
         const parsed = JSON.parse(raw);
+        if (parsed.version !== CONFIG_CACHE_VERSION) {
+            return null;
+        }
         if (parsed.key?.cwd !== cacheKey.cwd || parsed.key?.claudeConfigDir !== cacheKey.claudeConfigDir) {
             return null;
         }
@@ -237,7 +243,7 @@ function writeConfigCache(key, data, homeDir) {
     try {
         const cachePath = getConfigCachePath(key.cwd, key.claudeConfigDir, homeDir);
         fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-        const payload = { key, data };
+        const payload = { version: CONFIG_CACHE_VERSION, key, data };
         fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
     }
     catch {

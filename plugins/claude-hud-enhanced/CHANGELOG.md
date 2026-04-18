@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.30] - 2026-04-18
+
+### Fixed
+- **Config cache versioning**: Added `CONFIG_CACHE_VERSION` stamp to the config-reader cache format. Plugin upgrades that change `ConfigCounts` shape (like adding `effortLevel`) now automatically invalidate stale cache files from older versions. Previously, a cached result from an older plugin could be returned with missing fields because the sentinel only checked file mtime, not cache format compatibility.
+
 ## [0.2.29] - 2026-04-18
 
 ### Fixed
