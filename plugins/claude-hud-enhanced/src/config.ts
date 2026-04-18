@@ -137,7 +137,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showDuration: true,
     showTokenBreakdown: true,
     showUsage: true,
-    usageOnNewLine: false,
+    usageOnNewLine: true,
     usageBarEnabled: true,
     showTools: true,
     showAgents: true,

@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.27] - 2026-04-18
+
+### Changed
+- `display.usageOnNewLine` default flipped back to `true`. Usage/Weekly renders on its own second row with a blank-line spacer by default on all platforms. Set `usageOnNewLine: false` to inline it back on the main row.
+
 ## [0.2.26] - 2026-04-18
 
 ### Changed
