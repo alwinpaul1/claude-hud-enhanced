@@ -13,9 +13,10 @@ export interface OAuthInfo {
 interface CachedOAuth {
   readAt: number;
   info: OAuthInfo;
+  tokenExpiresAt?: number;
 }
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — refresh frequently so plan upgrades propagate quickly
 const KEYCHAIN_TIMEOUT_MS = 2000;
 const KEYCHAIN_BACKOFF_MS = 60_000;
 const LEGACY_KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
@@ -38,16 +39,18 @@ function readCache(): CachedOAuth | null {
     const parsed = JSON.parse(fs.readFileSync(getCachePath(), 'utf8')) as CachedOAuth;
     if (typeof parsed.readAt !== 'number' || !parsed.info) return null;
     if (Date.now() - parsed.readAt > CACHE_TTL_MS) return null;
+    // Invalidate immediately if the token has expired — Claude Code will have refreshed it
+    if (parsed.tokenExpiresAt && parsed.tokenExpiresAt <= Date.now()) return null;
     return parsed;
   } catch {
     return null;
   }
 }
 
-function writeCache(info: OAuthInfo): void {
+function writeCache(info: OAuthInfo, tokenExpiresAt?: number): void {
   try {
     fs.mkdirSync(getCacheDir(), { recursive: true });
-    const payload: CachedOAuth = { readAt: Date.now(), info };
+    const payload: CachedOAuth = { readAt: Date.now(), info, tokenExpiresAt };
     fs.writeFileSync(getCachePath(), JSON.stringify(payload));
   } catch {
     // best-effort
@@ -173,21 +176,31 @@ function readFromWindowsCredentialManager(): string | null {
   }
 }
 
-function parseOAuthPayload(raw: string, now: number): OAuthInfo {
+interface ParsedOAuth {
+  info: OAuthInfo;
+  expiresAt?: number;
+}
+
+function parseOAuthPayload(raw: string, now: number): ParsedOAuth {
   try {
     const parsed = JSON.parse(raw);
     const oauth = parsed?.claudeAiOauth ?? parsed;
+    const expiresAt = typeof oauth?.expiresAt === 'number' && oauth.expiresAt > 0
+      ? oauth.expiresAt
+      : undefined;
     // Skip expired tokens (credential was rotated but plan may also have changed)
-    const expiresAt = oauth?.expiresAt;
-    if (typeof expiresAt === 'number' && expiresAt > 0 && expiresAt <= now) {
-      return { subscriptionType: null, rateLimitTier: null };
+    if (expiresAt && expiresAt <= now) {
+      return { info: { subscriptionType: null, rateLimitTier: null }, expiresAt };
     }
     return {
-      subscriptionType: typeof oauth?.subscriptionType === 'string' ? oauth.subscriptionType : null,
-      rateLimitTier: typeof oauth?.rateLimitTier === 'string' ? oauth.rateLimitTier : null,
+      info: {
+        subscriptionType: typeof oauth?.subscriptionType === 'string' ? oauth.subscriptionType : null,
+        rateLimitTier: typeof oauth?.rateLimitTier === 'string' ? oauth.rateLimitTier : null,
+      },
+      expiresAt,
     };
   } catch {
-    return { subscriptionType: null, rateLimitTier: null };
+    return { info: { subscriptionType: null, rateLimitTier: null } };
   }
 }
 
@@ -207,8 +220,8 @@ export function readOAuthInfo(): OAuthInfo {
     return empty;
   }
 
-  const info = parseOAuthPayload(raw, Date.now());
-  writeCache(info);
+  const { info, expiresAt } = parseOAuthPayload(raw, Date.now());
+  writeCache(info, expiresAt);
   return info;
 }
 
