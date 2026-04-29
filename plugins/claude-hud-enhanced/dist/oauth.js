@@ -18,6 +18,16 @@ function getCachePath() {
 function getBackoffPath() {
     return path.join(getCacheDir(), '.oauth-keychain-backoff');
 }
+function getCredFileMtime() {
+    try {
+        const configDir = getClaudeConfigDir(os.homedir());
+        const credPath = path.join(configDir, '.credentials.json');
+        return fs.statSync(credPath).mtimeMs;
+    }
+    catch {
+        return null;
+    }
+}
 function readCache() {
     try {
         const parsed = JSON.parse(fs.readFileSync(getCachePath(), 'utf8'));
@@ -28,6 +38,9 @@ function readCache() {
         // Invalidate immediately if the token has expired — Claude Code will have refreshed it
         if (parsed.tokenExpiresAt && parsed.tokenExpiresAt <= Date.now())
             return null;
+        // Invalidate if credentials file changed since cache was written (plan switch)
+        if (!('credFileMtimeMs' in parsed) || getCredFileMtime() !== parsed.credFileMtimeMs)
+            return null;
         return parsed;
     }
     catch {
@@ -37,7 +50,7 @@ function readCache() {
 function writeCache(info, tokenExpiresAt) {
     try {
         fs.mkdirSync(getCacheDir(), { recursive: true });
-        const payload = { readAt: Date.now(), info, tokenExpiresAt };
+        const payload = { readAt: Date.now(), info, tokenExpiresAt, credFileMtimeMs: getCredFileMtime() };
         fs.writeFileSync(getCachePath(), JSON.stringify(payload));
     }
     catch {

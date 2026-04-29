@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.35] - 2026-04-29
+
+### Fixed
+- **Plan label not updating on plan switch**: OAuth cache used a 5-minute TTL with no file-change detection, so switching plans (e.g. Pro → Max) left the old plan name displayed for up to 5 minutes. Now tracks `~/.claude/.credentials.json` mtime in the cache and invalidates immediately when the file changes. Added explicit guard for old cache format upgrade path.
+
 ## [0.2.33] - 2026-04-18
 
 ### Removed

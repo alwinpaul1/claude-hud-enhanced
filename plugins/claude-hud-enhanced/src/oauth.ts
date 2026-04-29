@@ -14,6 +14,7 @@ interface CachedOAuth {
   readAt: number;
   info: OAuthInfo;
   tokenExpiresAt?: number;
+  credFileMtimeMs?: number | null;
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — refresh frequently so plan upgrades propagate quickly
@@ -34,6 +35,16 @@ function getBackoffPath(): string {
   return path.join(getCacheDir(), '.oauth-keychain-backoff');
 }
 
+function getCredFileMtime(): number | null {
+  try {
+    const configDir = getClaudeConfigDir(os.homedir());
+    const credPath = path.join(configDir, '.credentials.json');
+    return fs.statSync(credPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 function readCache(): CachedOAuth | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(getCachePath(), 'utf8')) as CachedOAuth;
@@ -41,6 +52,8 @@ function readCache(): CachedOAuth | null {
     if (Date.now() - parsed.readAt > CACHE_TTL_MS) return null;
     // Invalidate immediately if the token has expired — Claude Code will have refreshed it
     if (parsed.tokenExpiresAt && parsed.tokenExpiresAt <= Date.now()) return null;
+    // Invalidate if credentials file changed since cache was written (plan switch)
+    if (!('credFileMtimeMs' in parsed) || getCredFileMtime() !== parsed.credFileMtimeMs) return null;
     return parsed;
   } catch {
     return null;
@@ -50,7 +63,7 @@ function readCache(): CachedOAuth | null {
 function writeCache(info: OAuthInfo, tokenExpiresAt?: number): void {
   try {
     fs.mkdirSync(getCacheDir(), { recursive: true });
-    const payload: CachedOAuth = { readAt: Date.now(), info, tokenExpiresAt };
+    const payload: CachedOAuth = { readAt: Date.now(), info, tokenExpiresAt, credFileMtimeMs: getCredFileMtime() };
     fs.writeFileSync(getCachePath(), JSON.stringify(payload));
   } catch {
     // best-effort
