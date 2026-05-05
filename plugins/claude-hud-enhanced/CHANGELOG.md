@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.36] - 2026-05-05
+
+### Improved
+- **Cross-platform plan switch detection**: Reduced cache TTL from 5 minutes to 60 seconds for keychain-only systems (macOS/Windows without `.credentials.json`). File-based credential systems (Linux) still get instant invalidation via mtime tracking. Ensures plan label updates within 1 minute on all platforms.
+
 ## [0.2.35] - 2026-04-29
 
 ### Fixed

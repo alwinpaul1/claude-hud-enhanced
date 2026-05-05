@@ -4,7 +4,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash } from 'node:crypto';
 import { getClaudeConfigDir } from './claude-config-dir.js';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — refresh frequently so plan upgrades propagate quickly
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_NO_FILE_MS = 60 * 1000; // 60s when no credential file to sentinel — keychain-only fallback
 const KEYCHAIN_TIMEOUT_MS = 2000;
 const KEYCHAIN_BACKOFF_MS = 60_000;
 const LEGACY_KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
@@ -33,13 +34,15 @@ function readCache() {
         const parsed = JSON.parse(fs.readFileSync(getCachePath(), 'utf8'));
         if (typeof parsed.readAt !== 'number' || !parsed.info)
             return null;
-        if (Date.now() - parsed.readAt > CACHE_TTL_MS)
-            return null;
         // Invalidate immediately if the token has expired — Claude Code will have refreshed it
         if (parsed.tokenExpiresAt && parsed.tokenExpiresAt <= Date.now())
             return null;
         // Invalidate if credentials file changed since cache was written (plan switch)
         if (!('credFileMtimeMs' in parsed) || getCredFileMtime() !== parsed.credFileMtimeMs)
+            return null;
+        // Use shorter TTL when no credential file exists (keychain-only on macOS/Windows)
+        const ttl = parsed.credFileMtimeMs === null ? CACHE_TTL_NO_FILE_MS : CACHE_TTL_MS;
+        if (Date.now() - parsed.readAt > ttl)
             return null;
         return parsed;
     }
