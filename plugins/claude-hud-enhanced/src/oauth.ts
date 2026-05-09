@@ -19,6 +19,13 @@ interface CachedOAuth {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_TTL_NO_FILE_MS = 60 * 1000; // 60s when no credential file to sentinel — keychain-only fallback
+// Shorter TTL when we cached a null subscription. macOS/Windows have no credential
+// file mtime to invalidate on, so a fresh `/login` (or any external write that
+// repairs the keychain entry's plan fields) would otherwise stay invisible for up
+// to CACHE_TTL_NO_FILE_MS. Re-reading every 10s lets the plan chip recover quickly;
+// keychain reads are cheap, and existing failure backoff (KEYCHAIN_BACKOFF_MS) still
+// throttles the genuinely-no-plan case.
+const CACHE_TTL_NULL_PLAN_MS = 10 * 1000;
 const KEYCHAIN_TIMEOUT_MS = 2000;
 const KEYCHAIN_BACKOFF_MS = 60_000;
 const LEGACY_KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
@@ -55,7 +62,12 @@ function readCache(): CachedOAuth | null {
     // Invalidate if credentials file changed since cache was written (plan switch)
     if (!('credFileMtimeMs' in parsed) || getCredFileMtime() !== parsed.credFileMtimeMs) return null;
     // Use shorter TTL when no credential file exists (keychain-only on macOS/Windows)
-    const ttl = parsed.credFileMtimeMs === null ? CACHE_TTL_NO_FILE_MS : CACHE_TTL_MS;
+    let ttl = parsed.credFileMtimeMs === null ? CACHE_TTL_NO_FILE_MS : CACHE_TTL_MS;
+    // Recover faster from a cached-null plan (e.g., after `/login` on macOS, or after
+    // an external sync wrote a stripped credential and the keychain has since been repaired).
+    if (parsed.info.subscriptionType === null && CACHE_TTL_NULL_PLAN_MS < ttl) {
+      ttl = CACHE_TTL_NULL_PLAN_MS;
+    }
     if (Date.now() - parsed.readAt > ttl) return null;
     return parsed;
   } catch {

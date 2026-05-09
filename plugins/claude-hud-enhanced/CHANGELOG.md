@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.37] - 2026-05-09
+
+### Fixed
+- **Faster plan-label recovery after `/login` on macOS/Windows**: When the OAuth cache held a `null` subscription (e.g. after an external sync wrote a stripped credential, or right after a fresh login on a system without `.credentials.json`), the keychain-only TTL of 60s left the plan chip blank for up to a minute. The cache now uses a 10-second TTL specifically when `subscriptionType` is `null`, so a repaired keychain reflects in the HUD almost immediately. A real, populated subscription still uses the normal 60s/5min TTLs.
+
 ## [0.2.36] - 2026-05-05
 
 ### Improved
