@@ -2,6 +2,11 @@
 
 All notable changes to Claude HUD will be documented in this file.
 
+## [0.2.38] - 2026-06-23
+
+### Fixed
+- **Plan/tier label leaked across config-dir profiles**: The OAuth plan cache directory and the keychain service-name fallback both ignored `CLAUDE_CONFIG_DIR`, so a non-default profile (e.g. a separate work profile run via `CLAUDE_CONFIG_DIR=~/.claude-work`) displayed the default/personal account's subscription tier — and vice-versa. `getCacheDir()` now scopes the cache to the active config dir via `getHudPluginDir()`, and `getKeychainServiceNames()` no longer falls back to the personal `Claude Code-credentials` service for non-default profiles. Each profile now reads only its own account's plan/usage. Added `tests/oauth.test.js` covering both behaviors.
+
 ## [0.2.37] - 2026-05-09
 
 ### Fixed
