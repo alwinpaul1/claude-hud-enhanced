@@ -2,6 +2,8 @@ export interface OAuthInfo {
     subscriptionType: string | null;
     rateLimitTier: string | null;
 }
+export declare function getCacheDir(): string;
+export declare function getKeychainServiceNames(): string[];
 export declare function readOAuthInfo(): OAuthInfo;
 export declare function formatPlanLabel(info: OAuthInfo): string | null;
 export declare function getPlanLabel(): string | null;

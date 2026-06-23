@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash } from 'node:crypto';
-import { getClaudeConfigDir } from './claude-config-dir.js';
+import { getClaudeConfigDir, getHudPluginDir } from './claude-config-dir.js';
 
 export interface OAuthInfo {
   subscriptionType: string | null;
@@ -31,8 +31,11 @@ const KEYCHAIN_BACKOFF_MS = 60_000;
 const LEGACY_KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
 const SECURITY_BIN = '/usr/bin/security';
 
-function getCacheDir(): string {
-  return path.join(os.homedir(), '.claude', 'plugins', 'claude-hud');
+export function getCacheDir(): string {
+  // Scope the OAuth plan cache to the active config dir (honors CLAUDE_CONFIG_DIR)
+  // so each profile (e.g. a separate work profile) reads/writes its own cache and
+  // never serves the default/personal profile's cached plan tier.
+  return getHudPluginDir(os.homedir());
 }
 
 function getCachePath(): string {
@@ -103,7 +106,7 @@ function recordBackoff(): void {
   }
 }
 
-function getKeychainServiceNames(): string[] {
+export function getKeychainServiceNames(): string[] {
   const homeDir = os.homedir();
   const configDir = getClaudeConfigDir(homeDir);
   const defaultDir = path.normalize(path.resolve(path.join(homeDir, '.claude')));
@@ -115,8 +118,11 @@ function getKeychainServiceNames(): string[] {
     const hash = createHash('sha256').update(normalizedConfigDir).digest('hex').slice(0, 8);
     names.add(`${LEGACY_KEYCHAIN_SERVICE_NAME}-${hash}`);
   }
-  // Always try the legacy/default service as a fallback
-  names.add(LEGACY_KEYCHAIN_SERVICE_NAME);
+  // Intentionally NO unconditional fallback to the legacy/default service for a
+  // non-default config dir: a separate profile (e.g. a work CLAUDE_CONFIG_DIR) must
+  // read only its own profile-scoped keychain entry. Falling back to the legacy
+  // service would leak the default/personal account's plan tier into the other
+  // profile's HUD. (The default dir already added the legacy name above.)
   return [...names];
 }
 

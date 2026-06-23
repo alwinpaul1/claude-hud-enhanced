@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash } from 'node:crypto';
-import { getClaudeConfigDir } from './claude-config-dir.js';
+import { getClaudeConfigDir, getHudPluginDir } from './claude-config-dir.js';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_TTL_NO_FILE_MS = 60 * 1000; // 60s when no credential file to sentinel — keychain-only fallback
 // Shorter TTL when we cached a null subscription. macOS/Windows have no credential
@@ -17,8 +17,11 @@ const KEYCHAIN_TIMEOUT_MS = 2000;
 const KEYCHAIN_BACKOFF_MS = 60_000;
 const LEGACY_KEYCHAIN_SERVICE_NAME = 'Claude Code-credentials';
 const SECURITY_BIN = '/usr/bin/security';
-function getCacheDir() {
-    return path.join(os.homedir(), '.claude', 'plugins', 'claude-hud');
+export function getCacheDir() {
+    // Scope the OAuth plan cache to the active config dir (honors CLAUDE_CONFIG_DIR)
+    // so each profile (e.g. a separate work profile) reads/writes its own cache and
+    // never serves the default/personal profile's cached plan tier.
+    return getHudPluginDir(os.homedir());
 }
 function getCachePath() {
     return path.join(getCacheDir(), 'oauth-cache.json');
@@ -90,7 +93,7 @@ function recordBackoff() {
         // best-effort
     }
 }
-function getKeychainServiceNames() {
+export function getKeychainServiceNames() {
     const homeDir = os.homedir();
     const configDir = getClaudeConfigDir(homeDir);
     const defaultDir = path.normalize(path.resolve(path.join(homeDir, '.claude')));
@@ -103,8 +106,11 @@ function getKeychainServiceNames() {
         const hash = createHash('sha256').update(normalizedConfigDir).digest('hex').slice(0, 8);
         names.add(`${LEGACY_KEYCHAIN_SERVICE_NAME}-${hash}`);
     }
-    // Always try the legacy/default service as a fallback
-    names.add(LEGACY_KEYCHAIN_SERVICE_NAME);
+    // Intentionally NO unconditional fallback to the legacy/default service for a
+    // non-default config dir: a separate profile (e.g. a work CLAUDE_CONFIG_DIR) must
+    // read only its own profile-scoped keychain entry. Falling back to the legacy
+    // service would leak the default/personal account's plan tier into the other
+    // profile's HUD. (The default dir already added the legacy name above.)
     return [...names];
 }
 function runSecurity(args) {
