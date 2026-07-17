@@ -89,6 +89,7 @@ test("CLI renders added_dirs basenames on the project line", async (t) => {
       fs.mkdir(addedDirB, { recursive: true }),
     ]),
   );
+  await writeHudConfig(homeDir, { lineLayout: "expanded" }); // added-dirs is an expanded-layout element
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -220,6 +221,7 @@ test("CLI ignores non-string and post-sanitize-empty added_dirs entries", async 
       fs.mkdir(validB, { recursive: true }),
     ]),
   );
+  await writeHudConfig(homeDir, { lineLayout: "expanded" }); // added-dirs is an expanded-layout element
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -271,6 +273,7 @@ test("CLI caps inline added_dirs at 5 with overflow indicator", async (t) => {
       ...dirs.map((d) => fs.mkdir(d, { recursive: true })),
     ]),
   );
+  await writeHudConfig(homeDir, { lineLayout: "expanded" }); // added-dirs is an expanded-layout element
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -319,6 +322,7 @@ test("CLI truncates long inline added_dirs basenames", async (t) => {
       fs.mkdir(longDir, { recursive: true }),
     ]),
   );
+  await writeHudConfig(homeDir, { lineLayout: "expanded" }); // added-dirs is an expanded-layout element
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -373,7 +377,7 @@ test("CLI renders line layout 'Added dirs:' on a separate line", async (t) => {
       fs.mkdir(dirB, { recursive: true }),
     ]),
   );
-  await writeHudConfig(homeDir, { display: { addedDirsLayout: "line" } });
+  await writeHudConfig(homeDir, { display: { addedDirsLayout: "line" }, lineLayout: "expanded" });
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -422,7 +426,7 @@ test("CLI renders inline added_dirs even when showProject is false", async (t) =
       fs.mkdir(addedDir, { recursive: true }),
     ]),
   );
-  await writeHudConfig(homeDir, { display: { showProject: false } });
+  await writeHudConfig(homeDir, { display: { showProject: false }, lineLayout: "expanded" });
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -472,7 +476,7 @@ test("CLI applies caps in line layout (overflow + truncation)", async (t) => {
       ...dirs.map((d) => fs.mkdir(d, { recursive: true })),
     ]),
   );
-  await writeHudConfig(homeDir, { display: { addedDirsLayout: "line" } });
+  await writeHudConfig(homeDir, { display: { addedDirsLayout: "line" }, lineLayout: "expanded" });
   try {
     let stdin = JSON.stringify({
       model: { display_name: "Opus" },

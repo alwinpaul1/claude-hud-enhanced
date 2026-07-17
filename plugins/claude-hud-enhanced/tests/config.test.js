@@ -632,9 +632,9 @@ test('mergeConfig falls back to default when elementOrder is empty or invalid', 
 test('mergeConfig defaults colors to expected semantic palette', () => {
   const config = mergeConfig({});
   assert.equal(config.colors.context, 'green');
-  assert.equal(config.colors.usage, 'brightBlue');
+  assert.equal(config.colors.usage, 'green');
   assert.equal(config.colors.warning, 'yellow');
-  assert.equal(config.colors.usageWarning, 'brightMagenta');
+  assert.equal(config.colors.usageWarning, 'yellow');
   assert.equal(config.colors.critical, 'red');
   assert.equal(config.colors.model, 'cyan');
   assert.equal(config.colors.project, 'yellow');
@@ -964,11 +964,17 @@ test('mergeConfig defaults showAuth to true when neither showAuth nor showPlan s
   assert.equal(DEFAULT_CONFIG.display.showAuth, true);
 });
 
-test('enhanced defaults lock (0.3.0 product surface)', () => {
+test('enhanced defaults lock (0.4.0 product surface)', () => {
   const d = DEFAULT_CONFIG.display;
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'expanded');
+  // 0.4.0: ship the rich compact look out of the box (matches the reference HUD)
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
   assert.equal(DEFAULT_CONFIG.showSeparators, true);
   assert.equal(d.contextValue, 'both');
+  assert.equal(d.showConfigCounts, true);   // CLAUDE.md / MCPs / hooks
+  assert.equal(d.showAuthInModel, true);     // plan folded into [model | plan]
+  assert.equal(d.authShortLabel, true);      // "Max 20x" not "Claude Max 20x"
+  assert.equal(d.usageOnNewLine, true);      // usage/weekly on their own row
+  assert.equal(d.timeFormat, 'absolute');    // "resets at 11:00 PM"
   assert.equal(d.showTools, true);
   assert.equal(d.showAgents, true);
   assert.equal(d.showTodos, true);
@@ -976,6 +982,8 @@ test('enhanced defaults lock (0.3.0 product surface)', () => {
   assert.equal(d.showDuration, true);
   assert.equal(d.showOutputStyle, true);
   assert.equal(d.sevenDayThreshold, 0); // always show weekly when data exists
+  assert.equal(DEFAULT_CONFIG.colors.usage, 'green');
+  assert.equal(DEFAULT_CONFIG.colors.usageWarning, 'yellow');
   assert.equal(DEFAULT_CONFIG.gitStatus.showAheadBehind, true);
   assert.equal(DEFAULT_CONFIG.gitStatus.showFileStats, true);
 });

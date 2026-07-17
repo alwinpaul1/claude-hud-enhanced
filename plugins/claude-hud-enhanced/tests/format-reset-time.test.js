@@ -126,10 +126,10 @@ test('both: format is "<relative>, <absolute>"', () => {
 // config integration — mergeConfig accepts and validates timeFormat
 // ---------------------------------------------------------------------------
 
-test('mergeConfig defaults timeFormat to "relative"', async () => {
+test('mergeConfig defaults timeFormat to "absolute"', async () => {
   const { mergeConfig } = await import('../dist/config.js');
   const config = mergeConfig({});
-  assert.equal(config.display.timeFormat, 'relative');
+  assert.equal(config.display.timeFormat, 'absolute');
 });
 
 test('mergeConfig accepts "absolute" timeFormat', async () => {
@@ -144,8 +144,8 @@ test('mergeConfig accepts "both" timeFormat', async () => {
   assert.equal(config.display.timeFormat, 'both');
 });
 
-test('mergeConfig rejects invalid timeFormat and falls back to "relative"', async () => {
+test('mergeConfig rejects invalid timeFormat and falls back to "absolute"', async () => {
   const { mergeConfig } = await import('../dist/config.js');
   const config = mergeConfig({ display: { timeFormat: 'invalid-value' } });
-  assert.equal(config.display.timeFormat, 'relative');
+  assert.equal(config.display.timeFormat, 'absolute');
 });
