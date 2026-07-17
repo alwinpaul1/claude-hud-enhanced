@@ -29,6 +29,15 @@ export function getClaudeConfigJsonPath(homeDir: string): string {
   return `${getClaudeConfigDir(homeDir)}.json`;
 }
 
+// Rename seam so tests can exercise the cross-device (EXDEV) fallback, which is
+// otherwise unreachable without a real second filesystem. Defaults to fs.renameSync.
+let renameSyncImpl: (from: string, to: string) => void = (from, to) => fs.renameSync(from, to);
+
+/** Test-only: override the rename used by the migration (null restores the default). */
+export function _setRenameSyncImplForTests(impl: ((from: string, to: string) => void) | null): void {
+  renameSyncImpl = impl ?? ((from, to) => fs.renameSync(from, to));
+}
+
 /**
  * One-time migration of HUD data dir from legacy `plugins/claude-hud` to
  * `plugins/claude-hud-enhanced`. Safe and idempotent:
@@ -45,7 +54,7 @@ export function migrateLegacyHudPluginDir(legacyDir: string, nextDir: string): v
 
     if (!fs.existsSync(nextDir)) {
       try {
-        fs.renameSync(legacyDir, nextDir);
+        renameSyncImpl(legacyDir, nextDir);
         return;
       } catch {
         // Cross-device rename can fail (EXDEV). Copy, then remove legacy so the

@@ -4,6 +4,8 @@ export declare const LEGACY_HUD_PLUGIN_DIRNAME = "claude-hud";
 export declare const HUD_PLUGIN_DIRNAME = "claude-hud-enhanced";
 export declare function getClaudeConfigDir(homeDir: string): string;
 export declare function getClaudeConfigJsonPath(homeDir: string): string;
+/** Test-only: override the rename used by the migration (null restores the default). */
+export declare function _setRenameSyncImplForTests(impl: ((from: string, to: string) => void) | null): void;
 /**
  * One-time migration of HUD data dir from legacy `plugins/claude-hud` to
  * `plugins/claude-hud-enhanced`. Safe and idempotent:
