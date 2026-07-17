@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.4] - 2026-07-18
+
+### Added
+- **`display.compactSingleRow`** (compact layout, default off): keeps the header a tight **2-row** pair — the session line and the usage line each stay a single physical row. When the session line is wider than the terminal, the overflow (e.g. `⏱️` duration, trailing counts) is dropped at a segment boundary instead of wrapping onto a third row. Activity lines (tools/agents/todos) still wrap normally, and the default behavior is unchanged (wrap) so long git branch names / 5h continuation handling are preserved.
+
 ## [0.4.3] - 2026-07-18
 
 ### Fixed

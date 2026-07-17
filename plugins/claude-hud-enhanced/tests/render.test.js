@@ -649,6 +649,27 @@ test('render expanded layout aligns a combined progress row with separate memory
   assert.ok(memoryLine?.startsWith('Approx RAM '), `got: ${memoryLine}`);
 });
 
+test('compactSingleRow keeps the header to 2 rows (usage stays row 2)', () => {
+  function usageRowIndex(singleRow) {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Opus 4.8 (1M context)' };
+    ctx.claudeMdCount = 2;
+    ctx.mcpCount = 1;
+    ctx.hooksCount = 2;
+    ctx.config.lineLayout = 'compact';
+    ctx.config.display.usageOnNewLine = true;
+    ctx.config.display.showConfigCounts = true;
+    ctx.config.display.compactSingleRow = singleRow;
+    ctx.usageData = { fiveHour: 7, sevenDay: 54, fiveHourResetAt: null, sevenDayResetAt: null };
+    const lines = withTerminal(50, () => captureRenderLines(ctx)).map(stripAnsi);
+    return lines.findIndex(l => l.includes('Usage'));
+  }
+  // Single-row: the long session line is truncated to one row, so usage is row 2.
+  assert.equal(usageRowIndex(true), 1);
+  // Default (wrap): the session line spills across extra rows, pushing usage down.
+  assert.ok(usageRowIndex(false) > 1);
+});
+
 test('compact usageOnNewLine peels usage onto its own second row', () => {
   const ctx = baseContext();
   ctx.config.lineLayout = 'compact';

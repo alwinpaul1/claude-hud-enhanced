@@ -193,6 +193,10 @@ export interface HudConfig {
     // row instead of inline, so row 1 keeps identity/project/counts/duration and
     // row 2 starts with the usage windows. Default off.
     usageOnNewLine: boolean;
+    // Compact layout only: keep the session + usage header to one physical row
+    // each — overflow is dropped at a segment boundary instead of wrapping onto
+    // an extra row, so the HUD stays a tight 2-row pair. Default off (wrap).
+    compactSingleRow: boolean;
     customLine: string;
     customLinePosition: CustomLinePosition;
     timeFormat: TimeFormatMode;
@@ -283,6 +287,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showAuthInModel: true,
     authShortLabel: true,
     usageOnNewLine: true,
+    compactSingleRow: false,
     customLine: '',
     customLinePosition: 'last',
     timeFormat: 'absolute', // enhanced: absolute reset clock times ("resets at 11:00 PM")
@@ -760,6 +765,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     usageOnNewLine: typeof migrated.display?.usageOnNewLine === 'boolean'
       ? migrated.display.usageOnNewLine
       : DEFAULT_CONFIG.display.usageOnNewLine,
+    compactSingleRow: typeof migrated.display?.compactSingleRow === 'boolean'
+      ? migrated.display.compactSingleRow
+      : DEFAULT_CONFIG.display.compactSingleRow,
     providerName: typeof migrated.display?.providerName === 'string'
       ? migrated.display.providerName.slice(0, 40)
       : DEFAULT_CONFIG.display.providerName,
