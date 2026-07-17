@@ -368,7 +368,7 @@ export function renderSessionLine(ctx: RenderContext): string {
   }
 
   const authSegment = formatAuthSegment(ctx.authInfo, display);
-  if (authSegment) {
+  if (authSegment && !display?.showAuthInModel) {
     parts.push(label(authSegment, colors));
   }
 

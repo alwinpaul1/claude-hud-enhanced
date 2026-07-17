@@ -182,6 +182,10 @@ export interface HudConfig {
     // Explicit provider label, e.g. for custom proxies where the provider can't
     // be auto-detected. Falls back to auto-detection when empty.
     providerName: string;
+    // Fold the auth/plan label into the model bracket (`[Opus 4.8 | Claude Max 20x]`)
+    // instead of trailing it as its own segment. `showAuth`/`showAuthUser` still
+    // control whether the label exists. Default off.
+    showAuthInModel: boolean;
     customLine: string;
     customLinePosition: CustomLinePosition;
     timeFormat: TimeFormatMode;
@@ -269,6 +273,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     modelSource: 'stdin',
     showProvider: false,
     providerName: '',
+    showAuthInModel: false,
     customLine: '',
     customLinePosition: 'last',
     timeFormat: 'relative',
@@ -737,6 +742,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showProvider: typeof migrated.display?.showProvider === 'boolean'
       ? migrated.display.showProvider
       : DEFAULT_CONFIG.display.showProvider,
+    showAuthInModel: typeof migrated.display?.showAuthInModel === 'boolean'
+      ? migrated.display.showAuthInModel
+      : DEFAULT_CONFIG.display.showAuthInModel,
     providerName: typeof migrated.display?.providerName === 'string'
       ? migrated.display.providerName.slice(0, 40)
       : DEFAULT_CONFIG.display.providerName,
