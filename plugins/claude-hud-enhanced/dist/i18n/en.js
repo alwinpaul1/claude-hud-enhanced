@@ -21,7 +21,7 @@ export const en = {
     // Format
     "format.resets": "resets",
     "format.resetsIn": "resets in",
-    "format.absoluteTime": "at {time}",
+    "format.absoluteTime": "{time}",
     "format.in": "in",
     "format.cache": "cache",
     "format.out": "out",

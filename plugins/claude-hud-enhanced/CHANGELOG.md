@@ -1,6 +1,13 @@
 # Changelog
 
-## [0.4.0] - 2026-07-17
+## [0.4.1] - 2026-07-18
+
+### Changed
+- **Cleaner absolute reset times.** The `timeFormat: 'absolute'` reset label is now window-aware and drops the `at` preposition:
+  - 5-hour window → **clock time only** (`resets 5:00 AM`), even across a midnight roll.
+  - Weekly window → **weekday + time within the coming week** (`resets Sun 3:00 AM`), month/day beyond a week, clock-only when it resets today.
+  - Hours render without a leading zero (`3:20 AM`, not `03:20 AM`), and the `at` prefix is gone (was `resets at Jul 18 03:20 AM`).
+  - Applies to both compact and expanded layouts and the limit-reached label; the English `format.absoluteTime` now matches the zh locales (`{time}`).
 
 ### Changed
 - **New default look — the rich compact HUD ships out of the box.** A config-less install now renders the "enhanced" two-row layout instead of the stock expanded one. Flipped `DEFAULT_CONFIG`:
