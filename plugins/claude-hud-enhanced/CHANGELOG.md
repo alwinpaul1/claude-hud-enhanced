@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.1] - 2026-07-17
 
 ### Fixed
 - **Setup Step 4 no longer contradicts the enhanced defaults**: the optional-features prompt used to claim tools/agents/todos/duration were "hidden by default" and offered to enable them, but those default to **on** in `claude-hud-enhanced`. Step 4 now offers a "Minimal mode" to turn them off (plus config-counts / session-name / custom-line extras) and points to `/claude-hud-enhanced:configure` for deeper tuning.
