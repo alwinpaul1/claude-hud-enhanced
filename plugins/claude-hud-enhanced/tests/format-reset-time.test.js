@@ -76,9 +76,17 @@ test('relative: is the default when mode is omitted', () => {
 // ---------------------------------------------------------------------------
 
 test('absolute: returns a bare clock time with no "at" prefix', () => {
-  const result = formatResetTime(future(2 * HOUR), 'absolute');
+  const result = formatResetTime(future(2 * HOUR), 'absolute', 'short');
   assert.ok(!result.startsWith('at '), `Expected no "at " prefix, got: ${result}`);
   assert.ok(result.length > 0, `Expected a non-empty absolute string, got: ${result}`);
+});
+
+test('absolute long window: names the weekday even for a same-day reset', () => {
+  // A weekly reset later today should still show its weekday, not collapse to time-only.
+  const resetAt = future(2 * HOUR); // same calendar day (usually)
+  const result = formatResetTime(resetAt, 'absolute', 'long');
+  const expectedWeekday = resetAt.toLocaleDateString([], { weekday: 'short' });
+  assert.ok(result.includes(expectedWeekday), `Expected weekday for a long window, got: ${result}`);
 });
 
 test('absolute short window: time-only even across a day boundary', () => {

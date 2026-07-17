@@ -63,14 +63,17 @@ function formatAbsolute(resetAt: Date, now: Date, windowScale: 'short' | 'long')
 
   // Short windows (e.g. the 5-hour limit) are always imminent, so the date is
   // noise — show just the clock time ("3:20 AM"), even across a midnight roll.
-  // Long windows show the clock time when the reset is today, a weekday when it
-  // lands within the coming week ("Sat 3:00 AM"), and a month/day beyond that.
-  if (windowScale === 'short' || resetAt.toDateString() === now.toDateString()) {
+  if (windowScale === 'short') {
     return interpolate(t('format.absoluteTime'), { time: timeStr });
   }
 
-  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  if (resetAt.getTime() - now.getTime() < WEEK_MS) {
+  // Long windows (the weekly quota) always name the day they reset on
+  // ("Sat 3:00 AM") — including later today — since a weekly reset is far
+  // clearer with its weekday. A weekly window resets every 7 days, so allow a
+  // little slack (~8 days) before falling back to a month/day, which is only
+  // reached by unusually distant windows where a bare weekday would be ambiguous.
+  const EIGHT_DAYS_MS = 8 * 24 * 60 * 60 * 1000;
+  if (resetAt.getTime() - now.getTime() < EIGHT_DAYS_MS) {
     const weekday = resetAt.toLocaleDateString([], { weekday: 'short' });
     return interpolate(t('format.absoluteTime'), { time: `${weekday} ${timeStr}` });
   }

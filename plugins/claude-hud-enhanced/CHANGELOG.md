@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.2] - 2026-07-18
+
+### Fixed
+- **Weekly reset now always shows its weekday** (`resets Sat 3:00 AM`). 0.4.1 only showed the weekday when the reset was a different calendar day *and* strictly under 7 days away — so a freshly-reset weekly window (~7 days out) fell back to `month/day`, and a weekly resetting later today collapsed to time-only. The long-window format now names the weekday for any reset within ~8 days (including later today), keeping month/day only for unusually distant windows. The 5-hour window is unchanged (clock time only).
+
 ## [0.4.1] - 2026-07-18
 
 ### Changed
