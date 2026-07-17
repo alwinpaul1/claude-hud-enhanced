@@ -26,7 +26,20 @@ export function getClaudeConfigDir(homeDir: string): string {
 }
 
 export function getClaudeConfigJsonPath(homeDir: string): string {
-  return `${getClaudeConfigDir(homeDir)}.json`;
+  const configDir = getClaudeConfigDir(homeDir);
+  // Claude Code stores the main config (with `oauthAccount`) in one of two
+  // places depending on the profile:
+  //   - the default `~/.claude` profile keeps it as the SIBLING `~/.claude.json`
+  //   - a custom `CLAUDE_CONFIG_DIR` profile keeps it INSIDE the dir at
+  //     `${CLAUDE_CONFIG_DIR}/.claude.json`
+  // Prefer the inside file when it exists so custom profiles (e.g. a work
+  // profile on a Team plan) resolve their own account, then fall back to the
+  // sibling for the default profile.
+  const insidePath = path.join(configDir, '.claude.json');
+  if (fs.existsSync(insidePath)) {
+    return insidePath;
+  }
+  return `${configDir}.json`;
 }
 
 // Rename seam so tests can exercise the cross-device (EXDEV) fallback, which is

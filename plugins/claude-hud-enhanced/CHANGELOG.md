@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.3] - 2026-07-18
+
+### Fixed
+- **Plan/auth label (and MCP/rules counts) now resolve for custom `CLAUDE_CONFIG_DIR` profiles.** The account was only looked up at the sibling `${CLAUDE_CONFIG_DIR}.json`, which is correct for the default `~/.claude` profile (`~/.claude.json`) but wrong for a custom profile like `~/.claude-work`, where Claude Code stores the config **inside** the dir at `${CLAUDE_CONFIG_DIR}/.claude.json`. As a result a work/Team profile showed no plan. `getClaudeConfigJsonPath` now prefers the inside `${configDir}/.claude.json` when it exists and falls back to the sibling for the default profile.
+
 ## [0.4.2] - 2026-07-18
 
 ### Fixed
