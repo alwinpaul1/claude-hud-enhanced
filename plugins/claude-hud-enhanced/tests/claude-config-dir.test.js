@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   getHudPluginDir,
+  getClaudeConfigJsonPath,
   migrateLegacyHudPluginDir,
   _setRenameSyncImplForTests,
   HUD_PLUGIN_DIRNAME,
@@ -28,6 +29,24 @@ test('getHudPluginDir returns plugins/claude-hud-enhanced under CLAUDE_CONFIG_DI
   try {
     const dir = getHudPluginDir(path.join(root, 'home-unused'));
     assert.equal(dir, path.join(root, 'plugins', HUD_PLUGIN_DIRNAME));
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prev;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('getClaudeConfigJsonPath prefers the inside .claude.json for a custom CLAUDE_CONFIG_DIR', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'hud-cfgjson-'));
+  const prev = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = root;
+  try {
+    // No inside file yet → fall back to the sibling `${configDir}.json`.
+    assert.equal(getClaudeConfigJsonPath('/unused'), `${root}.json`);
+
+    // Custom-profile layout: account lives INSIDE the dir → prefer it.
+    await writeFile(path.join(root, '.claude.json'), '{"oauthAccount":{}}', 'utf8');
+    assert.equal(getClaudeConfigJsonPath('/unused'), path.join(root, '.claude.json'));
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = prev;
