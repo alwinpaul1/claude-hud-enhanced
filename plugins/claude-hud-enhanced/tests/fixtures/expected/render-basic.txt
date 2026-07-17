@@ -1,6 +1,5 @@
-[Opus] │ my-project
-Context ███░░░░░░░ 29% (45k/200k)
-─────────────────────────────────
+[Opus] ███░░░░░░░ 29% (45k/200k) | my-project
+─────────────────────────────────────────────
 ◐ mcp__linear__get_issue | ◐ mcp__slack__search_messages | ✓ Read ×1
 ✓ explore [haiku]: Finding auth code (<1s)
 ▸ Add tests (1/2)

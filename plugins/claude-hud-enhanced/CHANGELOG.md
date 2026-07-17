@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0] - 2026-07-17
+
+### Changed
+- **New default look — the rich compact HUD ships out of the box.** A config-less install now renders the "enhanced" two-row layout instead of the stock expanded one. Flipped `DEFAULT_CONFIG`:
+  - `lineLayout`: `expanded` → **`compact`**
+  - `display.showAuthInModel`: → **`true`** (plan folded into the model bracket, e.g. `[Opus 4.8 | Max 20x]`)
+  - `display.authShortLabel`: → **`true`** (`Max 20x`, not `Claude Max 20x`)
+  - `display.showConfigCounts`: → **`true`** (`N CLAUDE.md | N MCPs | N hooks`)
+  - `display.usageOnNewLine`: → **`true`** (usage/weekly on their own second row)
+  - `display.timeFormat`: `relative` → **`absolute`** (`resets at 11:00 PM`)
+  - `colors.usage`/`colors.usageWarning`: `brightBlue`/`brightMagenta` → **`green`/`yellow`** (usage bars follow the green→yellow→red threshold scheme)
+- **Existing `config.json` files still override everything** — no custom setup changes. This only affects config-less/fresh installs.
+
 ## [0.3.3] - 2026-07-17
 
 ### Added
