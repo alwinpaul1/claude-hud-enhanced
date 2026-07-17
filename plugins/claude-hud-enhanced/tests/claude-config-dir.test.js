@@ -64,6 +64,24 @@ test('migrate copies missing config.json when both dirs exist', async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+test('migrate does not copy legacy statusline.mjs into enhanced dir', async () => {
+  // The legacy launcher globs the old `claude-hud` plugin dir; copying it would
+  // install a wrong-name launcher. Setup regenerates it fresh instead.
+  const root = await mkdtemp(path.join(tmpdir(), 'hud-launcher-'));
+  const legacy = path.join(root, 'plugins', LEGACY_HUD_PLUGIN_DIRNAME);
+  const next = path.join(root, 'plugins', HUD_PLUGIN_DIRNAME);
+  await mkdir(legacy, { recursive: true });
+  await mkdir(next, { recursive: true });
+  await writeFile(path.join(legacy, 'statusline.mjs'), '// legacy launcher (globs claude-hud)', 'utf8');
+  await writeFile(path.join(legacy, 'config.json'), '{"from":"legacy"}', 'utf8');
+
+  migrateLegacyHudPluginDir(legacy, next);
+
+  assert.equal(await exists(path.join(next, 'statusline.mjs')), false);
+  assert.equal(await readFile(path.join(next, 'config.json'), 'utf8'), '{"from":"legacy"}');
+  await rm(root, { recursive: true, force: true });
+});
+
 test('migrate does not overwrite existing enhanced config.json', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'hud-keep-'));
   const legacy = path.join(root, 'plugins', LEGACY_HUD_PLUGIN_DIRNAME);

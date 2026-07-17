@@ -42,13 +42,24 @@ export function migrateLegacyHudPluginDir(legacyDir, nextDir) {
                 return;
             }
             catch {
-                // Cross-device rename can fail (EXDEV). Fall through to copy.
+                // Cross-device rename can fail (EXDEV). Copy, then remove legacy so the
+                // move actually completes and later invocations don't re-enter the
+                // "both exist" branch on every statusline paint.
                 fs.cpSync(legacyDir, nextDir, { recursive: true, force: false, errorOnExist: false });
+                try {
+                    fs.rmSync(legacyDir, { recursive: true, force: true });
+                }
+                catch {
+                    // Enhanced dir is already populated; leave legacy if cleanup fails.
+                }
                 return;
             }
         }
-        // Both exist: seed config.json (and only missing files) without clobbering.
-        for (const name of ['config.json', 'previous-statusline.txt', 'statusline.mjs']) {
+        // Both exist: seed only name-agnostic files that are missing, without
+        // clobbering. statusline.mjs is deliberately excluded — the legacy launcher
+        // resolves the old `claude-hud` plugin dir, so copying it here would install
+        // a wrong-name launcher; setup regenerates it fresh under the enhanced path.
+        for (const name of ['config.json', 'previous-statusline.txt']) {
             const from = path.join(legacyDir, name);
             const to = path.join(nextDir, name);
             if (fs.existsSync(from) && !fs.existsSync(to)) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Setup Step 4 no longer contradicts the enhanced defaults**: the optional-features prompt used to claim tools/agents/todos/duration were "hidden by default" and offered to enable them, but those default to **on** in `claude-hud-enhanced`. Step 4 now offers a "Minimal mode" to turn them off (plus config-counts / session-name / custom-line extras) and points to `/claude-hud-enhanced:configure` for deeper tuning.
+- **Legacy `statusline.mjs` is no longer seeded into the enhanced data dir** during migration (runtime and setup): the old launcher globs the `claude-hud` plugin path, so copying it installed a wrong-name launcher. Setup regenerates it fresh under the enhanced path instead. Added a regression test.
+- **Cross-device (EXDEV) migration now completes the move**: when `rename` fails and the dir is copied, the legacy dir is now removed, so later statusline paints don't repeatedly re-enter the "both dirs exist" seeding branch.
+
 ## [0.3.0] - 2026-07-17
 
 ### Changed
