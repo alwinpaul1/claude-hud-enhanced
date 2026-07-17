@@ -104,7 +104,7 @@ export function formatAuthSegment(info, display) {
     }
     const parts = [];
     if (display?.showAuth && info.method) {
-        parts.push(info.method);
+        parts.push(display?.authShortLabel ? info.method.replace(/^Claude\s+/i, '') : info.method);
     }
     if (display?.showAuthUser && info.user) {
         parts.push(truncateUser(info.user, display?.authUserLength ?? 8));

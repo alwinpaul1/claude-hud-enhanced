@@ -108,6 +108,8 @@ export interface HudConfig {
         showProvider: boolean;
         providerName: string;
         showAuthInModel: boolean;
+        authShortLabel: boolean;
+        usageOnNewLine: boolean;
         customLine: string;
         customLinePosition: CustomLinePosition;
         timeFormat: TimeFormatMode;
