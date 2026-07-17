@@ -94,6 +94,7 @@ export const DEFAULT_CONFIG = {
         modelSource: 'stdin',
         showProvider: false,
         providerName: '',
+        showAuthInModel: false,
         customLine: '',
         customLinePosition: 'last',
         timeFormat: 'relative',
@@ -491,6 +492,9 @@ export function mergeConfig(userConfig) {
         showProvider: typeof migrated.display?.showProvider === 'boolean'
             ? migrated.display.showProvider
             : DEFAULT_CONFIG.display.showProvider,
+        showAuthInModel: typeof migrated.display?.showAuthInModel === 'boolean'
+            ? migrated.display.showAuthInModel
+            : DEFAULT_CONFIG.display.showAuthInModel,
         providerName: typeof migrated.display?.providerName === 'string'
             ? migrated.display.providerName.slice(0, 40)
             : DEFAULT_CONFIG.display.providerName,

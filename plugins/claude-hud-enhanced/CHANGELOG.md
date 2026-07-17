@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.2] - 2026-07-17
+
+### Added
+- **`display.showAuthInModel`** (default off): folds the auth/plan label into the model bracket — `[Opus 4.8 | Claude Max 20x]` — instead of trailing it as its own segment. The trailing segment is suppressed while this is on, so the label renders exactly once. `showAuth` / `showAuthUser` still control whether the label exists at all. Works in both compact and expanded layouts.
+
 ## [0.3.1] - 2026-07-17
 
 ### Fixed

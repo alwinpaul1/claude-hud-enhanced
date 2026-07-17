@@ -135,7 +135,7 @@ export function renderProjectLine(ctx) {
         }
     }
     const authSegment = formatAuthSegment(ctx.authInfo, display);
-    if (authSegment) {
+    if (authSegment && !display?.showAuthInModel) {
         parts.push(label(authSegment, colors));
     }
     if (customLine && customLinePosition === 'last') {

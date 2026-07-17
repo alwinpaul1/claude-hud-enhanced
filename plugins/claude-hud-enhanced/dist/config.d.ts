@@ -107,6 +107,7 @@ export interface HudConfig {
         modelSource: 'auto' | 'stdin' | 'transcript';
         showProvider: boolean;
         providerName: string;
+        showAuthInModel: boolean;
         customLine: string;
         customLinePosition: CustomLinePosition;
         timeFormat: TimeFormatMode;
