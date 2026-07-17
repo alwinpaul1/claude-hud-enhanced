@@ -482,7 +482,17 @@ export function render(ctx) {
         }
     }
     else {
-        const headerLines = renderCompact(ctx);
+        // With `display.compactSingleRow`, keep the header a tight session + usage
+        // pair: each header line (the session line and the usage line) stays a single
+        // physical row — overflow is dropped at a segment boundary instead of
+        // wrapping onto a third row. Activity lines below always wrap normally.
+        const singleRow = ctx.config?.display?.compactSingleRow === true;
+        const compactWidth = terminalWidth !== UNKNOWN_TERMINAL_WIDTH ? (terminalWidth ?? 0) : 0;
+        const headerLines = singleRow
+            ? renderCompact(ctx)
+                .flatMap(line => line.split('\n'))
+                .map(line => wrapLineToWidth(line, compactWidth)[0] ?? line)
+            : renderCompact(ctx);
         const activityLines = collectActivityLines(ctx);
         lines = [...headerLines];
         if (showSeparators && activityLines.length > 0) {
