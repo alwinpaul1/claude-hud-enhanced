@@ -10,7 +10,7 @@ import { interpolate, t } from '../i18n/index.js';
  * @returns A formatted string, or an empty string when the reset is in the past
  *          or the date is unknown.
  */
-export function formatResetTime(resetAt, mode = 'relative') {
+export function formatResetTime(resetAt, mode = 'relative', windowScale = 'long') {
     if (!resetAt)
         return '';
     const now = new Date();
@@ -20,7 +20,7 @@ export function formatResetTime(resetAt, mode = 'relative') {
     if (mode === 'relative') {
         return formatRelative(diffMs);
     }
-    const absolute = formatAbsolute(resetAt, now);
+    const absolute = formatAbsolute(resetAt, now, windowScale);
     if (mode === 'absolute') {
         return absolute;
     }
@@ -42,13 +42,20 @@ function formatRelative(diffMs) {
     }
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
-function formatAbsolute(resetAt, now) {
-    // The preposition + spacing live in each locale's "format.absoluteTime"
-    // pattern (en: "at {time}", zh: "{time}" — bare, preposition baked elsewhere).
-    const timeStr = resetAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    // Show the date only when the reset falls on a different calendar day
-    if (resetAt.toDateString() === now.toDateString()) {
+function formatAbsolute(resetAt, now, windowScale) {
+    // Locale "format.absoluteTime" wraps the value (en/zh both "{time}" — bare).
+    const timeStr = resetAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    // Short windows (e.g. the 5-hour limit) are always imminent, so the date is
+    // noise — show just the clock time ("3:20 AM"), even across a midnight roll.
+    // Long windows show the clock time when the reset is today, a weekday when it
+    // lands within the coming week ("Sat 3:00 AM"), and a month/day beyond that.
+    if (windowScale === 'short' || resetAt.toDateString() === now.toDateString()) {
         return interpolate(t('format.absoluteTime'), { time: timeStr });
+    }
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    if (resetAt.getTime() - now.getTime() < WEEK_MS) {
+        const weekday = resetAt.toLocaleDateString([], { weekday: 'short' });
+        return interpolate(t('format.absoluteTime'), { time: `${weekday} ${timeStr}` });
     }
     const dateStr = resetAt.toLocaleDateString([], { month: 'short', day: 'numeric' });
     return interpolate(t('format.absoluteTime'), { time: `${dateStr} ${timeStr}` });

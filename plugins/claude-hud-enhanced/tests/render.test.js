@@ -3366,7 +3366,7 @@ test('renderUsageLine uses "resets in" preposition for default relative mode in 
   assert.ok(plain.includes('resets in'), `should use "resets in" for relative mode, got: ${plain}`);
 });
 
-test('renderUsageLine uses "resets at" when timeFormat is "absolute" (bar mode)', () => {
+test('renderUsageLine uses bare "resets <clock>" when timeFormat is "absolute" (bar mode)', () => {
   const ctx = baseContext();
   ctx.config.display.usageBarEnabled = true;
   ctx.config.display.timeFormat = 'absolute';
@@ -3378,7 +3378,8 @@ test('renderUsageLine uses "resets at" when timeFormat is "absolute" (bar mode)'
     sevenDayResetAt: null,
   };
   const plain = stripAnsi(renderUsageLine(ctx));
-  assert.ok(plain.includes('resets at'), `expected "resets at" in absolute bar mode, got: ${plain}`);
+  assert.ok(plain.includes('resets'), `expected "resets <clock>" in absolute bar mode, got: ${plain}`);
+  assert.ok(!plain.includes('resets at'), `should drop the "at" prefix, got: ${plain}`);
   assert.ok(!plain.includes('resets in'), `should not say "resets in" for absolute mode, got: ${plain}`);
 });
 
@@ -3394,9 +3395,9 @@ test('renderUsageLine shows relative and absolute time when timeFormat is "both"
     sevenDayResetAt: null,
   };
   const plain = stripAnsi(renderUsageLine(ctx));
-  // "both" produces "Xh Ym, at HH:MM" — must contain relative part and " at " from i18n
+  // "both" produces "resets in Xh Ym, HH:MM" — relative part + bare clock (no "at")
   assert.match(plain, /\dh/, 'should contain relative duration hours');
-  assert.ok(plain.includes(' at '), `should contain absolute "at" prefix, got: ${plain}`);
+  assert.ok(!plain.includes(' at '), `absolute part should drop the "at" prefix, got: ${plain}`);
   assert.ok(plain.includes('resets in'), `should use "resets in" preposition for both mode, got: ${plain}`);
 });
 
@@ -3432,7 +3433,8 @@ test('renderUsageLine shows elapsed 5h percentage and reset clock when timeForma
   };
 
   const plain = stripAnsi(renderUsageLine(ctx));
-  assert.match(plain, /Usage 5h 31% \(20% elapsed, at .+\)/, `expected elapsed percentage with absolute reset clock, got: ${plain}`);
+  assert.match(plain, /Usage 5h 31% \(20% elapsed, .+\)/, `expected elapsed percentage with absolute reset clock, got: ${plain}`);
+  assert.ok(!plain.includes(' at '), `absolute clock should drop the "at" prefix, got: ${plain}`);
   assert.ok(!plain.includes('resets'), `elapsedAndAbsolute mode should not include reset wording, got: ${plain}`);
 });
 
@@ -3500,7 +3502,8 @@ test('renderUsageLine keeps reset label hidden in elapsedAndAbsolute mode when d
   };
 
   const plain = stripAnsi(renderUsageLine(ctx));
-  assert.match(plain, /Usage 5h 31% \(20% elapsed, at .+\)/, `expected elapsed percentage with bare absolute reset clock, got: ${plain}`);
+  assert.match(plain, /Usage 5h 31% \(20% elapsed, .+\)/, `expected elapsed percentage with bare absolute reset clock, got: ${plain}`);
+  assert.ok(!plain.includes(' at '), `absolute clock should drop the "at" prefix, got: ${plain}`);
   assert.ok(!plain.includes('resets'), `reset wording should stay hidden, got: ${plain}`);
 });
 
@@ -3535,7 +3538,7 @@ test('renderUsageLine limit-reached uses "resets in" for default relative mode',
   assert.ok(plain.includes('resets in'), `should use "resets in" preposition for relative mode, got: ${plain}`);
 });
 
-test('renderUsageLine limit-reached uses "resets at" for absolute timeFormat', () => {
+test('renderUsageLine limit-reached uses bare "resets <clock>" for absolute timeFormat', () => {
   const ctx = baseContext();
   ctx.config.display.timeFormat = 'absolute';
   ctx.usageData = {
@@ -3547,7 +3550,8 @@ test('renderUsageLine limit-reached uses "resets at" for absolute timeFormat', (
   };
   const plain = stripAnsi(renderUsageLine(ctx));
   assert.ok(plain.includes('Limit reached'), 'should show limit reached');
-  assert.ok(plain.includes('resets at'), `should use "resets at" for absolute mode, got: ${plain}`);
+  assert.ok(plain.includes('resets'), `should use "resets <clock>" for absolute mode, got: ${plain}`);
+  assert.ok(!plain.includes('resets at'), `should drop the "at" prefix, got: ${plain}`);
   assert.ok(!plain.includes('resets in'), `should not say "resets in" for absolute mode, got: ${plain}`);
 });
 

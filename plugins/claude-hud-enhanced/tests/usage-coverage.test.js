@@ -183,7 +183,7 @@ test('renderUsageLine absolute time format', () => {
   ctx.usageData.fiveHour = 50;
   ctx.usageData.fiveHourResetAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
-  assert.ok(line.includes('resets at'));
+  assert.ok(line.includes('resets') && !line.includes('resets at'));
 });
 
 test('renderUsageLine elapsed time format', () => {
@@ -287,5 +287,5 @@ test('renderUsageLine elapsedAndAbsolute format for limit uses absolute', () => 
   ctx.usageData.fiveHourResetAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
   assert.ok(line.includes('Limit reached'));
-  assert.ok(line.includes('resets at'));
+  assert.ok(line.includes('resets') && !line.includes('resets at'));
 });

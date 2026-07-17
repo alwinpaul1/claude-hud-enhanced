@@ -10,5 +10,5 @@ import type { TimeFormatMode } from '../config.js';
  * @returns A formatted string, or an empty string when the reset is in the past
  *          or the date is unknown.
  */
-export declare function formatResetTime(resetAt: Date | null, mode?: TimeFormatMode): string;
+export declare function formatResetTime(resetAt: Date | null, mode?: TimeFormatMode, windowScale?: 'short' | 'long'): string;
 //# sourceMappingURL=format-reset-time.d.ts.map

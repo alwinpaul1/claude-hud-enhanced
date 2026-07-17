@@ -75,31 +75,36 @@ test('relative: is the default when mode is omitted', () => {
 // absolute mode
 // ---------------------------------------------------------------------------
 
-test('absolute: starts with "at " prefix', () => {
+test('absolute: returns a bare clock time with no "at" prefix', () => {
   const result = formatResetTime(future(2 * HOUR), 'absolute');
-  assert.ok(result.startsWith('at '), `Expected "at " prefix, got: ${result}`);
+  assert.ok(!result.startsWith('at '), `Expected no "at " prefix, got: ${result}`);
+  assert.ok(result.length > 0, `Expected a non-empty absolute string, got: ${result}`);
 });
 
-test('absolute: returns a non-empty string for a future date', () => {
-  const result = formatResetTime(future(2 * HOUR), 'absolute');
-  assert.ok(result.length > 3, `Expected a non-trivial absolute string, got: ${result}`);
+test('absolute short window: time-only even across a day boundary', () => {
+  const resetAt = future(30 * HOUR); // different calendar day, but a short (5h-style) window
+  const result = formatResetTime(resetAt, 'absolute', 'short');
+  const expectedTime = resetAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  assert.equal(result, expectedTime, `Expected time-only for a short window, got: ${result}`);
 });
 
-test('absolute: includes date component when reset is tomorrow or later', () => {
-  const resetAt = future(30 * HOUR); // guaranteed to be a different calendar day
-  const result = formatResetTime(resetAt, 'absolute');
-  const expectedDate = resetAt.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-  });
-  const expectedTime = resetAt.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+test('absolute long window: weekday + time within the coming week', () => {
+  const resetAt = future(30 * HOUR); // different calendar day, within 7 days
+  const result = formatResetTime(resetAt, 'absolute', 'long');
+  const expectedWeekday = resetAt.toLocaleDateString([], { weekday: 'short' });
+  const expectedTime = resetAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  assert.ok(!result.startsWith('at '), `Expected no "at " prefix, got: ${result}`);
+  assert.ok(result.includes(expectedWeekday), `Expected weekday in within-week reset, got: ${result}`);
+  assert.ok(result.endsWith(expectedTime), `Expected localized time, got: ${result}`);
+});
 
-  assert.ok(result.startsWith('at '), `Expected "at " prefix, got: ${result}`);
-  assert.ok(result.includes(expectedDate), `Expected localized date in next-day reset, got: ${result}`);
-  assert.ok(result.endsWith(expectedTime), `Expected localized time in next-day reset, got: ${result}`);
+test('absolute long window: month/day + time beyond a week', () => {
+  const resetAt = future(10 * 24 * HOUR); // > 7 days out
+  const result = formatResetTime(resetAt, 'absolute', 'long');
+  const expectedDate = resetAt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const expectedTime = resetAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  assert.ok(result.includes(expectedDate), `Expected month/day beyond a week, got: ${result}`);
+  assert.ok(result.endsWith(expectedTime), `Expected localized time, got: ${result}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -111,15 +116,16 @@ test('both: contains the relative duration', () => {
   assert.match(result, /2h 30m/);
 });
 
-test('both: contains the absolute "at" part after a comma', () => {
+test('both: contains the absolute part after a comma', () => {
   const result = formatResetTime(future(2 * HOUR), 'both');
-  assert.match(result, /, at .+/);
+  assert.match(result, /, .+/);
+  assert.ok(!result.includes(', at '), `Expected no "at" prefix, got: ${result}`);
 });
 
 test('both: format is "<relative>, <absolute>"', () => {
   const result = formatResetTime(future(2 * HOUR), 'both');
-  // e.g. "2h, at 14:30" — comma avoids nested parens when caller wraps in (...)
-  assert.match(result, /^\d+h( \d+m)?, at .+$/);
+  // e.g. "2h, 14:30" — comma avoids nested parens when caller wraps in (...)
+  assert.match(result, /^\d+h( \d+m)?, .+$/);
 });
 
 // ---------------------------------------------------------------------------

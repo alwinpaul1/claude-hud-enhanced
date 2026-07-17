@@ -78,8 +78,8 @@ export function renderUsageLine(
     const limitTimeFormat = limitResetTimeFormat(timeFormat);
     const resetTime =
       ctx.usageData.fiveHour === 100
-        ? formatResetTime(ctx.usageData.fiveHourResetAt, limitTimeFormat)
-        : formatResetTime(ctx.usageData.sevenDayResetAt, limitTimeFormat);
+        ? formatResetTime(ctx.usageData.fiveHourResetAt, limitTimeFormat, 'short')
+        : formatResetTime(ctx.usageData.sevenDayResetAt, limitTimeFormat, 'long');
     if (usageCompact) {
       return appendBalance(`${critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ""}`, colors)}${scopedSuffix}`, balanceLabel);
     }
@@ -308,20 +308,23 @@ function formatWindowTime(
   windowMs: number,
   timeFormat: TimeFormatMode,
 ): string {
+  // 5-hour windows are always imminent → clock time only; longer windows get
+  // weekday/date context. See formatAbsolute in format-reset-time.ts.
+  const scale = windowMs <= FIVE_HOUR_WINDOW_MS ? 'short' : 'long';
   if (timeFormat === 'elapsed') {
     return formatElapsedWindow(resetAt, windowMs);
   }
 
   if (timeFormat === 'elapsedAndAbsolute') {
     const elapsed = formatElapsedWindow(resetAt, windowMs);
-    const absolute = formatResetTime(resetAt, 'absolute');
+    const absolute = formatResetTime(resetAt, 'absolute', scale);
     if (elapsed && absolute) {
       return `${elapsed}, ${absolute}`;
     }
     return elapsed || absolute;
   }
 
-  return formatResetTime(resetAt, timeFormat);
+  return formatResetTime(resetAt, timeFormat, scale);
 }
 
 function formatElapsedWindow(resetAt: Date | null, windowMs: number): string {

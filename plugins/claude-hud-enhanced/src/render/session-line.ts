@@ -206,8 +206,8 @@ export function renderSessionLine(ctx: RenderContext): string {
 
     if (isLimitReached(ctx.usageData)) {
       const resetTime = ctx.usageData.fiveHour === 100
-        ? formatResetTime(ctx.usageData.fiveHourResetAt, timeFormat)
-        : formatResetTime(ctx.usageData.sevenDayResetAt, timeFormat);
+        ? formatResetTime(ctx.usageData.fiveHourResetAt, timeFormat, 'short')
+        : formatResetTime(ctx.usageData.sevenDayResetAt, timeFormat, 'long');
       if (usageCompact) {
         parts.push(critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ''}`, colors));
       } else {
@@ -412,7 +412,7 @@ function formatCompactWindowPart(
   usageValueMode: UsageValueMode = 'percent',
 ): string {
   const usageDisplay = formatUsagePercent(percent, colors, usageValueMode);
-  const reset = formatResetTime(resetAt, timeFormat);
+  const reset = formatResetTime(resetAt, timeFormat, windowLabel === '5h' ? 'short' : 'long');
   const styledLabel = label(`${windowLabel}:`, colors);
   return reset
     ? `${styledLabel} ${usageDisplay} ${label(`(${reset})`, colors)}`
@@ -458,7 +458,7 @@ function formatUsageWindowPart({
   windowDurationLabel?: string;
 }): string {
   const usageDisplay = formatUsagePercent(percent, colors, usageValueMode);
-  const reset = formatResetTime(resetAt, timeFormat);
+  const reset = formatResetTime(resetAt, timeFormat, windowLabel === '5h' ? 'short' : 'long');
   const styledLabel = label(windowLabel, colors);
   // "resets in X" for relative/both; "resets X" for absolute (avoids "resets in at 14:30")
   const resetsKey = timeFormat === 'absolute' ? 'format.resets' : 'format.resetsIn';
