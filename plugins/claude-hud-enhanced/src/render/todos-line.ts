@@ -1,6 +1,7 @@
 import type { RenderContext } from "../types.js";
 import { yellow, green, label } from "./colors.js";
 import { t } from "../i18n/index.js";
+import { truncateString } from "../utils/truncate.js";
 
 export function renderTodosLine(ctx: RenderContext): string | null {
   const { todos } = ctx.transcript;
@@ -21,13 +22,10 @@ export function renderTodosLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  const content = truncateContent(inProgress.content);
+  const content = truncateString(inProgress.content, 50);
   const progress = label(`(${completed}/${total})`, colors);
 
   return `${yellow("▸")} ${content} ${progress}`;
 }
 
-function truncateContent(content: string, maxLen: number = 50): string {
-  if (content.length <= maxLen) return content;
-  return content.slice(0, maxLen - 3) + "...";
-}
+

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
-import { readStdin } from '../dist/stdin.js';
+import { readStdin, getProviderLabel, getContextPercent, getBufferedPercent } from '../dist/stdin.js';
+import { mergeConfig } from '../dist/config.js';
 
 test('readStdin returns null for TTY input', async () => {
   const originalIsTTY = process.stdin.isTTY;
@@ -93,4 +94,112 @@ test('readStdin returns null when stdin payload exceeds the safety limit', async
 
   const result = await resultPromise;
   assert.equal(result, null);
+});
+
+test('context percents preserve default behavior when autoCompactWindow is omitted or null', () => {
+  const stdin = {
+    context_window: {
+      current_usage: { input_tokens: 70600 },
+      context_window_size: 1000000,
+    },
+  };
+
+  assert.equal(getContextPercent(stdin), 7);
+  assert.equal(getContextPercent(stdin, null), 7);
+  assert.equal(getBufferedPercent(stdin), 8);
+  assert.equal(getBufferedPercent(stdin, null), 8);
+});
+
+test('context percents use autoCompactWindow as denominator when configured', () => {
+  const stdin = {
+    context_window: {
+      current_usage: { input_tokens: 70600 },
+      context_window_size: 1000000,
+    },
+  };
+
+  assert.equal(getContextPercent(stdin, 200000), 35);
+  assert.equal(getBufferedPercent(stdin, 200000), 35);
+});
+
+test('context percents clamp autoCompactWindow usage to 100', () => {
+  const stdin = {
+    context_window: {
+      current_usage: { input_tokens: 250000 },
+      context_window_size: 1000000,
+    },
+  };
+
+  assert.equal(getContextPercent(stdin, 200000), 100);
+  assert.equal(getBufferedPercent(stdin, 200000), 100);
+});
+
+test('mergeConfig validates display.autoCompactWindow', () => {
+  for (const value of [0, -5, 0.5, 200000.5, Number.NaN, 'abc']) {
+    assert.equal(mergeConfig({ display: { autoCompactWindow: value } }).display.autoCompactWindow, null);
+  }
+
+  assert.equal(mergeConfig({ display: { autoCompactWindow: 200000 } }).display.autoCompactWindow, 200000);
+});
+
+test('autoCompactWindow overrides native used_percentage', () => {
+  const stdin = {
+    context_window: {
+      used_percentage: 7,
+      current_usage: { input_tokens: 70600 },
+      context_window_size: 1000000,
+    },
+  };
+
+  assert.equal(getContextPercent(stdin, 200000), 35);
+});
+
+// getProviderLabel tests
+
+test('getProviderLabel returns Bedrock when CLAUDE_CODE_USE_BEDROCK=1', () => {
+  const orig = process.env.CLAUDE_CODE_USE_BEDROCK;
+  try {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+    const result = getProviderLabel({ model: { id: 'claude-sonnet-4-6' } });
+    assert.equal(result, 'Bedrock');
+  } finally {
+    if (orig === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    else process.env.CLAUDE_CODE_USE_BEDROCK = orig;
+  }
+});
+
+test('getProviderLabel returns null when CLAUDE_CODE_USE_BEDROCK is not set', () => {
+  const orig = process.env.CLAUDE_CODE_USE_BEDROCK;
+  try {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    const result = getProviderLabel({ model: { id: 'anthropic.claude-sonnet-4-6' } });
+    assert.equal(result, null);
+  } finally {
+    if (orig === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    else process.env.CLAUDE_CODE_USE_BEDROCK = orig;
+  }
+});
+
+test('getProviderLabel returns null for cross-region model ID without env var', () => {
+  const orig = process.env.CLAUDE_CODE_USE_BEDROCK;
+  try {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    const result = getProviderLabel({ model: { id: 'us.anthropic.claude-sonnet-4-6' } });
+    assert.equal(result, null);
+  } finally {
+    if (orig === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    else process.env.CLAUDE_CODE_USE_BEDROCK = orig;
+  }
+});
+
+test('getProviderLabel returns null when CLAUDE_CODE_USE_BEDROCK=0', () => {
+  const orig = process.env.CLAUDE_CODE_USE_BEDROCK;
+  try {
+    process.env.CLAUDE_CODE_USE_BEDROCK = '0';
+    const result = getProviderLabel({ model: { id: 'anthropic.claude-sonnet-4-6' } });
+    assert.equal(result, null);
+  } finally {
+    if (orig === undefined) delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    else process.env.CLAUDE_CODE_USE_BEDROCK = orig;
+  }
 });

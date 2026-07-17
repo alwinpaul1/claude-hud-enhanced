@@ -1,4 +1,4 @@
-import { readStdin, getUsageFromStdin, getUsageWithCache } from "./stdin.js";
+import { readStdin, getUsageFromStdin } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
@@ -7,16 +7,22 @@ import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
 import { getClaudeCodeVersion } from "./version.js";
 import { getMemoryUsage } from "./memory.js";
-import { getPlanLabel } from "./oauth.js";
+import { readAuthInfo } from "./auth.js";
+import { resolveEffortLevel } from "./effort.js";
+import { applyContextWindowFallback } from "./context-cache.js";
+import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { setLanguage, t } from "./i18n/index.js";
 import type { RenderContext } from "./types.js";
+
+export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 
 export type MainDeps = {
   readStdin: typeof readStdin;
   getUsageFromStdin: typeof getUsageFromStdin;
-  getUsageWithCache: typeof getUsageWithCache;
+  getUsageFromExternalSnapshot: typeof getUsageFromExternalSnapshot;
+  writeExternalUsageSnapshot: typeof writeExternalUsageSnapshot;
   parseTranscript: typeof parseTranscript;
   countConfigs: typeof countConfigs;
   getGitStatus: typeof getGitStatus;
@@ -25,17 +31,40 @@ export type MainDeps = {
   runExtraCmd: typeof runExtraCmd;
   getClaudeCodeVersion: typeof getClaudeCodeVersion;
   getMemoryUsage: typeof getMemoryUsage;
-  getPlanLabel: typeof getPlanLabel;
+  readAuthInfo: typeof readAuthInfo;
+  applyContextWindowFallback: typeof applyContextWindowFallback;
   render: typeof render;
   now: () => number;
   log: (...args: unknown[]) => void;
 };
 
+/**
+ * Returns true when the HUD is disabled for this invocation via the
+ * CLAUDE_HUD_DISABLE environment variable. Any non-blank value other than an
+ * explicit negative (`0`, `false`, `off`, `no`, case-insensitive) disables the
+ * HUD, so users can launch sessions without it (`CLAUDE_HUD_DISABLE=1 claude`)
+ * while keeping the statusLine entry in settings.json intact.
+ */
+export function isHudDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.CLAUDE_HUD_DISABLE?.trim().toLowerCase();
+  if (value === undefined || value === "") {
+    return false;
+  }
+  return value !== "0" && value !== "false" && value !== "off" && value !== "no";
+}
+
 export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
+  if (isHudDisabled()) {
+    // Print nothing so Claude Code renders an empty statusline, and skip all
+    // work (stdin parse, transcript scan, git) for the ~300ms polling loop.
+    return;
+  }
+
   const deps: MainDeps = {
     readStdin,
     getUsageFromStdin,
-    getUsageWithCache,
+    getUsageFromExternalSnapshot,
+    writeExternalUsageSnapshot,
     parseTranscript,
     countConfigs,
     getGitStatus,
@@ -44,7 +73,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     runExtraCmd,
     getClaudeCodeVersion,
     getMemoryUsage,
-    getPlanLabel,
+    readAuthInfo,
+    applyContextWindowFallback,
     render,
     now: () => Date.now(),
     log: console.log,
@@ -69,6 +99,11 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     const transcriptPath = stdin.transcript_path ?? "";
     const transcript = await deps.parseTranscript(transcriptPath);
 
+    deps.applyContextWindowFallback(stdin, {}, transcript.sessionName, {
+      lastCompactBoundaryAt: transcript.lastCompactBoundaryAt,
+      lastCompactPostTokens: transcript.lastCompactPostTokens,
+    });
+
     const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } =
       await deps.countConfigs(stdin.cwd);
 
@@ -78,10 +113,37 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       ? await deps.getGitStatus(stdin.cwd)
       : null;
 
-    // Usage comes only from Claude Code's official stdin rate_limits fields.
     let usageData: RenderContext["usageData"] = null;
-    if (config.display.showUsage !== false) {
-      usageData = deps.getUsageWithCache(stdin);
+    const shouldReadUsage = config.display.showUsage !== false;
+    const shouldWriteUsage = Boolean(config.display.externalUsageWritePath);
+    const stdinUsage = shouldReadUsage || shouldWriteUsage
+      ? deps.getUsageFromStdin(stdin)
+      : null;
+
+    if (shouldWriteUsage && stdinUsage) {
+      deps.writeExternalUsageSnapshot(config, stdinUsage, deps.now());
+    }
+
+    if (shouldReadUsage) {
+      usageData = stdinUsage;
+      if (!usageData) {
+        usageData = deps.getUsageFromExternalSnapshot(config, deps.now());
+      } else if (config.display.externalUsagePath) {
+        const ext = deps.getUsageFromExternalSnapshot(config, deps.now());
+        if (ext != null) {
+          usageData = {
+            ...usageData,
+            ...(ext.balanceLabel != null && { balanceLabel: ext.balanceLabel }),
+            // If stdin did not provide sevenDay (e.g. third-party clients like the
+            // Claudian Obsidian plugin that only surface five_hour), fall back to the
+            // external snapshot so the weekly limit still shows in the HUD.
+            ...(usageData.sevenDay == null && ext.sevenDay != null && {
+              sevenDay: ext.sevenDay,
+              sevenDayResetAt: ext.sevenDayResetAt ?? null,
+            }),
+          };
+        }
+      }
     }
 
     const extraCmd = deps.parseExtraCmdArg();
@@ -94,12 +156,17 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     const claudeCodeVersion = config.display.showClaudeCodeVersion
       ? await deps.getClaudeCodeVersion()
       : undefined;
+    const effortInfo = config.display.showEffortLevel
+      ? resolveEffortLevel(stdin.effort, { ultracodeActive: transcript.ultracodeActive })
+      : null;
     const memoryUsage =
       config.display.showMemoryUsage && config.lineLayout === "expanded"
         ? await deps.getMemoryUsage()
         : null;
-
-    const planLabel = config.display.showPlan !== false ? deps.getPlanLabel() : null;
+    const authInfo =
+      config.display.showAuth || config.display.showAuthUser
+        ? deps.readAuthInfo()
+        : null;
 
     const ctx: RenderContext = {
       stdin,
@@ -116,13 +183,15 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       extraLabel,
       outputStyle,
       claudeCodeVersion,
-      planLabel,
+      effortLevel: effortInfo?.level,
+      effortSymbol: effortInfo?.symbol,
+      authInfo,
     };
 
     deps.render(ctx);
   } catch (error) {
     deps.log(
-      "[claude-hud] Error:",
+      "[claude-hud-enhanced] Error:",
       error instanceof Error ? error.message : "Unknown error",
     );
   }

@@ -1,14 +1,27 @@
 import type { RenderContext } from '../../types.js';
 import { label } from '../colors.js';
+import { t } from '../../i18n/index.js';
+import { formatTokens } from '../../utils/format.js';
 
-function formatTokens(n: number): string {
-  if (n >= 1000000) {
-    return `${(n / 1000000).toFixed(1)}M`;
+export function formatSessionTokenSummary(
+  tokens: NonNullable<RenderContext['transcript']['sessionTokens']>,
+  prefix: string,
+): string | null {
+  const total = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+  if (total === 0) {
+    return null;
   }
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(0)}k`;
+
+  const parts: string[] = [
+    `${t('format.in')}: ${formatTokens(tokens.inputTokens)}`,
+    `${t('format.out')}: ${formatTokens(tokens.outputTokens)}`,
+  ];
+
+  if (tokens.cacheCreationTokens > 0 || tokens.cacheReadTokens > 0) {
+    parts.push(`${t('format.cache')}: ${formatTokens(tokens.cacheCreationTokens + tokens.cacheReadTokens)}`);
   }
-  return n.toString();
+
+  return `${prefix} ${formatTokens(total)} (${parts.join(', ')})`;
 }
 
 export function renderSessionTokensLine(ctx: RenderContext): string | null {
@@ -22,20 +35,7 @@ export function renderSessionTokensLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  const total = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
-  if (total === 0) {
-    return null;
-  }
-
   const colors = ctx.config?.colors;
-  const parts: string[] = [
-    `in: ${formatTokens(tokens.inputTokens)}`,
-    `out: ${formatTokens(tokens.outputTokens)}`,
-  ];
-
-  if (tokens.cacheCreationTokens > 0 || tokens.cacheReadTokens > 0) {
-    parts.push(`cache: ${formatTokens(tokens.cacheCreationTokens + tokens.cacheReadTokens)}`);
-  }
-
-  return label(`Tokens ${formatTokens(total)} (${parts.join(', ')})`, colors);
+  const summary = formatSessionTokenSummary(tokens, t('label.tokens'));
+  return summary ? label(summary, colors) : null;
 }

@@ -1,5 +1,6 @@
 import { yellow, green, label } from "./colors.js";
 import { t } from "../i18n/index.js";
+import { truncateString } from "../utils/truncate.js";
 export function renderTodosLine(ctx) {
     const { todos } = ctx.transcript;
     const colors = ctx.config?.colors;
@@ -15,13 +16,8 @@ export function renderTodosLine(ctx) {
         }
         return null;
     }
-    const content = truncateContent(inProgress.content);
+    const content = truncateString(inProgress.content, 50);
     const progress = label(`(${completed}/${total})`, colors);
     return `${yellow("▸")} ${content} ${progress}`;
-}
-function truncateContent(content, maxLen = 50) {
-    if (content.length <= maxLen)
-        return content;
-    return content.slice(0, maxLen - 3) + "...";
 }
 //# sourceMappingURL=todos-line.js.map

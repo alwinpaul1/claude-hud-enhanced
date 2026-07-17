@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { _setMemoryReaderForTests, formatBytes, getMemoryUsage, parseVmStat } from '../dist/memory.js';
+import { _setMemoryReaderForTests, formatBytes, getMemoryUsage, parseLinuxMeminfo, parseVmStat } from '../dist/memory.js';
 
 test('getMemoryUsage returns coarse system RAM usage with clamped values', async () => {
   _setMemoryReaderForTests(() => ({
@@ -62,6 +62,25 @@ test('parseVmStat returns null for empty string', () => {
 
 test('parseVmStat returns null for malformed output', () => {
   assert.equal(parseVmStat('not valid vm_stat output'), null);
+});
+
+test('parseLinuxMeminfo uses MemAvailable for Linux free memory', () => {
+  const output = `MemTotal:       31982940 kB
+MemFree:         7105992 kB
+MemAvailable:   18290212 kB
+Buffers:          372008 kB`;
+
+  assert.deepEqual(parseLinuxMeminfo(output), {
+    totalBytes: 31982940 * 1024,
+    freeBytes: 18290212 * 1024,
+  });
+});
+
+test('parseLinuxMeminfo returns null without MemAvailable', () => {
+  const output = `MemTotal:       31982940 kB
+MemFree:         7105992 kB`;
+
+  assert.equal(parseLinuxMeminfo(output), null);
 });
 
 test('macOS memory calculation: 16GB total, active+wired via vm_stat → 43%', async () => {

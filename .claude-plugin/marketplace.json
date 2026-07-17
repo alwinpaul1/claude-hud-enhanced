@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Enhanced real-time statusline HUD for Claude Code - color themes, accurate token display, context health, tool activity, agent tracking, and todo progress",
-    "version": "0.2.38"
+    "version": "0.3.0"
   },
   "plugins": [
     {
@@ -14,7 +14,16 @@
       "source": "./plugins/claude-hud-enhanced",
       "description": "Enhanced statusline with color themes, accurate token display, context usage, active tools, running agents, and todo progress. Always visible below your input, zero config required.",
       "category": "monitoring",
-      "tags": ["hud", "statusline", "monitoring", "context", "tools", "agents", "todos", "themes"]
+      "tags": [
+        "hud",
+        "statusline",
+        "monitoring",
+        "context",
+        "tools",
+        "agents",
+        "todos",
+        "themes"
+      ]
     }
   ]
 }

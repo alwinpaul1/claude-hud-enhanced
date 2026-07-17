@@ -3,10 +3,16 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { render } from '../dist/render/index.js';
+import { mergeConfig } from '../dist/config.js';
+import { parseTranscript } from '../dist/transcript.js';
 import { renderSessionLine } from '../dist/render/session-line.js';
 import { renderProjectLine, renderGitFilesLine } from '../dist/render/lines/project.js';
-import { renderToolsLine } from '../dist/render/tools-line.js';
+import { renderPromptCacheLine } from '../dist/render/lines/prompt-cache.js';
+import { renderToolsLine, shortenToolName } from '../dist/render/tools-line.js';
+import { renderSkillsLine, renderMcpLine } from '../dist/render/skills-mcp-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
 import { renderTodosLine } from '../dist/render/todos-line.js';
 import { renderUsageLine } from '../dist/render/lines/usage.js';
@@ -14,12 +20,17 @@ import { renderMemoryLine } from '../dist/render/lines/memory.js';
 import { renderIdentityLine } from '../dist/render/lines/identity.js';
 import { renderEnvironmentLine } from '../dist/render/lines/environment.js';
 import { renderSessionTokensLine } from '../dist/render/lines/session-tokens.js';
+import { renderCompactionsLine } from '../dist/render/lines/compactions.js';
+import { renderSessionTimeLine } from '../dist/render/lines/session-time.js';
+import { renderAdvisorLine, prettifyAdvisorId } from '../dist/render/lines/advisor.js';
 import { getContextColor, getQuotaColor } from '../dist/render/colors.js';
 import { setLanguage } from '../dist/i18n/index.js';
 
 function stripAnsi(str) {
   // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*m/g, '');
+  return str
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
 }
 
 function baseContext() {
@@ -35,7 +46,7 @@ function baseContext() {
         },
       },
     },
-    transcript: { tools: [], agents: [], todos: [], sessionTokens: undefined },
+    transcript: { tools: [], skills: [], mcpServers: [], agents: [], todos: [], sessionTokens: undefined },
     claudeMdCount: 0,
     rulesCount: 0,
     mcpCount: 0,
@@ -48,9 +59,9 @@ function baseContext() {
       lineLayout: 'compact',
       showSeparators: false,
       pathLevels: 1,
-      elementOrder: ['project', 'context', 'usage', 'memory', 'environment', 'tools', 'agents', 'todos'],
-      gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false, pushWarningThreshold: 0, pushCriticalThreshold: 0 },
-      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showTokenBreakdown: true, showUsage: true, usageOnNewLine: false, usageBarEnabled: false, showTools: true, showAgents: true, showTodos: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showOutputStyle: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
+      elementOrder: ['project', 'context', 'usage', 'promptCache', 'memory', 'environment', 'tools', 'skills', 'mcp', 'agents', 'todos'],
+      gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false, branchOverflow: 'truncate', pushWarningThreshold: 0, pushCriticalThreshold: 0 },
+      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageValue: 'percent', usageBarEnabled: false, showResetLabel: true, showTools: true, showSkills: false, showMcp: false, showAgents: true, showTodos: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showPromptCache: false, promptCacheTtlSeconds: 300, showOutputStyle: false, mergeGroups: [['context', 'usage']], autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
       colors: {
         context: 'green',
         usage: 'brightBlue',
@@ -98,6 +109,33 @@ function withTerminal(columns, fn) {
   return withColumns(process.stdout, columns, fn);
 }
 
+async function withDeterministicSpeedCache(fn) {
+  const tempConfigDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-render-'));
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const originalNow = Date.now;
+  const transcriptPath = path.join(tempConfigDir, 'session.jsonl');
+  await writeFile(transcriptPath, '', 'utf8');
+  const transcriptHash = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
+  const cachePath = path.join(tempConfigDir, 'plugins', 'claude-hud', 'speed-cache', `${transcriptHash}.json`);
+
+  process.env.CLAUDE_CONFIG_DIR = tempConfigDir;
+  await mkdir(path.dirname(cachePath), { recursive: true });
+  await writeFile(cachePath, JSON.stringify({ outputTokens: 1000, timestamp: 1000 }), 'utf8');
+  Date.now = () => 2000;
+
+  try {
+    await fn({ transcriptPath });
+  } finally {
+    Date.now = originalNow;
+    if (originalConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
+    }
+    await rm(tempConfigDir, { recursive: true, force: true });
+  }
+}
+
 test('renderSessionLine adds token breakdown when context is high', () => {
   const ctx = baseContext();
   // For 90%: (tokens + 33000) / 200000 = 0.9 → tokens = 147000
@@ -105,6 +143,58 @@ test('renderSessionLine adds token breakdown when context is high', () => {
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('in:'), 'expected token breakdown');
   assert.ok(line.includes('cache:'), 'expected cache breakdown');
+});
+
+test('renderSessionLine token breakdown honours contextCriticalThreshold', () => {
+  const ctx = baseContext();
+  ctx.config.display.contextCriticalThreshold = 50;
+  // For 55%: (tokens + 33000) / 200000 = 0.55 → tokens = 77000
+  ctx.stdin.context_window.current_usage.input_tokens = 77000;
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('in:'), 'expected token breakdown at 55% when critical threshold is 50');
+});
+
+test('renderSessionLine suppresses token breakdown below raised contextCriticalThreshold', () => {
+  const ctx = baseContext();
+  ctx.config.display.contextCriticalThreshold = 95;
+  // For 90%: (tokens + 33000) / 200000 = 0.9 → tokens = 147000
+  ctx.stdin.context_window.current_usage.input_tokens = 147000;
+  const line = renderSessionLine(ctx);
+  assert.ok(!line.includes('in:'), 'expected no token breakdown at 90% when critical threshold is 95');
+});
+
+test('renderSessionLine token display uses autoCompactWindow as denominator when set', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({
+    lineLayout: 'compact',
+    display: { contextValue: 'both', autoCompactWindow: 200000, showTokenBreakdown: false },
+  });
+  // 70.6k tokens against a 1M model window, but auto-compact window is 200k.
+  ctx.stdin.context_window.context_window_size = 1000000;
+  ctx.stdin.context_window.current_usage.input_tokens = 70600;
+  const line = stripAnsi(renderSessionLine(ctx));
+  // Should match /context: 35% (71k/200k), not 7% (71k/1.0M).
+  assert.ok(line.includes('35%'), `expected 35% in: ${line}`);
+  assert.ok(line.includes('/200k'), `expected /200k denominator in: ${line}`);
+  assert.ok(!line.includes('/1.0M'), `expected full window not shown in: ${line}`);
+});
+
+test('renderIdentityLine token breakdown honours contextCriticalThreshold', () => {
+  const ctx = baseContext();
+  ctx.config.display.contextCriticalThreshold = 50;
+  // For 55%: (tokens + 33000) / 200000 = 0.55 → tokens = 77000
+  ctx.stdin.context_window.current_usage.input_tokens = 77000;
+  const line = renderIdentityLine(ctx);
+  assert.ok(line.includes('in:'), 'expected token breakdown at 55% when critical threshold is 50');
+});
+
+test('renderIdentityLine suppresses token breakdown below raised contextCriticalThreshold', () => {
+  const ctx = baseContext();
+  ctx.config.display.contextCriticalThreshold = 95;
+  // For 90%: (tokens + 33000) / 200000 = 0.9 → tokens = 147000
+  ctx.stdin.context_window.current_usage.input_tokens = 147000;
+  const line = renderIdentityLine(ctx);
+  assert.ok(!line.includes('in:'), 'expected no token breakdown at 90% when critical threshold is 95');
 });
 
 test('renderSessionLine includes duration and formats large tokens', () => {
@@ -119,6 +209,19 @@ test('renderSessionLine includes duration and formats large tokens', () => {
   assert.ok(line.includes('⏱️'));
   assert.ok(line.includes('685k') || line.includes('685.0k'), 'expected large input token display');
   assert.ok(line.includes('2k'), 'expected cache token display');
+});
+
+test('renderSessionLine includes session time when enabled in compact layout', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'compact';
+  ctx.config.display.showSessionStartDate = true;
+  ctx.config.display.showLastResponseAt = true;
+  ctx.transcript.sessionStart = new Date(2026, 4, 8, 9, 14, 0);
+  ctx.transcript.lastAssistantResponseAt = new Date(Date.now() - 5 * 60 * 1000);
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Started: 2026-05-08 09:14'), `should include session start: ${line}`);
+  assert.ok(line.includes('Last reply: 5m ago'), `should include last reply age: ${line}`);
 });
 
 test('renderSessionLine handles missing input tokens and cache creation usage', () => {
@@ -148,6 +251,28 @@ test('getContextColor returns yellow for warning threshold', () => {
   assert.equal(getContextColor(70), '\x1b[33m');
 });
 
+test('getContextColor respects custom thresholds', () => {
+  const thresholds = { warning: 30, critical: 50 };
+  assert.equal(getContextColor(10, undefined, thresholds), '\x1b[32m'); // green
+  assert.equal(getContextColor(30, undefined, thresholds), '\x1b[33m'); // yellow
+  assert.equal(getContextColor(49, undefined, thresholds), '\x1b[33m'); // still yellow
+  assert.equal(getContextColor(50, undefined, thresholds), '\x1b[31m'); // red
+  assert.equal(getContextColor(90, undefined, thresholds), '\x1b[31m'); // red
+});
+
+test('getContextColor falls back to defaults when thresholds undefined', () => {
+  assert.equal(getContextColor(69, undefined, {}), '\x1b[32m');
+  assert.equal(getContextColor(70, undefined, {}), '\x1b[33m');
+  assert.equal(getContextColor(85, undefined, {}), '\x1b[31m');
+});
+
+test('getContextColor honours partial threshold overrides', () => {
+  // Only warning overridden — critical stays at default 85
+  assert.equal(getContextColor(30, undefined, { warning: 30 }), '\x1b[33m');
+  assert.equal(getContextColor(84, undefined, { warning: 30 }), '\x1b[33m');
+  assert.equal(getContextColor(85, undefined, { warning: 30 }), '\x1b[31m');
+});
+
 test('getContextColor and getQuotaColor respect custom semantic overrides', () => {
   const colors = {
     context: 'cyan',
@@ -159,9 +284,8 @@ test('getContextColor and getQuotaColor respect custom semantic overrides', () =
 
   assert.equal(getContextColor(10, colors), '\x1b[36m');
   assert.equal(getContextColor(70, colors), '\x1b[94m');
-  assert.equal(getQuotaColor(25, colors), '\x1b[36m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[94m');
-  assert.equal(getQuotaColor(95, colors), '\x1b[31m');
+  assert.equal(getQuotaColor(25, colors), '\x1b[35m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[33m');
 });
 
 test('getContextColor and getQuotaColor resolve 256-color indices', () => {
@@ -176,8 +300,8 @@ test('getContextColor and getQuotaColor resolve 256-color indices', () => {
   assert.equal(getContextColor(10, colors), '\x1b[38;5;82m');
   assert.equal(getContextColor(70, colors), '\x1b[38;5;220m');
   assert.equal(getContextColor(90, colors), '\x1b[38;5;196m');
-  assert.equal(getQuotaColor(25, colors), '\x1b[38;5;82m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[38;5;220m');
+  assert.equal(getQuotaColor(25, colors), '\x1b[38;5;214m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[38;5;97m');
   assert.equal(getQuotaColor(95, colors), '\x1b[38;5;196m');
 });
 
@@ -192,8 +316,8 @@ test('getContextColor and getQuotaColor resolve hex color strings', () => {
 
   assert.equal(getContextColor(10, colors), '\x1b[38;2;51;255;0m');
   assert.equal(getContextColor(70, colors), '\x1b[38;2;255;135;215m');
-  assert.equal(getQuotaColor(25, colors), '\x1b[38;2;51;255;0m');
-  assert.equal(getQuotaColor(80, colors), '\x1b[38;2;255;135;215m');
+  assert.equal(getQuotaColor(25, colors), '\x1b[38;2;255;176;0m');
+  assert.equal(getQuotaColor(80, colors), '\x1b[38;2;175;135;255m');
 });
 
 test('renderSessionLine includes config counts when present', () => {
@@ -303,6 +427,16 @@ test('render expanded layout supports combined context display', () => {
   );
 });
 
+test('render expanded layout includes prompt cache as its own opt-in element', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.display.showPromptCache = true;
+  ctx.transcript.lastAssistantResponseAt = new Date(Date.now() - 45_000);
+
+  const lines = captureRenderLines(ctx);
+  assert.ok(lines.some(line => line.includes('Cache ⏱ 4m 15s')), `should render prompt cache line, got: ${lines.join(' | ')}`);
+});
+
 test('renderSessionLine omits project name when cwd is undefined', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = undefined;
@@ -328,6 +462,23 @@ test('renderSessionLine includes Claude Code version when enabled', () => {
   assert.ok(line.includes('CC v2.1.81'));
 });
 
+test('renderPromptCacheLine returns null when disabled or missing transcript data', () => {
+  const ctx = baseContext();
+  assert.equal(renderPromptCacheLine(ctx), null);
+
+  ctx.config.display.showPromptCache = true;
+  assert.equal(renderPromptCacheLine(ctx), null);
+});
+
+test('renderSessionLine includes prompt cache countdown when enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showPromptCache = true;
+  ctx.transcript.lastAssistantResponseAt = new Date(Date.now() - 30_000);
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Cache ⏱ 4m 30s'), `should include prompt cache countdown, got: ${line}`);
+});
+
 test('renderSessionLine hides session name by default', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
@@ -341,6 +492,28 @@ test('renderSessionLine includes customLine when configured', () => {
   ctx.config.display.customLine = 'Ship it';
   const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('Ship it'));
+});
+
+test('renderSessionLine places customLine before model badge when position is first', () => {
+  const ctx = baseContext();
+  ctx.config.display.customLine = 'prod-server';
+  ctx.config.display.customLinePosition = 'first';
+  const line = stripAnsi(renderSessionLine(ctx));
+  const customIdx = line.indexOf('prod-server');
+  const modelIdx = line.indexOf('[Opus]');
+  assert.ok(customIdx >= 0, 'should include custom line');
+  assert.ok(modelIdx >= 0, 'should include model badge');
+  assert.ok(customIdx < modelIdx, `custom line (${customIdx}) should appear before model badge (${modelIdx})`);
+});
+
+test('renderSessionLine places customLine at end when position is last', () => {
+  const ctx = baseContext();
+  ctx.config.display.customLine = 'prod-server';
+  ctx.config.display.customLinePosition = 'last';
+  const line = stripAnsi(renderSessionLine(ctx));
+  const customIdx = line.indexOf('prod-server');
+  const modelIdx = line.indexOf('[Opus]');
+  assert.ok(customIdx > modelIdx, 'custom line should appear after model badge when position is last');
 });
 
 test('renderSessionLine applies modelFormat compact', () => {
@@ -359,6 +532,18 @@ test('renderSessionLine applies modelOverride', () => {
   const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('My AI'));
   assert.ok(!line.includes('Claude Opus'));
+});
+
+test('renderSessionLine renders a sanitized opt-in transcript model', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus' };
+  ctx.transcript.lastAssistantModel = 'proxy-\x1b[31mred\x1b[0m\x1b]8;;https://evil.test\x07link\x1b]8;;\x07\u202E';
+  ctx.config.display.modelSource = 'transcript';
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('[proxy-redlink]'), `got: ${line}`);
+  assert.ok(!line.includes('Claude Opus'));
+  assert.doesNotMatch(line, /[\x1b\u202E]/u);
 });
 
 test('renderProjectLine includes session name when showSessionName is true', () => {
@@ -410,6 +595,136 @@ test('renderMemoryLine stays hidden in compact layout even when enabled', () => 
   assert.equal(renderMemoryLine(ctx), null);
 });
 
+test('render expanded layout aligns context and memory bars in CJK locales', () => {
+  const ctx = baseContext();
+  ctx.config.language = 'zh-Hans';
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['context', 'memory'];
+  ctx.config.display.showMemoryUsage = true;
+  ctx.memoryUsage = {
+    totalBytes: 16 * 1024 ** 3,
+    usedBytes: 10 * 1024 ** 3,
+    freeBytes: 6 * 1024 ** 3,
+    usedPercent: 63,
+  };
+
+  setLanguage('zh-Hans');
+  try {
+    const lines = captureRenderLines(ctx).map(stripAnsi);
+    const contextLine = lines.find(line => line.includes('上下文'));
+    const memoryLine = lines.find(line => line.includes('内存'));
+
+    assert.ok(contextLine?.startsWith('上下文 '), `got: ${contextLine}`);
+    assert.ok(memoryLine?.startsWith('内存   '), `got: ${memoryLine}`);
+  } finally {
+    setLanguage('en');
+  }
+});
+
+test('render expanded layout aligns a combined progress row with separate memory', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['context', 'usage', 'memory'];
+  ctx.config.display.showMemoryUsage = true;
+  ctx.usageData = {
+    planName: 'Team',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+  ctx.memoryUsage = {
+    totalBytes: 16 * 1024 ** 3,
+    usedBytes: 10 * 1024 ** 3,
+    freeBytes: 6 * 1024 ** 3,
+    usedPercent: 63,
+  };
+
+  const lines = withTerminal(160, () => captureRenderLines(ctx)).map(stripAnsi);
+  const combinedLine = lines.find(line => line.includes('Context') && line.includes('Usage'));
+  const memoryLine = lines.find(line => line.includes('Approx RAM'));
+
+  assert.ok(combinedLine?.startsWith('Context    '), `got: ${combinedLine}`);
+  assert.ok(combinedLine?.includes('Usage     '), `got: ${combinedLine}`);
+  assert.ok(memoryLine?.startsWith('Approx RAM '), `got: ${memoryLine}`);
+});
+
+test('render expanded layout aligns memory only after a custom merged row wraps', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['context', 'memory'];
+  ctx.config.display.showMemoryUsage = true;
+  ctx.config.display.mergeGroups = [['context', 'memory']];
+  ctx.memoryUsage = {
+    totalBytes: 16 * 1024 ** 3,
+    usedBytes: 10 * 1024 ** 3,
+    freeBytes: 6 * 1024 ** 3,
+    usedPercent: 63,
+  };
+
+  const combined = withTerminal(160, () => captureRenderLines(ctx)).map(stripAnsi);
+  assert.equal(combined.length, 1);
+  assert.ok(combined[0].startsWith('Context '), `got: ${combined[0]}`);
+  assert.ok(!combined[0].startsWith('Context    '), `wide merged labels should stay compact: ${combined[0]}`);
+
+  const stacked = withTerminal(24, () => captureRenderLines(ctx)).map(stripAnsi);
+  const contextLine = stacked.find(line => line.includes('Context'));
+  const memoryLine = stacked.find(line => line.includes('Approx RAM'));
+  assert.ok(contextLine?.startsWith('Context    '), `got: ${contextLine}`);
+  assert.ok(memoryLine?.startsWith('Approx RAM '), `got: ${memoryLine}`);
+});
+
+test('render expanded layout aligns memory when a hidden merge peer leaves it alone', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['context', 'usage', 'memory'];
+  ctx.config.display.showMemoryUsage = true;
+  ctx.config.display.mergeGroups = [['usage', 'memory']];
+  ctx.usageData = null;
+  ctx.memoryUsage = {
+    totalBytes: 16 * 1024 ** 3,
+    usedBytes: 10 * 1024 ** 3,
+    freeBytes: 6 * 1024 ** 3,
+    usedPercent: 63,
+  };
+
+  setLanguage('zh-Hans');
+  try {
+    const lines = captureRenderLines(ctx).map(stripAnsi);
+    const contextLine = lines.find(line => line.includes('上下文'));
+    const memoryLine = lines.find(line => line.includes('内存'));
+
+    assert.ok(contextLine?.startsWith('上下文 '), `got: ${contextLine}`);
+    assert.ok(memoryLine?.startsWith('内存   '), `got: ${memoryLine}`);
+  } finally {
+    setLanguage('en');
+  }
+});
+
+test('render expanded layout keeps a lone memory progress label compact', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['usage', 'memory'];
+  ctx.config.display.showMemoryUsage = true;
+  ctx.config.display.mergeGroups = [['usage', 'memory']];
+  ctx.usageData = null;
+  ctx.memoryUsage = {
+    totalBytes: 16 * 1024 ** 3,
+    usedBytes: 10 * 1024 ** 3,
+    freeBytes: 6 * 1024 ** 3,
+    usedPercent: 63,
+  };
+
+  setLanguage('zh-Hans');
+  try {
+    const [memoryLine] = captureRenderLines(ctx).map(stripAnsi);
+    assert.ok(memoryLine.startsWith('内存 '), `got: ${memoryLine}`);
+    assert.ok(!memoryLine.startsWith('内存   '), `lone labels should not pad: ${memoryLine}`);
+  } finally {
+    setLanguage('en');
+  }
+});
+
 test('renderProjectLine includes extraLabel when present', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
@@ -440,6 +755,30 @@ test('renderProjectLine includes customLine when configured', () => {
   ctx.config.display.customLine = 'Stay sharp';
   const line = stripAnsi(renderProjectLine(ctx) ?? '');
   assert.ok(line.includes('Stay sharp'));
+});
+
+test('renderProjectLine places customLine before model badge when position is first', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.display.customLine = 'prod-server';
+  ctx.config.display.customLinePosition = 'first';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  const customIdx = line.indexOf('prod-server');
+  const modelIdx = line.indexOf('[Opus]');
+  assert.ok(customIdx >= 0, 'should include custom line');
+  assert.ok(modelIdx >= 0, 'should include model badge');
+  assert.ok(customIdx < modelIdx, `custom line (${customIdx}) should appear before model badge (${modelIdx})`);
+});
+
+test('renderProjectLine places customLine at end when position is last', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.display.customLine = 'prod-server';
+  ctx.config.display.customLinePosition = 'last';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  const customIdx = line.indexOf('prod-server');
+  const modelIdx = line.indexOf('[Opus]');
+  assert.ok(customIdx > modelIdx, 'custom line should appear after model badge when position is last');
 });
 
 test('renderProjectLine applies modelFormat compact (strips context suffix)', () => {
@@ -477,6 +816,166 @@ test('renderProjectLine modelOverride takes precedence over modelFormat', () => 
   ctx.config.display.modelOverride = 'My Custom Model';
   const line = stripAnsi(renderProjectLine(ctx) ?? '');
   assert.ok(line.includes('My Custom Model'));
+});
+
+test('renderProjectLine renders a sanitized opt-in auto transcript model', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus' };
+  ctx.transcript.lastAssistantModel = 'glm-\x1b[31mred\x1b[0m\x1b]8;;https://evil.test\x07link\x1b]8;;\x07\u202E';
+  ctx.config.display.modelSource = 'auto';
+
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('[glm-redlink]'), `got: ${line}`);
+  assert.ok(!line.includes('Claude Opus'));
+  assert.doesNotMatch(line, /[\x1b\u202E]/u);
+});
+
+test('renderProjectLine shows custom provider before the model when showProvider is on', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+  ctx.config.display.showProvider = true;
+  ctx.config.display.providerName = 'MyProxy';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('[MyProxy | Claude Opus 4.6]'), `got: ${line}`);
+});
+
+test('renderProjectLine falls back to auto-detected provider before the model', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    ctx.config.display.showProvider = true;
+    const line = stripAnsi(renderProjectLine(ctx) ?? '');
+    assert.ok(line.includes('[Bedrock | Claude Opus 4.6]'), `got: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderProjectLine keeps the legacy trailing provider label when showProvider is off', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    const line = stripAnsi(renderProjectLine(ctx) ?? '');
+    assert.ok(line.includes('[Claude Opus 4.6 | Bedrock]'), `got: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderSessionLine shows custom provider before the model when showProvider is on', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+  ctx.config.display.showProvider = true;
+  ctx.config.display.providerName = 'MyProxy';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('[MyProxy | Claude Opus 4.6]'), `got: ${line}`);
+});
+
+test('renderSessionLine falls back to auto-detected provider before the model', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    ctx.config.display.showProvider = true;
+    const line = stripAnsi(renderSessionLine(ctx));
+    assert.ok(line.includes('[Bedrock | Claude Opus 4.6]'), `got: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderSessionLine keeps the legacy trailing provider label when showProvider is off', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    const line = stripAnsi(renderSessionLine(ctx));
+    assert.ok(line.includes('[Claude Opus 4.6 | Bedrock]'), `got: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderProjectLine keeps effort attached to the model before a trailing provider', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.config.lineLayout = 'expanded';
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    ctx.effortLevel = 'xhigh';
+    ctx.effortSymbol = '◕';
+
+    const line = stripAnsi(renderProjectLine(ctx) ?? '');
+    assert.ok(line.includes('[Claude Opus 4.6 ◕ xhigh | Bedrock]'), `got: ${line}`);
+    assert.ok(!line.includes('Bedrock ◕ xhigh'), `effort must not attach to provider: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderSessionLine keeps effort attached to the model before a trailing provider', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.config.lineLayout = 'compact';
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    ctx.effortLevel = 'xhigh';
+    ctx.effortSymbol = '◕';
+
+    const line = stripAnsi(renderSessionLine(ctx));
+    assert.ok(line.includes('[Claude Opus 4.6 ◕ xhigh | Bedrock]'), `got: ${line}`);
+    assert.ok(!line.includes('Bedrock ◕ xhigh'), `effort must not attach to provider: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderProjectLine appends the effort label after the model when no provider is shown', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+  ctx.effortLevel = 'ultracode(xhigh)';
+  ctx.effortSymbol = '◕';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('[Claude Opus 4.6 ◕ ultracode(xhigh)]'), `got: ${line}`);
+});
+
+test('renderProjectLine keeps the effort label inside the model core with a custom provider', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+  ctx.config.display.showProvider = true;
+  ctx.config.display.providerName = 'MyProxy';
+  ctx.effortLevel = 'ultracode(xhigh)';
+  ctx.effortSymbol = '◕';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('[MyProxy | Claude Opus 4.6 ◕ ultracode(xhigh)]'), `got: ${line}`);
+});
+
+test('renderProjectLine keeps ultracode effort attached to the model before a trailing provider', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+    ctx.effortLevel = 'ultracode(xhigh)';
+    ctx.effortSymbol = '◕';
+    const line = stripAnsi(renderProjectLine(ctx) ?? '');
+    assert.ok(line.includes('[Claude Opus 4.6 ◕ ultracode(xhigh) | Bedrock]'), `got: ${line}`);
+    assert.ok(!line.includes('Bedrock ◕ ultracode'), `effort must not attach to provider: ${line}`);
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderSessionLine composes the effort label with a custom provider (compact layout)', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { display_name: 'Claude Opus 4.6' };
+  ctx.config.display.showProvider = true;
+  ctx.config.display.providerName = 'MyProxy';
+  ctx.effortLevel = 'ultracode(xhigh)';
+  ctx.effortSymbol = '◕';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('[MyProxy | Claude Opus 4.6 ◕ ultracode(xhigh)]'), `got: ${line}`);
 });
 
 test('renderProjectLine uses configurable element colors', () => {
@@ -521,6 +1020,8 @@ test('label color overrides apply across shared secondary text surfaces', () => 
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', target: 'src/index.ts', status: 'running', startTime: new Date(0) },
   ];
+  ctx.transcript.skills = ['frontend-design'];
+  ctx.transcript.mcpServers = ['linear'];
   ctx.transcript.agents = [
     { id: 'agent-1', type: 'planner', model: 'haiku', description: 'Inspecting', status: 'running', startTime: new Date(0) },
   ];
@@ -528,13 +1029,19 @@ test('label color overrides apply across shared secondary text surfaces', () => 
     { content: 'Ship it', status: 'in_progress' },
     { content: 'Done', status: 'completed' },
   ];
+  ctx.config.display.showSkills = true;
+  ctx.config.display.showMcp = true;
 
   const expected = '\x1b[38;2;171;205;239m';
   assert.ok(renderIdentityLine(ctx).includes(`${expected}Context\x1b[0m`));
   assert.ok(renderUsageLine(ctx)?.includes(`${expected}Usage\x1b[0m`));
+  assert.ok(renderUsageLine(ctx, true)?.includes(`${expected}Usage  \x1b[0m`));
+  assert.ok(renderUsageLine(ctx, { align: true })?.includes(`${expected}Usage  \x1b[0m`));
   assert.ok(renderEnvironmentLine(ctx)?.includes(`${expected}2 CLAUDE.md | 1 rules\x1b[0m`));
   assert.ok(renderMemoryLine({ ...ctx, config: { ...ctx.config, lineLayout: 'expanded', display: { ...ctx.config.display, showMemoryUsage: true } } })?.includes(`${expected}Approx RAM\x1b[0m`));
   assert.ok(renderToolsLine(ctx)?.includes(`${expected}: src/index.ts\x1b[0m`));
+  assert.ok(renderSkillsLine(ctx)?.includes(`${expected}(1)\x1b[0m`));
+  assert.ok(renderMcpLine(ctx)?.includes(`${expected}(1)\x1b[0m`));
   assert.ok(renderAgentsLine(ctx)?.includes(`${expected}[haiku]\x1b[0m`));
   assert.ok(renderTodosLine(ctx)?.includes(`${expected}(1/2)\x1b[0m`));
 });
@@ -557,6 +1064,32 @@ test('renderEnvironmentLine appends output style after config counts', () => {
   const line = renderEnvironmentLine(ctx);
   assert.ok(line?.includes('1 CLAUDE.md'));
   assert.ok(line?.includes('style: learning'));
+});
+
+test('renderEnvironmentLine treats missing showConfigCounts as disabled in expanded layout', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  delete ctx.config.display.showConfigCounts;
+  ctx.claudeMdCount = 2;
+  ctx.rulesCount = 1;
+  ctx.mcpCount = 3;
+  ctx.hooksCount = 4;
+
+  assert.equal(renderEnvironmentLine(ctx), null);
+});
+
+test('renderSessionLine treats missing showConfigCounts as disabled in compact layout', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'compact';
+  delete ctx.config.display.showConfigCounts;
+  ctx.claudeMdCount = 2;
+  ctx.rulesCount = 1;
+  ctx.mcpCount = 3;
+  ctx.hooksCount = 4;
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(!line.includes('CLAUDE.md'), `config counts must remain opt-in: ${line}`);
+  assert.ok(!line.includes('MCPs'), `config counts must remain opt-in: ${line}`);
 });
 
 test('renderProjectLine includes duration when showDuration is true', () => {
@@ -590,14 +1123,37 @@ test('renderProjectLine falls back to an estimate when native cost is absent', (
   };
 
   const line = stripAnsi(renderProjectLine(ctx));
-  assert.ok(line.includes('Est. $5.47'), `expected fallback estimate, got: ${line}`);
+  assert.ok(line.includes('Est. $1.82'), `expected fallback estimate, got: ${line}`);
 });
 
 test('renderProjectLine hides cost for provider-routed sessions', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.cwd = '/tmp/my-project';
+    ctx.stdin.model = { id: 'anthropic.claude-sonnet-4-20250514-v1:0' };
+    ctx.config.display.showCost = true;
+    ctx.stdin.cost = { total_cost_usd: 0 };
+    ctx.transcript.sessionTokens = {
+      inputTokens: 100000,
+      cacheCreationTokens: 10000,
+      cacheReadTokens: 20000,
+      outputTokens: 50000,
+    };
+
+    const line = stripAnsi(renderProjectLine(ctx));
+    assert.ok(!line.includes('Cost '), 'cost should stay hidden when billing is routed through the provider');
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderProjectLine shows the estimate for provider-routed sessions when showRoutedCost is on', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
   ctx.stdin.model = { id: 'anthropic.claude-sonnet-4-20250514-v1:0' };
   ctx.config.display.showCost = true;
+  ctx.config.display.showRoutedCost = true;
   ctx.stdin.cost = { total_cost_usd: 0 };
   ctx.transcript.sessionTokens = {
     inputTokens: 100000,
@@ -607,7 +1163,35 @@ test('renderProjectLine hides cost for provider-routed sessions', () => {
   };
 
   const line = stripAnsi(renderProjectLine(ctx));
-  assert.ok(!line.includes('Cost '), 'cost should stay hidden when billing is routed through the provider');
+  assert.ok(line.includes('Est. $1.09'), `expected routed estimate, got: ${line}`);
+});
+
+test('renderProjectLine shows native cost for provider-routed sessions when showRoutedCost is on', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.stdin.model = { id: 'anthropic.claude-sonnet-4-20250514-v1:0' };
+  ctx.config.display.showCost = true;
+  ctx.config.display.showRoutedCost = true;
+  ctx.stdin.cost = { total_cost_usd: 2.54 };
+
+  const line = stripAnsi(renderProjectLine(ctx));
+  assert.ok(line.includes('Cost $2.54'), `expected native routed cost, got: ${line}`);
+});
+
+test('renderProjectLine keeps routed cost hidden when showRoutedCost is on but showCost is off', () => {
+  const ctx = baseContext();
+  ctx.stdin.model = { id: 'anthropic.claude-sonnet-4-20250514-v1:0' };
+  ctx.config.display.showCost = false;
+  ctx.config.display.showRoutedCost = true;
+  ctx.transcript.sessionTokens = {
+    inputTokens: 100000,
+    cacheCreationTokens: 10000,
+    cacheReadTokens: 20000,
+    outputTokens: 50000,
+  };
+
+  const line = stripAnsi(renderProjectLine(ctx));
+  assert.ok(!line.includes('Est.') && !line.includes('Cost '), `cost should stay hidden without showCost, got: ${line}`);
 });
 
 test('renderProjectLine translates native cost label when Chinese is enabled', () => {
@@ -632,6 +1216,67 @@ test('renderProjectLine omits duration when showDuration is false', () => {
   ctx.sessionDuration = '12m 34s';
   const line = renderProjectLine(ctx);
   assert.ok(!line?.includes('12m 34s'), 'should not include session duration when disabled');
+});
+
+test('renderProjectLine treats missing showDuration as disabled in expanded layout', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  delete ctx.config.display.showDuration;
+  ctx.sessionDuration = '12m 34s';
+
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(!line.includes('12m 34s'), `duration must remain opt-in: ${line}`);
+});
+
+test('renderSessionLine treats missing showDuration as disabled in compact layout', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'compact';
+  delete ctx.config.display.showDuration;
+  ctx.sessionDuration = '12m 34s';
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(!line.includes('12m 34s'), `duration must remain opt-in: ${line}`);
+});
+
+test('renderProjectLine includes speed when showSpeed is true and speed is available', async () => {
+  await withDeterministicSpeedCache(async ({ transcriptPath }) => {
+    const ctx = baseContext();
+    ctx.stdin.transcript_path = transcriptPath;
+    ctx.stdin.cwd = '/tmp/my-project';
+    ctx.stdin.context_window.current_usage.output_tokens = 2000;
+    ctx.config.display.showSpeed = true;
+
+    const line = renderProjectLine(ctx);
+    assert.ok(line?.includes('out: 1000.0 tok/s'), 'should include deterministic speed');
+  });
+});
+
+test('renderProjectLine omits speed when showSpeed is false', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.display.showSpeed = false;
+  ctx.stdin.context_window.current_usage.output_tokens = 5000;
+  const line = renderProjectLine(ctx);
+  assert.ok(!line?.includes('tok/s'), 'should not include speed when disabled');
+});
+
+test('render expanded layout includes speed and duration on the project line', async () => {
+  await withDeterministicSpeedCache(async ({ transcriptPath }) => {
+    const ctx = baseContext();
+    ctx.stdin.transcript_path = transcriptPath;
+    ctx.config.lineLayout = 'expanded';
+    ctx.stdin.cwd = '/tmp/my-project';
+    ctx.stdin.context_window.current_usage.output_tokens = 2000;
+    ctx.config.display.showSpeed = true;
+    ctx.sessionDuration = '12m 34s';
+
+    const lines = withTerminal(120, () => captureRenderLines(ctx));
+    const projectLine = lines.find(line => line.includes('my-project'));
+
+    assert.ok(projectLine, 'expected an expanded project line');
+    assert.ok(projectLine.includes('out: 1000.0 tok/s'), 'should include deterministic speed');
+    assert.ok(projectLine.includes('⏱️  12m 34s'), 'should include session duration');
+  });
 });
 
 test('renderSessionLine omits project name when showProject is false', () => {
@@ -680,6 +1325,55 @@ test('renderSessionLine displays branch with slashes', () => {
   assert.ok(line.includes('feature/add-auth'));
 });
 
+test('renderSessionLine strips control and bidi characters from git refs', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitStatus = { branch: 'release/\u202Eevil\u0007', isDirty: false, ahead: 0, behind: 0 };
+  const line = renderSessionLine(ctx);
+  assert.ok(line.includes('release/evil'));
+  assert.ok(!line.includes('\u202E'));
+  assert.ok(!line.includes('\u0007'));
+});
+
+test('renderSessionLine can give git its own segment for wrapping', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitStatus = { branch: 'feature/add-auth', isDirty: false, ahead: 0, behind: 0 };
+  ctx.config.gitStatus.branchOverflow = 'wrap';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('my-project | git:(feature/add-auth)'), 'git should render as a separate segment');
+});
+
+test('renderProjectLine can give git its own segment for wrapping', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitStatus = { branch: 'feature/add-auth', isDirty: false, ahead: 0, behind: 0 };
+  ctx.config.gitStatus.branchOverflow = 'wrap';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('my-project │ git:(feature/add-auth)'), 'git should render as a separate segment');
+});
+
+test('renderSessionLine shows the enabled auth segment in compact layout', () => {
+  const ctx = baseContext();
+  ctx.authInfo = { method: 'Claude Max 20x', user: 'someone.long' };
+  ctx.config.display.showAuth = true;
+  ctx.config.display.showAuthUser = true;
+  ctx.config.display.authUserLength = 8;
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Claude Max 20x · someone.…'));
+});
+
+test('renderProjectLine shows the enabled auth segment in expanded layout', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.authInfo = { method: 'API Key', user: null };
+  ctx.config.display.showAuth = true;
+
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('API Key'));
+});
+
 test('renderToolsLine renders running and completed tools', () => {
   const ctx = baseContext();
   ctx.transcript.tools = [
@@ -704,6 +1398,124 @@ test('renderToolsLine renders running and completed tools', () => {
   assert.ok(line?.includes('Read'));
   assert.ok(line?.includes('Edit'));
   assert.ok(line?.includes('.../authentication.ts'));
+});
+
+test('renderToolsLine keeps default tool cap and full names', () => {
+  const ctx = baseContext();
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'mcp__plugin_context-mode_context-mode__ctx_batch_execute', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-2', name: 'ToolSearch', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-3', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-4', name: 'Edit', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-5', name: 'Write', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+  ];
+
+  const line = stripAnsi(renderToolsLine(ctx) ?? '');
+  assert.ok(line.includes('mcp__plugin_context-mode_context-mode__ctx_batch_execute'));
+  assert.ok(!line.includes('Write ×1'));
+});
+
+test('shortenToolName shortens MCP names to the final segment', () => {
+  assert.equal(
+    shortenToolName('mcp__plugin_context-mode_context-mode__ctx_batch_execute', 20),
+    'ctx_batch_execute'
+  );
+});
+
+test('shortenToolName truncates non-MCP names with an ellipsis', () => {
+  assert.equal(shortenToolName('ToolSearch', 5), 'Tool…');
+});
+
+test('shortenToolName truncates long MCP final segments', () => {
+  assert.equal(shortenToolName('mcp__plugin__execute_long_name', 5), 'exec…');
+});
+
+test('shortenToolName handles very small max lengths', () => {
+  assert.equal(shortenToolName('ToolSearch', 1), '…');
+});
+
+test('renderToolsLine renders colliding shortened MCP names separately', () => {
+  const ctx = baseContext();
+  ctx.config.display.toolNameMaxLength = 20;
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'mcp__a__run', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-2', name: 'mcp__b__run', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+  ];
+
+  const line = stripAnsi(renderToolsLine(ctx) ?? '');
+  assert.equal((line.match(/run ×1/g) ?? []).length, 2);
+});
+
+test('renderToolsLine respects toolsMaxVisible and preserves overflow indicator', () => {
+  const ctx = baseContext();
+  ctx.config.display.toolsMaxVisible = 2;
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-2', name: 'Edit', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-3', name: 'Write', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-4', name: 'Bash', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+  ];
+
+  const line = stripAnsi(renderToolsLine(ctx) ?? '');
+  assert.ok(line.includes('Read ×1'));
+  assert.ok(line.includes('Edit ×1'));
+  assert.ok(!line.includes('Write ×1'));
+  assert.ok(!line.includes('Bash ×1'));
+  assert.ok(line.includes('+2 more'));
+});
+
+test('render wraps all completed tools when toolsMaxVisible is unlimited', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'compact';
+  ctx.config.display.toolsMaxVisible = 0;
+  ctx.config.display.showContextBar = false;
+  ctx.config.display.showConfigCounts = false;
+  ctx.config.display.showUsage = false;
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-2', name: 'Edit', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-3', name: 'Write', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-4', name: 'Bash', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-5', name: 'ToolSearch', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+  ];
+
+  let lines = [];
+  withTerminal(24, () => {
+    lines = captureRenderLines(ctx);
+  });
+
+  assert.ok(lines.length > 1, 'expected the tools line to wrap on a narrow terminal');
+  assert.ok(lines.some(line => line.includes('ToolSearch ×1')));
+  assert.ok(!lines.some(line => line.includes('more')));
+});
+
+test('renderToolsLine preserves running targets and path truncation with shortened tool names', () => {
+  const ctx = baseContext();
+  ctx.config.display.toolNameMaxLength = 4;
+  ctx.transcript.tools = [
+    {
+      id: 'tool-1',
+      name: 'mcp__plugin__long_running_tool',
+      target: '/tmp/very/long/path/to/authentication.ts',
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = stripAnsi(renderToolsLine(ctx) ?? '');
+  assert.ok(line.includes('lon…'));
+  assert.ok(line.includes('.../authentication.ts'));
+});
+
+test('mergeConfig validates tool display counts as non-negative integers', () => {
+  assert.equal(mergeConfig({ display: { toolNameMaxLength: 12 } }).display.toolNameMaxLength, 12);
+  assert.equal(mergeConfig({ display: { toolsMaxVisible: 0 } }).display.toolsMaxVisible, 0);
+  assert.equal(mergeConfig({ display: { toolsMaxVisible: 2 } }).display.toolsMaxVisible, 2);
+
+  for (const value of [-1, 'abc', null, 1.5]) {
+    assert.equal(mergeConfig({ display: { toolNameMaxLength: value } }).display.toolNameMaxLength, 0);
+    assert.equal(mergeConfig({ display: { toolsMaxVisible: value } }).display.toolsMaxVisible, 4);
+  }
 });
 
 test('renderToolsLine truncates long filenames', () => {
@@ -916,6 +1728,16 @@ test('renderTodosLine truncates long todo content', () => {
   assert.ok(line?.includes('...'));
 });
 
+test('renderTodosLine tolerates missing in-progress todo content', () => {
+  const ctx = baseContext();
+  ctx.transcript.todos = [
+    { status: 'in_progress' },
+  ];
+
+  assert.doesNotThrow(() => renderTodosLine(ctx));
+  assert.ok(renderTodosLine(ctx)?.includes('(0/1)'));
+});
+
 test('renderTodosLine returns null when no todos exist', () => {
   const ctx = baseContext();
   assert.equal(renderTodosLine(ctx), null);
@@ -924,6 +1746,137 @@ test('renderTodosLine returns null when no todos exist', () => {
 test('renderToolsLine returns null when no tools exist', () => {
   const ctx = baseContext();
   assert.equal(renderToolsLine(ctx), null);
+});
+
+test('parseTranscript detects active skills and distinct MCP servers from tool_use blocks', async () => {
+  const fixturePath = fileURLToPath(new URL('./fixtures/transcript-render.jsonl', import.meta.url));
+
+  const result = await parseTranscript(fixturePath);
+
+  assert.deepEqual(result.skills, ['frontend-design']);
+  assert.deepEqual(result.mcpServers, ['linear', 'slack']);
+});
+
+test('parseTranscript sanitizes and caps active skill and MCP names', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-'));
+  const filePath = path.join(dir, 'unsafe-activity.jsonl');
+  const longSkill = `skill-${'x'.repeat(100)}`;
+  const lines = [
+    JSON.stringify({
+      message: {
+        content: [
+          { type: 'tool_use', id: 'skill-1', name: 'Skill', input: { skill: `\x1b[31m${longSkill}\x1b[0m\u202E` } },
+          { type: 'tool_use', id: 'mcp-1', name: 'mcp__bad\x1b]8;;https://evil.example\x07server\u202E__tool', input: {} },
+        ],
+      },
+    }),
+  ];
+
+  await writeFile(filePath, lines.join('\n'), 'utf8');
+
+  try {
+    const result = await parseTranscript(filePath);
+    assert.equal(result.skills.length, 1);
+    assert.equal(result.skills[0].length, 64);
+    assert.equal(result.skills[0], `${longSkill.slice(0, 63)}…`);
+    assert.deepEqual(result.mcpServers, ['badserver']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('renderSkillsLine and renderMcpLine show counts and names when enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showSkills = true;
+  ctx.config.display.showMcp = true;
+  ctx.transcript.skills = ['frontend-design'];
+  ctx.transcript.mcpServers = ['linear', 'slack'];
+
+  const skillsLine = stripAnsi(renderSkillsLine(ctx) ?? '');
+  const mcpLine = stripAnsi(renderMcpLine(ctx) ?? '');
+
+  assert.equal(skillsLine, '✓ Skills (1): frontend-design');
+  assert.equal(mcpLine, '✓ MCPs (2): linear, slack');
+});
+
+test('renderSkillsLine and renderMcpLine sanitize direct transcript names before display', () => {
+  const ctx = baseContext();
+  ctx.config.display.showSkills = true;
+  ctx.config.display.showMcp = true;
+  ctx.transcript.skills = ['\x1b[31mfrontend-design\x1b[0m\u202E', '\x07'];
+  ctx.transcript.mcpServers = [`linear-${'x'.repeat(100)}`];
+
+  const skillsLine = stripAnsi(renderSkillsLine(ctx) ?? '');
+  const mcpLine = stripAnsi(renderMcpLine(ctx) ?? '');
+
+  assert.equal(skillsLine, '✓ Skills (1): frontend-design');
+  assert.ok(!skillsLine.includes('\u202E'), 'bidi control must not render');
+  assert.equal(mcpLine, `✓ MCPs (1): ${`linear-${'x'.repeat(100)}`.slice(0, 63)}…`);
+});
+
+test('renderSkillsLine and renderMcpLine return null with no data even when enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showSkills = true;
+  ctx.config.display.showMcp = true;
+
+  assert.equal(renderSkillsLine(ctx), null);
+  assert.equal(renderMcpLine(ctx), null);
+});
+
+test('renderToolsLine suppresses generic Skill entries when the Skills line is enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showSkills = true;
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'Skill', target: 'frontend-design', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+    { id: 'tool-2', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+  ];
+
+  const line = stripAnsi(renderToolsLine(ctx) ?? '');
+  assert.ok(!line.includes('Skill'), `Skill tool should be suppressed: ${line}`);
+  assert.ok(line.includes('Read'), `other tools should remain visible: ${line}`);
+
+  ctx.transcript.tools = [
+    { id: 'tool-1', name: 'Skill', target: 'frontend-design', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
+  ];
+  assert.equal(renderToolsLine(ctx), null);
+});
+
+test('skills and MCP activity lines stay hidden by default', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({
+    lineLayout: 'expanded',
+    elementOrder: ['project', 'skills', 'mcp'],
+  });
+  ctx.transcript.skills = ['frontend-design'];
+  ctx.transcript.mcpServers = ['linear', 'slack'];
+
+  const output = captureRenderLines(ctx).join('\n');
+
+  assert.ok(!output.includes('Skills'), 'skills line should be default-off');
+  assert.ok(!output.includes('MCPs (2)'), 'MCP activity line should be default-off');
+});
+
+test('mergeConfig validates skill and MCP display options', () => {
+  const enabled = mergeConfig({
+    display: {
+      showSkills: true,
+      showMcp: true,
+    },
+  });
+  assert.equal(enabled.display.showSkills, true);
+  assert.equal(enabled.display.showMcp, true);
+
+  const sanitized = mergeConfig({
+    elementOrder: ['skills', 'unknown', 'mcp', 'project', 'skills'],
+    display: {
+      showSkills: 'yes',
+      showMcp: 1,
+    },
+  });
+
+  assert.deepEqual(sanitized.elementOrder, ['skills', 'mcp', 'project']);
+  assert.equal(sanitized.display.showSkills, false);
+  assert.equal(sanitized.display.showMcp, false);
 });
 
 // Usage display tests
@@ -1016,26 +1969,65 @@ test('renderUsageLine translates labels when Chinese is enabled', () => {
   try {
     const line = stripAnsi(renderUsageLine(ctx) ?? '');
     assert.ok(line.includes('用量'));
-    assert.ok(line.includes('重置于'));
+    assert.ok(line.includes('重置剩余'));
   } finally {
     setLanguage('en');
   }
 });
 
 test('renderSessionLine shows Bedrock label and hides usage for bedrock model ids', () => {
+  process.env.CLAUDE_CODE_USE_BEDROCK = '1';
+  try {
+    const ctx = baseContext();
+    ctx.stdin.model = { display_name: 'Sonnet', id: 'anthropic.claude-3-5-sonnet-20240620-v1:0' };
+    ctx.usageData = {
+      planName: 'Max',
+      fiveHour: 23,
+      sevenDay: 45,
+      fiveHourResetAt: null,
+      sevenDayResetAt: null,
+    };
+    const line = renderSessionLine(ctx);
+    assert.ok(line.includes('Sonnet'), 'should include model name');
+    assert.ok(line.includes('Bedrock'), 'should include Bedrock label');
+    assert.ok(!line.includes('5h'), 'should hide usage display');
+  } finally {
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+  }
+});
+
+test('renderSessionLine keeps usage visible for Enterprise model aliases', () => {
   const ctx = baseContext();
-  ctx.stdin.model = { display_name: 'Sonnet', id: 'anthropic.claude-3-5-sonnet-20240620-v1:0' };
+  ctx.stdin.model = { display_name: 'Claude Opus', id: 'opusplan' };
   ctx.usageData = {
-    planName: 'Max',
+    planName: 'Team',
     fiveHour: 23,
     sevenDay: 45,
     fiveHourResetAt: null,
     sevenDayResetAt: null,
   };
-  const line = renderSessionLine(ctx);
-  assert.ok(line.includes('Sonnet'), 'should include model name');
-  assert.ok(line.includes('Bedrock'), 'should include Bedrock label');
-  assert.ok(!line.includes('5h'), 'should hide usage display');
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Enterprise'), 'should include Enterprise label');
+  assert.ok(line.includes('Usage'), 'should keep usage visible for Enterprise aliases');
+  assert.ok(line.includes('5h'), 'should include usage window');
+});
+
+test('renderUsageLine keeps usage visible for Enterprise model aliases in expanded mode', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.stdin.model = { display_name: 'Claude Opus', id: 'opusplan' };
+  ctx.usageData = {
+    planName: 'Team',
+    fiveHour: 23,
+    sevenDay: 45,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(line.includes('Usage'), 'expanded usage line should still render');
+  assert.ok(line.includes('5h'), 'expanded usage line should include usage window');
 });
 
 test('renderSessionLine displays usage percentages (7d hidden when low)', () => {
@@ -1052,6 +2044,139 @@ test('renderSessionLine displays usage percentages (7d hidden when low)', () => 
   assert.ok(line.includes('5h'), 'should include 5h label');
   assert.ok(!line.includes('Weekly'), 'should NOT include 7d when below 80%');
   assert.ok(line.includes('6%'), 'should include 5h percentage');
+});
+
+test('default merged config hides low weekly usage in compact and expanded layouts', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({});
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 10,
+    sevenDay: 0,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const compactLine = stripAnsi(renderSessionLine(ctx));
+  const expandedLine = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(compactLine.includes('Usage'), `compact usage should include the 5h window: ${compactLine}`);
+  assert.ok(!compactLine.includes('Weekly'), `compact usage should hide low weekly usage: ${compactLine}`);
+  assert.ok(expandedLine.includes('Usage'), `expanded usage should include the 5h window: ${expandedLine}`);
+  assert.ok(!expandedLine.includes('Weekly'), `expanded usage should hide low weekly usage: ${expandedLine}`);
+});
+
+test('renderSessionLine displays external balance labels', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'External',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    balanceLabel: '¥6.35',
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Usage ¥6.35'), `should show balance label in compact layout: ${line}`);
+  assert.ok(!line.includes('5h'), `should bypass percentage window rendering: ${line}`);
+});
+test('renderSessionLine displays balance label alongside rate-limit windows', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 25,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    balanceLabel: '$1,256 / $1,800',
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('5h'), `should show 5h window alongside balance: ${line}`);
+  assert.ok(line.includes('$1,256 / $1,800'), `should show balance label alongside windows: ${line}`);
+});
+
+test('renderSessionLine displays balance label alongside limit reached warnings', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 100,
+    sevenDay: null,
+    fiveHourResetAt: new Date(Date.now() + 60 * 60 * 1000),
+    sevenDayResetAt: null,
+    balanceLabel: '$1,256 / $1,800',
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Limit reached'), `should show limit warning: ${line}`);
+  assert.ok(line.includes('$1,256 / $1,800'), `should show balance label alongside limit warning: ${line}`);
+});
+
+test('renderUsageLine displays balance label alongside rate-limit windows', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 25,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    balanceLabel: '$1,256 / $1,800',
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(line.includes('5h'), `should show 5h window alongside balance: ${line}`);
+  assert.ok(line.includes('$1,256 / $1,800'), `should show balance label alongside windows: ${line}`);
+});
+
+test('renderUsageLine displays balance label alongside limit reached warnings', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Max',
+    fiveHour: 100,
+    sevenDay: null,
+    fiveHourResetAt: new Date(Date.now() + 60 * 60 * 1000),
+    sevenDayResetAt: null,
+    balanceLabel: '$1,256 / $1,800',
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(line.includes('Limit reached'), `should show limit warning: ${line}`);
+  assert.ok(line.includes('$1,256 / $1,800'), `should show balance label alongside limit warning: ${line}`);
+});
+
+test('renderSessionLine supports remaining-based usage display', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageValue = 'remaining';
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 25,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('5h 75%'), `should show remaining 5h usage: ${line}`);
+  assert.ok(line.includes('Weekly 15%'), `should show remaining weekly usage: ${line}`);
+});
+
+test('renderSessionLine supports remaining-based compact usage display', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageCompact = true;
+  ctx.config.display.usageValue = 'remaining';
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 25,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('5h: 75%'), `should show compact remaining 5h usage: ${line}`);
+  assert.ok(line.includes('7d: 15%'), `should show compact remaining 7d usage: ${line}`);
 });
 
 test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
@@ -1085,12 +2210,12 @@ test('renderSessionLine shows 7d reset countdown in text-only mode', () => {
 
   const line = stripAnsi(renderSessionLine(ctx));
   assert.ok(line.includes('Weekly 85%'), `should include 7d label and percentage: ${line}`);
-  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 7d reset datetime: ${line}`);
+  assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in text-only mode: ${line}`);
 });
 
 test('renderSessionLine respects sevenDayThreshold override', () => {
   const ctx = baseContext();
-  ctx.config.display.sevenDayThreshold = 0;
+  ctx.config = mergeConfig({ display: { sevenDayThreshold: 0 } });
   ctx.usageData = {
     planName: 'Pro',
     fiveHour: 10,
@@ -1130,9 +2255,9 @@ test('renderSessionLine shows 5hr reset countdown', () => {
     fiveHourResetAt: resetTime,
     sevenDayResetAt: null,
   };
-  const line = stripAnsi(renderSessionLine(ctx));
+  const line = renderSessionLine(ctx);
   assert.ok(line.includes('5h'), 'should include 5h label');
-  assert.ok(/\(resets \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 5h reset time-of-day: ${line}`);
+  assert.ok(line.includes('2h'), 'should include reset countdown');
 });
 
 test('renderUsageLine shows reset countdown in days when >= 24 hours', () => {
@@ -1149,7 +2274,7 @@ test('renderUsageLine shows reset countdown in days when >= 24 hours', () => {
   const line = renderUsageLine(ctx);
   assert.ok(line, 'should render usage line');
   const plain = stripAnsi(line);
-  assert.ok(/\(resets \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(plain), `expected bar-mode reset time-of-day, got: ${plain}`);
+  assert.ok(plain.includes('(resets in 6d 7h)'), `expected bar-mode reset wording, got: ${plain}`);
   assert.ok(!plain.includes('151h'), `should avoid raw hour format for long durations: ${plain}`);
 });
 
@@ -1169,7 +2294,71 @@ test('renderUsageLine shows 7d reset countdown in text-only mode', () => {
   const line = stripAnsi(renderUsageLine(ctx));
   assert.ok(line.includes('5h 45%'), `should include 5h text-only usage: ${line}`);
   assert.ok(line.includes('Weekly 85%'), `should include 7d text-only usage: ${line}`);
-  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 7d reset datetime: ${line}`);
+  assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in text-only mode: ${line}`);
+});
+
+test('renderUsageLine supports remaining-based usage display with used-percent colors', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.usageValue = 'remaining';
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.config.colors = {
+    ...ctx.config.colors,
+    usage: 'cyan',
+    usageWarning: 'magenta',
+  };
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 25,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = renderUsageLine(ctx);
+  assert.ok(line, 'should render usage line');
+  assert.ok(
+    line.includes('\x1b[36m75%\x1b[0m'),
+    `expected remaining 5h usage with normal usage color, got: ${JSON.stringify(line)}`,
+  );
+  assert.ok(
+    line.includes('\x1b[35m15%\x1b[0m'),
+    `expected remaining weekly usage with used-percent warning color, got: ${JSON.stringify(line)}`,
+  );
+});
+
+test('renderUsageLine displays external balance labels', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'External',
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    balanceLabel: '¥6.35',
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.equal(line, 'Usage ¥6.35');
+});
+
+test('renderUsageLine can hide reset label in text-only mode', () => {
+  const ctx = baseContext();
+  const resetTime = new Date(Date.now() + (28 * 60 * 60 * 1000));
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.showResetLabel = false;
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: resetTime,
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx));
+  assert.ok(line.includes('(1d 4h)'), `should include bare countdown when reset label is hidden: ${line}`);
+  assert.ok(!line.includes('resets in'), `should omit reset label when disabled: ${line}`);
 });
 
 test('renderUsageLine translates weekly label when Chinese is enabled', () => {
@@ -1187,7 +2376,7 @@ test('renderUsageLine translates weekly label when Chinese is enabled', () => {
   try {
     const line = stripAnsi(renderUsageLine(ctx) ?? '');
     assert.ok(line.includes('本周'));
-    assert.ok(line.includes('重置于'));
+    assert.ok(line.includes('重置剩余'));
   } finally {
     setLanguage('en');
   }
@@ -1209,8 +2398,27 @@ test('renderUsageLine shows 7d reset countdown in bar mode when above threshold'
   const line = stripAnsi(renderUsageLine(ctx));
   assert.ok(line.includes('45%'), `should include 5h percentage in bar mode: ${line}`);
   assert.ok(line.includes('85%'), `should include 7d percentage: ${line}`);
-  assert.ok(/\(resets [A-Z][a-z]{2} \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(line), `should include 7d reset datetime in bar mode: ${line}`);
+  assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in bar mode: ${line}`);
   assert.ok(line.includes('|'), `should render both usage windows above the threshold: ${line}`);
+});
+
+test('renderUsageLine can hide reset label in bar mode', () => {
+  const ctx = baseContext();
+  const resetTime = new Date(Date.now() + (28 * 60 * 60 * 1000));
+  ctx.config.display.usageBarEnabled = true;
+  ctx.config.display.showResetLabel = false;
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: resetTime,
+  };
+
+  const line = stripAnsi(renderUsageLine(ctx));
+  assert.ok(line.includes('(1d 4h)'), `should include bare countdown in bar mode: ${line}`);
+  assert.ok(!line.includes('resets in'), `should omit reset label in bar mode when disabled: ${line}`);
 });
 
 test('renderUsageLine shows weekly-only usage without a ghost 5h section', () => {
@@ -1261,7 +2469,7 @@ test('renderUsageLine shows limit reset in days when >= 24 hours', () => {
   assert.ok(line, 'should render usage line');
   const plain = stripAnsi(line);
   assert.ok(plain.includes('Limit reached'), 'should show limit reached');
-  assert.ok(/\(resets \d{1,2}:\d{2}\s?(AM|PM)\)/i.test(plain), `expected time-of-day reset, got: ${plain}`);
+  assert.ok(/resets in \d+d( \d+h)?/.test(plain), `expected day/hour reset format, got: ${plain}`);
   assert.ok(!plain.includes('151h'), `should avoid raw hour format for long durations: ${plain}`);
 });
 
@@ -1328,11 +2536,38 @@ test('renderUsageLine uses custom usage palette overrides', () => {
 
   const line = withTerminal(120, () => renderUsageLine(ctx));
   assert.ok(line, 'should render usage line');
-  // Usage quota now follows context thresholds: <70 context (green), 70-85 warning (yellow), >=85 critical (red)
-  assert.ok(line.includes('\x1b[32m███'), `quota bar at 25% should use context (green) color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[32m25%\x1b[0m'), `quota percent at 25% should use context color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[33m████████'), `quota bar at 80% should use warning (yellow) color, got: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('\x1b[33m80%\x1b[0m'), `quota percent at 80% should use warning color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[36m███'), `expected custom usage bar color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[36m25%\x1b[0m'), `expected custom usage percentage color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[35m████████'), `expected custom usage warning color, got: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('\x1b[35m80%\x1b[0m'), `expected custom usage warning percentage color, got: ${JSON.stringify(line)}`);
+});
+
+test('quotaBar and coloredBar use custom barFilled and barEmpty characters', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = true;
+  ctx.config.colors = {
+    ...ctx.config.colors,
+    barFilled: '●',
+    barEmpty: '○',
+  };
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 50,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const usageLine = withTerminal(120, () => renderUsageLine(ctx));
+  assert.ok(usageLine, 'should render usage line');
+  assert.ok(usageLine.includes('●'), `expected custom filled char in usage bar, got: ${JSON.stringify(usageLine)}`);
+  assert.ok(usageLine.includes('○'), `expected custom empty char in usage bar, got: ${JSON.stringify(usageLine)}`);
+  assert.ok(!usageLine.includes('█'), `should not contain default filled char, got: ${JSON.stringify(usageLine)}`);
+  assert.ok(!usageLine.includes('░'), `should not contain default empty char, got: ${JSON.stringify(usageLine)}`);
+
+  const identityLine = renderIdentityLine(ctx);
+  assert.ok(identityLine.includes('●'), `expected custom filled char in context bar, got: ${JSON.stringify(identityLine)}`);
+  assert.ok(identityLine.includes('○'), `expected custom empty char in context bar, got: ${JSON.stringify(identityLine)}`);
 });
 
 test('renderSessionLine hides usage when showUsage config is false (hybrid toggle)', () => {
@@ -1548,6 +2783,25 @@ test('renderProjectLine colors ahead count at critical threshold', () => {
   assert.ok(line?.includes('\x1b[31m↑25\x1b[0m'), 'ahead count should use critical color');
 });
 
+test('renderProjectLine strips control characters from project and branch links', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-\u0007project';
+  ctx.gitStatus = {
+    branch: 'feat/\u0007name',
+    isDirty: false,
+    ahead: 0,
+    behind: 0,
+    branchUrl: 'https://github.com/example/claude-hud/tree/feat%2Fname\u0007',
+  };
+
+  const line = renderProjectLine(ctx) ?? '';
+  const visible = stripAnsi(line);
+
+  assert.ok(visible.includes('my-project'));
+  assert.ok(visible.includes('feat/name'));
+  assert.ok(!line.includes('\u0007'));
+});
+
 test('renderGitFilesLine renders tracked files with per-file line diffs', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
@@ -1576,6 +2830,34 @@ test('renderGitFilesLine renders tracked files with per-file line diffs', () => 
   assert.ok(line?.includes('+4'));
   assert.ok(line?.includes('-2'));
   assert.ok(line?.includes('?2'));
+});
+
+test('renderGitFilesLine strips control characters and skips links outside cwd', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.gitStatus.showFileStats = true;
+  ctx.gitStatus = {
+    branch: 'main',
+    isDirty: true,
+    ahead: 0,
+    behind: 0,
+    lineDiff: { added: 1, deleted: 0 },
+    fileStats: {
+      modified: 1,
+      added: 0,
+      deleted: 0,
+      untracked: 0,
+      trackedFiles: [
+        { basename: 'app\u0007.ts', fullPath: '../outside.ts', type: 'modified', lineDiff: { added: 1, deleted: 0 } },
+      ],
+    },
+  };
+
+  const line = renderGitFilesLine(ctx, 120) ?? '';
+  const visible = stripAnsi(line);
+
+  assert.ok(visible.includes('app.ts'));
+  assert.ok(!line.includes('\u0007'));
 });
 
 test('renderGitFilesLine hides on narrow terminals', () => {
@@ -1623,6 +2905,8 @@ test('render expanded layout honors custom elementOrder including activity place
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
   ];
+  ctx.transcript.skills = ['frontend-design'];
+  ctx.transcript.mcpServers = ['linear'];
   ctx.transcript.agents = [
     { id: 'agent-1', type: 'planner', status: 'running', startTime: new Date(0) },
   ];
@@ -1630,10 +2914,14 @@ test('render expanded layout honors custom elementOrder including activity place
     { content: 'todo-marker', status: 'in_progress' },
   ];
   ctx.config.display.showMemoryUsage = true;
-  ctx.config.elementOrder = ['tools', 'project', 'usage', 'context', 'memory', 'environment', 'agents', 'todos'];
+  ctx.config.display.showSkills = true;
+  ctx.config.display.showMcp = true;
+  ctx.config.elementOrder = ['tools', 'skills', 'mcp', 'project', 'usage', 'context', 'memory', 'environment', 'agents', 'todos'];
 
   const lines = withTerminal(120, () => captureRenderLines(ctx));
   const toolIndex = lines.findIndex(line => line.includes('Read'));
+  const skillsIndex = lines.findIndex(line => line.includes('Skills'));
+  const mcpIndex = lines.findIndex(line => line.includes('MCPs'));
   const projectIndex = lines.findIndex(line => line.includes('my-project'));
   const combinedIndex = lines.findIndex(line => line.includes('Usage') && line.includes('Context'));
   const memoryIndex = lines.findIndex(line => line.includes('Approx RAM'));
@@ -1642,16 +2930,30 @@ test('render expanded layout honors custom elementOrder including activity place
   const todoIndex = lines.findIndex(line => line.includes('todo-marker'));
 
   assert.deepEqual(
-    [toolIndex, projectIndex, combinedIndex, memoryIndex, environmentIndex, agentIndex, todoIndex].every(index => index >= 0),
+    [toolIndex, skillsIndex, mcpIndex, projectIndex, combinedIndex, memoryIndex, environmentIndex, agentIndex, todoIndex].every(index => index >= 0),
     true,
     'expected all configured elements to render'
   );
   assert.ok(toolIndex < projectIndex, 'tool line should move ahead of project');
+  assert.ok(toolIndex < skillsIndex, 'skills line should follow tools line');
+  assert.ok(skillsIndex < mcpIndex, 'MCP line should follow skills line');
+  assert.ok(mcpIndex < projectIndex, 'project line should follow MCP line');
   assert.ok(projectIndex < combinedIndex, 'combined usage/context line should follow project');
   assert.ok(combinedIndex < memoryIndex, 'memory line should follow combined usage/context');
   assert.ok(memoryIndex < environmentIndex, 'environment line should follow memory');
   assert.ok(environmentIndex < agentIndex, 'agent line should follow environment');
   assert.ok(agentIndex < todoIndex, 'todo line should follow agent line');
+});
+
+test('render expanded layout includes sessionTime element when enabled', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['project', 'sessionTime'];
+  ctx.config.display.showSessionStartDate = true;
+  ctx.transcript.sessionStart = new Date(2026, 4, 8, 9, 14, 0);
+
+  const lines = captureRenderLines(ctx);
+  assert.ok(lines.some(line => line.includes('Started: 2026-05-08 09:14')), `should render sessionTime line: ${lines.join('\n')}`);
 });
 
 test('render expanded layout omits elements not present in elementOrder', () => {
@@ -1696,7 +2998,7 @@ test('render expanded layout omits elements not present in elementOrder', () => 
   assert.ok(!output.includes('todo-marker'), 'todos should be omitted when excluded');
 });
 
-test('render expanded layout combines usage and context when adjacent in elementOrder', () => {
+test('render expanded layout combines default merge-group elements when adjacent in elementOrder', () => {
   const ctx = baseContext();
   ctx.config.lineLayout = 'expanded';
   ctx.usageData = {
@@ -1714,9 +3016,13 @@ test('render expanded layout combines usage and context when adjacent in element
   assert.ok(lines[0].includes('Usage'), 'combined line should include usage');
   assert.ok(lines[0].includes('Context'), 'combined line should include context');
   assert.ok(lines[0].includes('│'), 'combined line should preserve the shared separator');
+  const stripped = stripAnsi(lines[0]);
+  assert.ok(stripped.includes('Usage 5h 30%'), `combined line should keep the default unpadded usage label: ${stripped}`);
+  assert.ok(!stripped.includes('Usage  5h 30%'), `combined line should not pad the usage label: ${stripped}`);
+  assert.ok(!stripped.includes('Weekly '), `combined line should not pad the weekly label: ${stripped}`);
 });
 
-test('render expanded layout keeps usage and context separate when not adjacent', () => {
+test('render expanded layout keeps merge-group elements separate when they are not adjacent', () => {
   const ctx = baseContext();
   ctx.config.lineLayout = 'expanded';
   ctx.stdin.cwd = '/tmp/my-project';
@@ -1739,20 +3045,95 @@ test('render expanded layout keeps usage and context separate when not adjacent'
   assert.equal(combinedLine, undefined, 'usage and context should not combine when separated by another element');
 });
 
+test('render expanded layout keeps default merge-group elements separate when mergeGroups is empty', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.usageData = {
+    planName: 'Team',
+    fiveHour: 30,
+    sevenDay: 10,
+    fiveHourResetAt: new Date(Date.now() + 60 * 60 * 1000),
+    sevenDayResetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  };
+  ctx.config.display.mergeGroups = [];
+  ctx.config.elementOrder = ['usage', 'context'];
+
+  const lines = withTerminal(120, () => captureRenderLines(ctx));
+
+  assert.equal(lines.length, 2, 'empty mergeGroups should disable expanded merged lines');
+  assert.ok(lines.some(line => line.includes('Usage')), 'usage should stay visible');
+  assert.ok(lines.some(line => line.includes('Context')), 'context should stay visible');
+  assert.ok(!lines.some(line => line.includes('Usage') && line.includes('Context')), 'no combined line should be rendered');
+});
+
+test('render expanded layout combines custom merge groups in configured order', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.usageData = {
+    planName: 'Team',
+    fiveHour: 30,
+    sevenDay: 10,
+    fiveHourResetAt: new Date(Date.now() + 60 * 60 * 1000),
+    sevenDayResetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  };
+  ctx.config.display.mergeGroups = [['project', 'usage', 'context']];
+  ctx.config.elementOrder = ['project', 'usage', 'context'];
+
+  const lines = withTerminal(160, () => captureRenderLines(ctx));
+
+  assert.equal(lines.length, 1, 'custom merge groups should combine all adjacent configured elements');
+  assert.ok(lines[0].includes('my-project'), 'combined line should include project');
+  assert.ok(lines[0].includes('Usage'), 'combined line should include usage');
+  assert.ok(lines[0].includes('Context'), 'combined line should include context');
+  assert.ok(lines[0].split('│').length - 1 >= 2, 'combined line should keep the merge separators');
+});
+
+test('render expanded layout aligns progress labels only after wrapping merged lines to separate lines', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.usageData = {
+    planName: 'Team',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: new Date(Date.now() + 90 * 60 * 1000),
+    sevenDayResetAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
+  };
+  ctx.config.elementOrder = ['usage', 'context'];
+
+  const lines = withTerminal(24, () => captureRenderLines(ctx)).map(stripAnsi);
+  const usageLine = lines.find((line) => line.includes('Usage'));
+  const contextLine = lines.find((line) => line.includes('Context'));
+  const weeklyLine = lines.find((line) => line.includes('Weekly'));
+
+  assert.ok(usageLine, `narrow terminals should keep the usage line visible: ${lines.join(' | ')}`);
+  assert.ok(contextLine, `narrow terminals should keep the context line visible: ${lines.join(' | ')}`);
+  assert.ok(weeklyLine, `narrow terminals should keep the weekly segment visible: ${lines.join(' | ')}`);
+  assert.ok(usageLine.startsWith('Usage  '), `usage line should pad its label when stacked: ${usageLine}`);
+  assert.ok(weeklyLine.startsWith('Weekly '), `weekly label should pad when stacked: ${weeklyLine}`);
+  assert.ok(contextLine.startsWith('Context'), `context line should stay aligned with the padded usage label: ${contextLine}`);
+});
+
 test('render compact layout keeps activity lines even when elementOrder omits them', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = '/tmp/my-project';
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'Read', status: 'completed', startTime: new Date(0), endTime: new Date(0), duration: 0 },
   ];
+  ctx.transcript.skills = ['frontend-design'];
+  ctx.transcript.mcpServers = ['linear'];
   ctx.transcript.todos = [
     { content: 'todo-marker', status: 'in_progress' },
   ];
   ctx.config.elementOrder = ['project'];
+  ctx.config.display.showSkills = true;
+  ctx.config.display.showMcp = true;
 
   const output = captureRenderLines(ctx).join('\n');
 
   assert.ok(output.includes('Read'), 'compact mode should keep tools visible');
+  assert.ok(output.includes('Skills'), 'compact mode should keep skills visible');
+  assert.ok(output.includes('MCPs'), 'compact mode should keep MCPs visible');
   assert.ok(output.includes('todo-marker'), 'compact mode should keep todos visible');
 });
 
@@ -1793,6 +3174,439 @@ test('renderSessionLine includes compact session token summary when enabled', ()
   };
 
   const line = stripAnsi(renderSessionLine(ctx));
-  assert.ok(line.includes('tok: 2k'), 'should include compact token summary');
-  assert.ok(!line.includes('(in:'), 'compact token summary should omit in/out breakdown');
+  assert.ok(line.includes('tok: 2k (in: 2k, out: 250)'), 'should include compact token summary');
+});
+
+test('renderSessionLine includes compact cache token details when present', () => {
+  const ctx = baseContext();
+  ctx.config.display.showSessionTokens = true;
+  ctx.transcript.sessionTokens = {
+    inputTokens: 7000,
+    outputTokens: 28000,
+    cacheCreationTokens: 12000000,
+    cacheReadTokens: 800000,
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(
+    line.includes('tok: 12.8M (in: 7k, out: 28k, cache: 12.8M)'),
+    `unexpected compact token summary: ${line}`,
+  );
+});
+
+test('renderSessionLine translates compact session token summary when Chinese is enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showSessionTokens = true;
+  ctx.transcript.sessionTokens = {
+    inputTokens: 1500,
+    outputTokens: 250,
+    cacheCreationTokens: 500,
+    cacheReadTokens: 0,
+  };
+
+  setLanguage('zh');
+  try {
+    const line = stripAnsi(renderSessionLine(ctx));
+    assert.ok(line.includes('词元: 2k (输入: 2k, 输出: 250, 缓存: 500)'), `unexpected zh compact token summary: ${line}`);
+    assert.ok(!line.includes('tok:'), `unexpected bare English token label in zh output: ${line}`);
+    assert.ok(!line.includes('in:'), `unexpected bare English input label in zh output: ${line}`);
+    assert.ok(!line.includes('out:'), `unexpected bare English output label in zh output: ${line}`);
+  } finally {
+    setLanguage('en');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// display.showCompactions — opt-in compaction count
+// ---------------------------------------------------------------------------
+
+test('renderCompactionsLine returns null by default', () => {
+  const ctx = baseContext();
+  ctx.transcript.compactionCount = 3;
+
+  assert.equal(renderCompactionsLine(ctx), null);
+});
+
+test('renderCompactionsLine renders the compaction count when enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCompactions = true;
+  ctx.transcript.compactionCount = 3;
+
+  const line = stripAnsi(renderCompactionsLine(ctx) ?? '');
+  assert.equal(line, 'Compactions: 3');
+});
+
+test('renderCompactionsLine returns null when no compaction has occurred', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCompactions = true;
+  ctx.transcript.compactionCount = 0;
+
+  assert.equal(renderCompactionsLine(ctx), null);
+});
+
+test('renderSessionLine omits compaction count by default', () => {
+  const ctx = baseContext();
+  ctx.transcript.compactionCount = 3;
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(!line.includes('Compactions'), `compaction count should be opt-in, got: ${line}`);
+});
+
+test('renderSessionLine includes compaction count when showCompactions is enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCompactions = true;
+  ctx.transcript.compactionCount = 3;
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Compactions: 3'), `should include compaction count, got: ${line}`);
+});
+
+test('renderSessionLine hides compaction count when no compaction has occurred', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCompactions = true;
+  ctx.transcript.compactionCount = 0;
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(!line.includes('Compactions'), `zero compactions should render nothing, got: ${line}`);
+});
+
+test('render expanded layout includes compactions line when enabled', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.display.showCompactions = true;
+  ctx.transcript.compactionCount = 2;
+
+  const lines = captureRenderLines(ctx);
+  assert.ok(lines.some(line => line.includes('Compactions: 2')), `should render compactions line, got: ${lines.join(' | ')}`);
+});
+
+test('render expanded layout omits compactions line by default', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.transcript.compactionCount = 2;
+
+  const lines = captureRenderLines(ctx);
+  assert.ok(!lines.some(line => line.includes('Compactions')), `compactions line should be opt-in, got: ${lines.join(' | ')}`);
+});
+
+// ---------------------------------------------------------------------------
+// display.timeFormat — absolute and both modes
+// ---------------------------------------------------------------------------
+
+test('renderUsageLine uses "resets in" preposition for default relative mode in bar-mode', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = true;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('resets in'), `should use "resets in" for relative mode, got: ${plain}`);
+});
+
+test('renderUsageLine uses "resets at" when timeFormat is "absolute" (bar mode)', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = true;
+  ctx.config.display.timeFormat = 'absolute';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('resets at'), `expected "resets at" in absolute bar mode, got: ${plain}`);
+  assert.ok(!plain.includes('resets in'), `should not say "resets in" for absolute mode, got: ${plain}`);
+});
+
+test('renderUsageLine shows relative and absolute time when timeFormat is "both"', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'both';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(Date.now() + 2 * 60 * 60 * 1000 + 30 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+  const plain = stripAnsi(renderUsageLine(ctx));
+  // "both" produces "Xh Ym, at HH:MM" — must contain relative part and " at " from i18n
+  assert.match(plain, /\dh/, 'should contain relative duration hours');
+  assert.ok(plain.includes(' at '), `should contain absolute "at" prefix, got: ${plain}`);
+  assert.ok(plain.includes('resets in'), `should use "resets in" preposition for both mode, got: ${plain}`);
+});
+
+test('renderUsageLine shows elapsed 5h window percentage when timeFormat is "elapsed"', () => {
+  const ctx = baseContext();
+  const now = Date.now();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'elapsed';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 31,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(now + 4 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('Usage 5h 31% (20% elapsed)'), `expected elapsed window percentage, got: ${plain}`);
+  assert.ok(!plain.includes('resets'), `elapsed mode should not include reset wording, got: ${plain}`);
+});
+
+test('renderUsageLine shows elapsed 5h percentage and reset clock when timeFormat is "elapsedAndAbsolute"', () => {
+  const ctx = baseContext();
+  const now = Date.now();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'elapsedAndAbsolute';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 31,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(now + 4 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.match(plain, /Usage 5h 31% \(20% elapsed, at .+\)/, `expected elapsed percentage with absolute reset clock, got: ${plain}`);
+  assert.ok(!plain.includes('resets'), `elapsedAndAbsolute mode should not include reset wording, got: ${plain}`);
+});
+
+test('renderUsageLine rounds elapsed 7d window percentage', () => {
+  const ctx = baseContext();
+  const now = Date.now();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'elapsed';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: null,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: new Date(now + 5.5 * 24 * 60 * 60 * 1000),
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('Weekly 85% (21% elapsed)'), `expected rounded weekly elapsed percentage, got: ${plain}`);
+});
+
+test('renderUsageLine clamps elapsed window percentage to 100 at the reset boundary', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'elapsed';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 31,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(Date.now() - 1000),
+    sevenDayResetAt: null,
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('Usage 5h 31% (100% elapsed)'), `expected clamped elapsed percentage, got: ${plain}`);
+});
+
+test('renderUsageLine clamps elapsed window percentage to 0 when the window has not started', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'elapsed';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 31,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('Usage 5h 31% (0% elapsed)'), `expected non-negative elapsed percentage, got: ${plain}`);
+});
+
+test('renderUsageLine keeps reset label hidden in elapsedAndAbsolute mode when disabled', () => {
+  const ctx = baseContext();
+  const now = Date.now();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.showResetLabel = false;
+  ctx.config.display.timeFormat = 'elapsedAndAbsolute';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 31,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(now + 4 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.match(plain, /Usage 5h 31% \(20% elapsed, at .+\)/, `expected elapsed percentage with bare absolute reset clock, got: ${plain}`);
+  assert.ok(!plain.includes('resets'), `reset wording should stay hidden, got: ${plain}`);
+});
+
+test('renderUsageLine falls back to relative reset formatting for invalid timeFormat values', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = false;
+  ctx.config.display.timeFormat = 'invalid-value';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 31,
+    sevenDay: 20,
+    fiveHourResetAt: new Date(Date.now() + 4 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('resets in'), `invalid timeFormat should use relative reset wording, got: ${plain}`);
+  assert.ok(!plain.includes('elapsed'), `invalid timeFormat should not use elapsed mode, got: ${plain}`);
+});
+
+test('renderUsageLine limit-reached uses "resets in" for default relative mode', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 100,
+    sevenDay: 45,
+    fiveHourResetAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('Limit reached'), 'should show limit reached');
+  assert.ok(plain.includes('resets in'), `should use "resets in" preposition for relative mode, got: ${plain}`);
+});
+
+test('renderUsageLine limit-reached uses "resets at" for absolute timeFormat', () => {
+  const ctx = baseContext();
+  ctx.config.display.timeFormat = 'absolute';
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 100,
+    sevenDay: 45,
+    fiveHourResetAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    sevenDayResetAt: null,
+  };
+  const plain = stripAnsi(renderUsageLine(ctx));
+  assert.ok(plain.includes('Limit reached'), 'should show limit reached');
+  assert.ok(plain.includes('resets at'), `should use "resets at" for absolute mode, got: ${plain}`);
+  assert.ok(!plain.includes('resets in'), `should not say "resets in" for absolute mode, got: ${plain}`);
+});
+
+test('prettifyAdvisorId expands canonical model IDs', () => {
+  assert.equal(prettifyAdvisorId('claude-opus-4-7'), 'Opus 4.7');
+  assert.equal(prettifyAdvisorId('claude-sonnet-4-6'), 'Sonnet 4.6');
+  assert.equal(prettifyAdvisorId('claude-haiku-4-5-20251001'), 'Haiku 4.5');
+});
+
+test('prettifyAdvisorId handles short aliases and unknown formats', () => {
+  assert.equal(prettifyAdvisorId('opus'), 'Opus');
+  assert.equal(prettifyAdvisorId('sonnet'), 'Sonnet');
+  assert.equal(prettifyAdvisorId('claude-some-future-model-9-9'), 'some-future-model-9-9');
+  assert.equal(prettifyAdvisorId(''), '');
+});
+
+test('renderAdvisorLine returns null when showAdvisor is false', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: false } });
+  ctx.transcript.advisorModel = 'claude-opus-4-7';
+  assert.equal(renderAdvisorLine(ctx), null);
+});
+
+test('renderAdvisorLine returns null when no advisor data is available', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: true } });
+  assert.equal(renderAdvisorLine(ctx), null);
+});
+
+test('renderAdvisorLine prettifies transcript-driven advisor model', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: true } });
+  ctx.transcript.advisorModel = 'claude-opus-4-7';
+  const plain = stripAnsi(renderAdvisorLine(ctx));
+  assert.equal(plain, 'Advisor: Opus 4.7');
+});
+
+test('renderAdvisorLine honours advisorOverride verbatim', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: true, advisorOverride: 'Opus 4.7 (1M)' } });
+  ctx.transcript.advisorModel = 'claude-sonnet-4-6';
+  const plain = stripAnsi(renderAdvisorLine(ctx));
+  assert.equal(plain, 'Advisor: Opus 4.7 (1M)');
+});
+
+test('renderAdvisorLine strips ANSI ESC and C0 control bytes from advisorModel', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: true } });
+  // CSI red sequence + bell + DEL injected around a valid ID. The output
+  // intentionally contains label() colour codes, so assertions run against
+  // the plain (ANSI-stripped) text — the user-attributable bytes must not
+  // survive that stripping.
+  ctx.transcript.advisorModel = '\x1b[31mclaude-opus-4-7\x07\x7f';
+  const plain = stripAnsi(renderAdvisorLine(ctx));
+  assert.ok(!plain.includes('\x1b'), 'ESC byte must be stripped before render');
+  assert.ok(!plain.includes('\x07'), 'BEL must be stripped');
+  assert.ok(!plain.includes('\x7f'), 'DEL must be stripped');
+  // After sanitize the surviving text is "[31mclaude-opus-4-7", which doesn't
+  // match the canonical prefix pattern, so prettifyAdvisorId falls through.
+  assert.ok(plain.startsWith('Advisor:'), `unexpected label: ${plain}`);
+});
+
+test('renderAdvisorLine strips bidi marks from advisorOverride', () => {
+  const ctx = baseContext();
+  // RLO (U+202E) + the override text + PDF (U+202C)
+  ctx.config = mergeConfig({ display: { showAdvisor: true, advisorOverride: '‮Opus 4.7‬' } });
+  const out = renderAdvisorLine(ctx);
+  assert.ok(!out.includes('‮'), 'RLO must be stripped');
+  assert.ok(!out.includes('‬'), 'PDF must be stripped');
+  assert.equal(stripAnsi(out), 'Advisor: Opus 4.7');
+});
+
+test('renderAdvisorLine caps oversized advisorModel at the display length limit', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: true } });
+  ctx.transcript.advisorModel = 'claude-' + 'x'.repeat(500);
+  const plain = stripAnsi(renderAdvisorLine(ctx));
+  // "Advisor: " prefix (9 chars) + at most 64 chars of payload.
+  const payload = plain.slice('Advisor: '.length);
+  assert.ok(payload.length <= 64, `payload length ${payload.length} exceeds cap`);
+});
+
+test('renderAdvisorLine returns null when sanitized input is empty', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { showAdvisor: true } });
+  // Only control + bidi bytes — sanitize collapses these to "".
+  ctx.transcript.advisorModel = '\x1b\x07‮‏';
+  assert.equal(renderAdvisorLine(ctx), null);
+});
+
+test('renderProjectLine renders advisor inline on the same row (expanded layout)', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config = mergeConfig({ display: { showAdvisor: true } });
+  ctx.transcript.advisorModel = 'claude-opus-4-7';
+  const plain = stripAnsi(renderProjectLine(ctx));
+  assert.ok(plain.includes('Advisor: Opus 4.7'), `advisor segment missing: ${plain}`);
+  assert.ok(plain.includes('my-project'), 'project path must still render');
+  // Single line — no embedded newline introduced by the inline placement.
+  assert.ok(!plain.includes('\n'), 'project line must remain one row');
+});
+
+test('renderProjectLine omits advisor when showAdvisor is false', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config = mergeConfig({ display: { showAdvisor: false } });
+  ctx.transcript.advisorModel = 'claude-opus-4-7';
+  const plain = stripAnsi(renderProjectLine(ctx));
+  assert.ok(!plain.includes('Advisor:'), `advisor must not leak in: ${plain}`);
+});
+
+test('renderSessionLine renders advisor inline on the same row (compact layout)', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config = mergeConfig({ lineLayout: 'compact', display: { showAdvisor: true } });
+  ctx.transcript.advisorModel = 'claude-opus-4-7';
+  const plain = stripAnsi(renderSessionLine(ctx));
+  assert.ok(plain.includes('Advisor: Opus 4.7'), `advisor segment missing: ${plain}`);
+  assert.ok(plain.includes('[Opus]'), 'model badge must still render first');
+  assert.ok(!plain.includes('\n'), 'compact session line must remain one row');
 });

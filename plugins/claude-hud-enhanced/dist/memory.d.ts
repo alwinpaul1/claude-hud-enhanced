@@ -8,6 +8,10 @@ export declare function parseVmStat(output: string): {
     active: number;
     wired: number;
 } | null;
+export declare function parseLinuxMeminfo(output: string): {
+    totalBytes: number;
+    freeBytes: number;
+} | null;
 export declare function getMemoryUsage(): Promise<MemoryInfo | null>;
 export declare function formatBytes(bytes: number): string;
 export declare function _setMemoryReaderForTests(reader: MemoryReader | null): void;
