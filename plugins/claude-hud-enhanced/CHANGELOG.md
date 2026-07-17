@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.3] - 2026-07-17
+
+### Added
+- **`display.usageOnNewLine`** (compact layout, default off): renders the usage/weekly windows on their own deterministic second row instead of inline. Row 1 keeps identity / context / project / config-counts / duration; row 2 starts with the usage windows. (Replaces the pre-0.5.1 behavior that was lost in the upstream rebase; previously the single compact line just wrapped at an arbitrary width boundary.)
+- **`display.authShortLabel`** (default off): strips the leading `Claude ` from the auth/plan label — `Claude Max 20x` → `Max 20x`. Composes with `showAuthInModel` for a compact `[Opus 4.8 | Max 20x]` bracket.
+
 ## [0.3.2] - 2026-07-17
 
 ### Added

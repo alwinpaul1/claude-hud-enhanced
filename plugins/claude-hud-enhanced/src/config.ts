@@ -186,6 +186,13 @@ export interface HudConfig {
     // instead of trailing it as its own segment. `showAuth`/`showAuthUser` still
     // control whether the label exists. Default off.
     showAuthInModel: boolean;
+    // Strip the leading "Claude " from the auth/plan label ("Claude Max 20x" →
+    // "Max 20x"). Default off.
+    authShortLabel: boolean;
+    // Compact layout only: render the usage/weekly windows on their own second
+    // row instead of inline, so row 1 keeps identity/project/counts/duration and
+    // row 2 starts with the usage windows. Default off.
+    usageOnNewLine: boolean;
     customLine: string;
     customLinePosition: CustomLinePosition;
     timeFormat: TimeFormatMode;
@@ -274,6 +281,8 @@ export const DEFAULT_CONFIG: HudConfig = {
     showProvider: false,
     providerName: '',
     showAuthInModel: false,
+    authShortLabel: false,
+    usageOnNewLine: false,
     customLine: '',
     customLinePosition: 'last',
     timeFormat: 'relative',
@@ -745,6 +754,12 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showAuthInModel: typeof migrated.display?.showAuthInModel === 'boolean'
       ? migrated.display.showAuthInModel
       : DEFAULT_CONFIG.display.showAuthInModel,
+    authShortLabel: typeof migrated.display?.authShortLabel === 'boolean'
+      ? migrated.display.authShortLabel
+      : DEFAULT_CONFIG.display.authShortLabel,
+    usageOnNewLine: typeof migrated.display?.usageOnNewLine === 'boolean'
+      ? migrated.display.usageOnNewLine
+      : DEFAULT_CONFIG.display.usageOnNewLine,
     providerName: typeof migrated.display?.providerName === 'string'
       ? migrated.display.providerName.slice(0, 40)
       : DEFAULT_CONFIG.display.providerName,

@@ -152,7 +152,9 @@ export function renderSessionLine(ctx) {
             }
         }
     }
-    // Usage limits display (shown when enabled in config, respects usageThreshold)
+    // Usage limits display (shown when enabled in config, respects usageThreshold).
+    // Snapshot where usage parts begin so `usageOnNewLine` can peel them onto row 2.
+    const usageStartIndex = parts.length;
     if (display?.showUsage !== false && ctx.usageData && !shouldHideUsage(ctx.stdin)) {
         const usageCompact = display?.usageCompact ?? false;
         const showResetLabel = display?.showResetLabel ?? true;
@@ -300,6 +302,10 @@ export function renderSessionLine(ctx) {
             parts.push(label(`${t('label.compactions')}: ${compactions}`, colors));
         }
     }
+    // Compact layout: when usageOnNewLine is set, peel the usage/weekly parts off
+    // row 1 so they render as a deterministic second row (row 1 keeps
+    // identity/project/counts/duration; row 2 starts with the usage windows).
+    const usageParts = display?.usageOnNewLine ? parts.splice(usageStartIndex) : [];
     // Advisor model (when `/advisor` is configured for the session)
     if (display?.showAdvisor) {
         const advisorLine = renderAdvisorLine(ctx);
@@ -347,6 +353,10 @@ export function renderSessionLine(ctx) {
             const cache = formatTokens((usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0));
             line += label(` (${t('format.in')}: ${input}, ${t('format.cache')}: ${cache})`, colors);
         }
+    }
+    if (usageParts.length > 0) {
+        const usageLine = usageParts.join(' | ');
+        line = line.length > 0 ? `${line}\n${usageLine}` : usageLine;
     }
     return line;
 }

@@ -95,6 +95,8 @@ export const DEFAULT_CONFIG = {
         showProvider: false,
         providerName: '',
         showAuthInModel: false,
+        authShortLabel: false,
+        usageOnNewLine: false,
         customLine: '',
         customLinePosition: 'last',
         timeFormat: 'relative',
@@ -495,6 +497,12 @@ export function mergeConfig(userConfig) {
         showAuthInModel: typeof migrated.display?.showAuthInModel === 'boolean'
             ? migrated.display.showAuthInModel
             : DEFAULT_CONFIG.display.showAuthInModel,
+        authShortLabel: typeof migrated.display?.authShortLabel === 'boolean'
+            ? migrated.display.authShortLabel
+            : DEFAULT_CONFIG.display.authShortLabel,
+        usageOnNewLine: typeof migrated.display?.usageOnNewLine === 'boolean'
+            ? migrated.display.usageOnNewLine
+            : DEFAULT_CONFIG.display.usageOnNewLine,
         providerName: typeof migrated.display?.providerName === 'string'
             ? migrated.display.providerName.slice(0, 40)
             : DEFAULT_CONFIG.display.providerName,

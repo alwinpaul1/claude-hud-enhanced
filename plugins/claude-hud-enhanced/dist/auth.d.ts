@@ -26,5 +26,6 @@ export declare function formatAuthSegment(info: AuthInfo | null | undefined, dis
     showAuth?: boolean;
     showAuthUser?: boolean;
     authUserLength?: number;
+    authShortLabel?: boolean;
 } | undefined): string | null;
 //# sourceMappingURL=auth.d.ts.map

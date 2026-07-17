@@ -649,6 +649,46 @@ test('render expanded layout aligns a combined progress row with separate memory
   assert.ok(memoryLine?.startsWith('Approx RAM '), `got: ${memoryLine}`);
 });
 
+test('compact usageOnNewLine peels usage onto its own second row', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'compact';
+  ctx.config.display.usageOnNewLine = true;
+  ctx.config.display.showUsage = true;
+  ctx.usageData = { fiveHour: 5, sevenDay: 1, fiveHourResetAt: null, sevenDayResetAt: null };
+
+  const rows = stripAnsi(renderSessionLine(ctx)).split('\n');
+  assert.equal(rows.length, 2, `expected 2 rows, got: ${JSON.stringify(rows)}`);
+  assert.ok(!rows[0].includes('Usage'), `row 1 should not contain usage: ${rows[0]}`);
+  assert.ok(rows[1].startsWith('Usage'), `row 2 should start with Usage: ${rows[1]}`);
+});
+
+test('compact without usageOnNewLine keeps usage inline on one row', () => {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'compact';
+  ctx.config.display.usageOnNewLine = false;
+  ctx.config.display.showUsage = true;
+  ctx.usageData = { fiveHour: 5, sevenDay: 1, fiveHourResetAt: null, sevenDayResetAt: null };
+
+  const out = stripAnsi(renderSessionLine(ctx));
+  assert.ok(!out.includes('\n'), `expected single row, got: ${JSON.stringify(out)}`);
+  assert.ok(out.includes('Usage'), `usage should be inline: ${out}`);
+});
+
+test('authShortLabel strips the leading "Claude " from the plan label', () => {
+  const ctx = baseContext();
+  ctx.authInfo = { method: 'Claude Max 20x', user: null };
+  ctx.config.display.showAuth = true;
+  ctx.config.display.showAuthInModel = true;
+
+  const withoutShort = stripAnsi(renderSessionLine(ctx));
+  assert.ok(withoutShort.includes('Claude Max 20x'), `expected full label: ${withoutShort}`);
+
+  ctx.config.display.authShortLabel = true;
+  const withShort = stripAnsi(renderSessionLine(ctx));
+  assert.ok(withShort.includes('| Max 20x]'), `expected short label in bracket: ${withShort}`);
+  assert.ok(!withShort.includes('Claude Max 20x'), `should not contain full label: ${withShort}`);
+});
+
 test('render expanded layout aligns memory only after a custom merged row wraps', () => {
   const ctx = baseContext();
   ctx.config.lineLayout = 'expanded';

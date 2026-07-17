@@ -127,7 +127,7 @@ export function truncateUser(user: string, maxLength: number): string {
  */
 export function formatAuthSegment(
   info: AuthInfo | null | undefined,
-  display: { showAuth?: boolean; showAuthUser?: boolean; authUserLength?: number } | undefined,
+  display: { showAuth?: boolean; showAuthUser?: boolean; authUserLength?: number; authShortLabel?: boolean } | undefined,
 ): string | null {
   if (!info) {
     return null;
@@ -135,7 +135,7 @@ export function formatAuthSegment(
 
   const parts: string[] = [];
   if (display?.showAuth && info.method) {
-    parts.push(info.method);
+    parts.push(display?.authShortLabel ? info.method.replace(/^Claude\s+/i, '') : info.method);
   }
   if (display?.showAuthUser && info.user) {
     parts.push(truncateUser(info.user, display?.authUserLength ?? 8));
