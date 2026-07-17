@@ -95,6 +95,67 @@ This is a [Claude Code platform limitation](https://github.com/anthropics/claude
 
 ---
 
+## Step 0.5: Migrate HUD data dir (`claude-hud` → `claude-hud-enhanced`)
+
+Older builds (and upstream) store config/caches under `plugins/claude-hud/`.
+This plugin **must** use `plugins/claude-hud-enhanced/`. Run this once during
+setup/install so existing user config is not orphaned.
+
+**macOS/Linux** (respects `CLAUDE_CONFIG_DIR`):
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+LEGACY="$CLAUDE_DIR/plugins/claude-hud"
+NEXT="$CLAUDE_DIR/plugins/claude-hud-enhanced"
+
+if [ -d "$LEGACY" ] && [ ! -e "$NEXT" ]; then
+  mv "$LEGACY" "$NEXT"
+  echo "Migrated HUD data dir: $LEGACY → $NEXT"
+elif [ -d "$LEGACY" ] && [ -d "$NEXT" ]; then
+  # Prefer existing enhanced files; only copy missing config/launcher
+  for f in config.json previous-statusline.txt statusline.mjs; do
+    if [ -f "$LEGACY/$f" ] && [ ! -f "$NEXT/$f" ]; then
+      cp "$LEGACY/$f" "$NEXT/$f"
+      echo "Copied $f into $NEXT"
+    fi
+  done
+  echo "Both dirs present; enhanced path is canonical: $NEXT"
+else
+  mkdir -p "$NEXT"
+  echo "HUD data dir ready: $NEXT"
+fi
+```
+
+**Windows (PowerShell)**:
+```powershell
+$claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
+$legacy = Join-Path $claudeDir "plugins\claude-hud"
+$next = Join-Path $claudeDir "plugins\claude-hud-enhanced"
+
+if ((Test-Path $legacy) -and -not (Test-Path $next)) {
+  Move-Item -Path $legacy -Destination $next
+  Write-Host "Migrated HUD data dir: $legacy → $next"
+} elseif ((Test-Path $legacy) -and (Test-Path $next)) {
+  foreach ($f in @("config.json", "previous-statusline.txt", "statusline.mjs")) {
+    $from = Join-Path $legacy $f
+    $to = Join-Path $next $f
+    if ((Test-Path $from) -and -not (Test-Path $to)) {
+      Copy-Item $from $to
+      Write-Host "Copied $f into $next"
+    }
+  }
+  Write-Host "Both dirs present; enhanced path is canonical: $next"
+} else {
+  New-Item -ItemType Directory -Force -Path $next | Out-Null
+  Write-Host "HUD data dir ready: $next"
+}
+```
+
+The runtime also auto-migrates on first HUD paint via `getHudPluginDir()` — this
+setup step makes the rename visible immediately and ensures the Windows
+`statusline.mjs` launcher lands under the enhanced path.
+
+---
+
 ## Step 1: Detect Platform, Shell, and Runtime
 
 **IMPORTANT**: Use the environment context values (`Platform:` and `Shell:`) as your starting point. On `win32`, also check `$OSTYPE` via the Bash tool. Some Windows sessions report `Shell: powershell` while the command path exposed to Claude Code is Git Bash/MSYS2. When `$OSTYPE` is `msys` or `cygwin`, the PowerShell command format can fail before PowerShell runs because bash expands `$env:VAR`, `$p`, and `$(...)` expressions first (see [#531](https://github.com/alwinpaul1/claude-hud-enhanced/issues/531)).

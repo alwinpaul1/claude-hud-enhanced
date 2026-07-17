@@ -5,7 +5,17 @@ allowed-tools: Read, Write, AskUserQuestion
 
 # Configure Claude HUD
 
-**FIRST**: Use the Read tool to load `~/.claude/plugins/claude-hud-enhanced/config.json` if it exists.
+**FIRST**: Ensure the HUD data dir is `plugins/claude-hud-enhanced` (not legacy `plugins/claude-hud`).
+
+If `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/claude-hud` exists and `.../claude-hud-enhanced` does not, rename it:
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if [ -d "$CLAUDE_DIR/plugins/claude-hud" ] && [ ! -e "$CLAUDE_DIR/plugins/claude-hud-enhanced" ]; then
+  mv "$CLAUDE_DIR/plugins/claude-hud" "$CLAUDE_DIR/plugins/claude-hud-enhanced"
+fi
+```
+
+Then use the Read tool to load `~/.claude/plugins/claude-hud-enhanced/config.json` (or `$CLAUDE_CONFIG_DIR/plugins/claude-hud-enhanced/config.json`) if it exists.
 
 Store current values and note whether config exists (determines which flow to use).
 
