@@ -15,7 +15,7 @@ async function createTempHome() {
 }
 
 function getCacheDir(homeDir) {
-  return path.join(homeDir, '.claude', 'plugins', 'claude-hud', 'context-cache');
+  return path.join(homeDir, '.claude', 'plugins', 'claude-hud-enhanced', 'context-cache');
 }
 
 function getCachePath(homeDir, transcriptPath) {

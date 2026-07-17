@@ -88,7 +88,7 @@ test('getConfigPath returns correct path', () => {
   try {
     const configPath = getConfigPath();
     const homeDir = os.homedir();
-    assert.equal(configPath, path.join(homeDir, '.claude', 'plugins', 'claude-hud', 'config.json'));
+    assert.equal(configPath, path.join(homeDir, '.claude', 'plugins', 'claude-hud-enhanced', 'config.json'));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
   }
@@ -430,7 +430,7 @@ test('getConfigPath respects CLAUDE_CONFIG_DIR', async () => {
   try {
     process.env.CLAUDE_CONFIG_DIR = customConfigDir;
     const configPath = getConfigPath();
-    assert.equal(configPath, path.join(customConfigDir, 'plugins', 'claude-hud', 'config.json'));
+    assert.equal(configPath, path.join(customConfigDir, 'plugins', 'claude-hud-enhanced', 'config.json'));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(customConfigDir, { recursive: true, force: true });
@@ -443,7 +443,7 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
 
   try {
     process.env.CLAUDE_CONFIG_DIR = customConfigDir;
-    const pluginDir = path.join(customConfigDir, 'plugins', 'claude-hud');
+    const pluginDir = path.join(customConfigDir, 'plugins', 'claude-hud-enhanced');
     await mkdir(pluginDir, { recursive: true });
     await writeFile(
       path.join(pluginDir, 'config.json'),

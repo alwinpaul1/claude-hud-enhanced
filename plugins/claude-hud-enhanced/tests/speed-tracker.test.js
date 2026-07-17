@@ -148,8 +148,8 @@ test('getOutputSpeed creates fallback cache under CLAUDE_CONFIG_DIR by default',
     );
     assert.equal(speed, null);
 
-    const customCacheDir = path.join(customConfigDir, 'plugins', 'claude-hud', 'speed-cache');
-    const defaultCacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud', 'speed-cache');
+    const customCacheDir = path.join(customConfigDir, 'plugins', 'claude-hud-enhanced', 'speed-cache');
+    const defaultCacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud-enhanced', 'speed-cache');
     assert.equal(existsSync(customCacheDir), true);
     assert.equal(existsSync(defaultCacheDir), false);
     assert.equal((await stat(customCacheDir)).mode & 0o777, 0o700);
@@ -175,7 +175,7 @@ test('getOutputSpeed ignores fallback tracking for non-file transcript paths', a
     );
     assert.equal(speed, null);
 
-    const cacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud', 'speed-cache');
+    const cacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud-enhanced', 'speed-cache');
     assert.equal(existsSync(cacheDir), false);
   } finally {
     await rm(tempHome, { recursive: true, force: true });
@@ -313,8 +313,8 @@ test('getOutputSpeed writes cache under CLAUDE_CONFIG_DIR by default', async () 
     const second = getOutputSpeed(stdinWith(transcriptPath, 20), { now: () => 1500 });
     assert.ok(second !== null);
 
-    const customCacheDir = path.join(customConfigDir, 'plugins', 'claude-hud', 'speed-cache');
-    const defaultCacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud', 'speed-cache');
+    const customCacheDir = path.join(customConfigDir, 'plugins', 'claude-hud-enhanced', 'speed-cache');
+    const defaultCacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud-enhanced', 'speed-cache');
     assert.equal(existsSync(customCacheDir), true);
     assert.equal(existsSync(defaultCacheDir), false);
     assert.equal((await stat(customCacheDir)).mode & 0o777, 0o700);

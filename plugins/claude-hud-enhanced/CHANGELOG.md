@@ -4,7 +4,8 @@
 
 ### Changed
 - Rebase plugin on upstream [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) **v0.5.1** (auth, effort, external usage, skills/MCP line, expanded config surface, i18n zh-Hans/zh-Hant).
-- Identity remains **claude-hud-enhanced** (package, marketplace, plugin manifest); user config dir stays `~/.claude/plugins/claude-hud/` for compatibility.
+- Identity remains **claude-hud-enhanced** (package, marketplace, plugin manifest); HUD data dir is `~/.claude/plugins/claude-hud-enhanced/` (config, caches, statusline launcher) — not the upstream `claude-hud` path.
+- If you still have `~/.claude/plugins/claude-hud/config.json` from an older build, copy it to `~/.claude/plugins/claude-hud-enhanced/config.json` once.
 - Plan label: upstream `showAuth` replaces legacy `showPlan`/`oauth.ts`. Existing `display.showPlan` configs migrate to `showAuth`.
 - Enhanced defaults vs stock upstream: separators on, tools/agents/todos/auth visible, duration/output-style on, context value `both`, git ahead-behind + file stats on. (`lineLayout` stays upstream `expanded` so added-dirs and multi-line elements work.)
 

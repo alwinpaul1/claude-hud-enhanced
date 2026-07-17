@@ -78,7 +78,7 @@ function makeCounts(overrides = {}) {
 
 async function createTempConfigDir(config = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "claude-hud-index-test-"));
-  const pluginDir = path.join(dir, "plugins", "claude-hud");
+  const pluginDir = path.join(dir, "plugins", "claude-hud-enhanced");
   await mkdir(pluginDir, { recursive: true });
   await writeFile(
     path.join(pluginDir, "config.json"),

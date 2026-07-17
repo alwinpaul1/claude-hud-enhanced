@@ -353,7 +353,7 @@ test("CLI truncates long inline added_dirs basenames", async (t) => {
 
 async function writeHudConfig(homeDir, config) {
   const fs = await import("node:fs/promises");
-  const dir = path.join(homeDir, ".claude", "plugins", "claude-hud");
+  const dir = path.join(homeDir, ".claude", "plugins", "claude-hud-enhanced");
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, "config.json"), JSON.stringify(config), "utf8");
 }

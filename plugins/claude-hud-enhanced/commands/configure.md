@@ -5,7 +5,7 @@ allowed-tools: Read, Write, AskUserQuestion
 
 # Configure Claude HUD
 
-**FIRST**: Use the Read tool to load `~/.claude/plugins/claude-hud/config.json` if it exists.
+**FIRST**: Use the Read tool to load `~/.claude/plugins/claude-hud-enhanced/config.json` if it exists.
 
 Store current values and note whether config exists (determines which flow to use).
 
@@ -410,7 +410,7 @@ Context ████░░░░░ 45% │ Usage ██░░░░░░░░
 
 ## Write Configuration
 
-Write to `~/.claude/plugins/claude-hud/config.json`.
+Write to `~/.claude/plugins/claude-hud-enhanced/config.json`.
 
 Merge with existing config, preserving:
 - `pathLevels` (not in configure flow)

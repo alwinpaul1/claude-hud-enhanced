@@ -19,6 +19,6 @@ export function getClaudeConfigJsonPath(homeDir) {
     return `${getClaudeConfigDir(homeDir)}.json`;
 }
 export function getHudPluginDir(homeDir) {
-    return path.join(getClaudeConfigDir(homeDir), 'plugins', 'claude-hud');
+    return path.join(getClaudeConfigDir(homeDir), 'plugins', 'claude-hud-enhanced');
 }
 //# sourceMappingURL=claude-config-dir.js.map

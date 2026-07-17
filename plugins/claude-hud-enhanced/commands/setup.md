@@ -230,7 +230,7 @@ Instead, use `sort -V` (GNU version sort, included with Git for Windows) which a
 
    Windows PowerShell startup plus `Get-ChildItem | Sort-Object [version]` can exceed Claude Code's render cadence on every statusLine refresh. Write a small Node launcher once during setup, then invoke it through `cmd.exe` on each refresh. The launcher uses the setup-time validated `node.exe`, preserves update discovery by finding the latest installed `claude-hud-enhanced` version, and prefers inherited `COLUMNS` before falling back to 120.
 
-   The launcher file at `$claudeDir/plugins/claude-hud/statusline.mjs` should contain:
+   The launcher file at `$claudeDir/plugins/claude-hud-enhanced/statusline.mjs` should contain:
 
    ```js
    import fs from 'node:fs';
@@ -368,7 +368,7 @@ Instead, use `sort -V` (GNU version sort, included with Git for Windows) which a
    {CMD_PATH} /d /s /c ""{RUNTIME_PATH}" "{WRAPPER_PATH}""
    ```
 
-   `{CMD_PATH}` is the absolute `cmd.exe` path, preferably `$env:SystemRoot\System32\cmd.exe`. `{WRAPPER_PATH}` is the value of `$wrapperPath` from step 4 (typically `C:\Users\<user>\.claude\plugins\claude-hud\statusline.mjs`). If you build the string in PowerShell, use:
+   `{CMD_PATH}` is the absolute `cmd.exe` path, preferably `$env:SystemRoot\System32\cmd.exe`. `{WRAPPER_PATH}` is the value of `$wrapperPath` from step 4 (typically `C:\Users\<user>\.claude\plugins\claude-hud-enhanced\statusline.mjs`). If you build the string in PowerShell, use:
 
    ```powershell
    $cmdPath = Join-Path $env:SystemRoot "System32\cmd.exe"
@@ -637,7 +637,7 @@ After successfully writing the config, tell the user:
 
 **Note**: The generated command dynamically finds and runs the latest installed plugin version. Updates are automatic - no need to re-run setup after plugin updates. If the HUD suddenly stops working, re-run `/claude-hud-enhanced:setup` to verify the plugin is still installed.
 
-**Restoring a previous statusline**: If the user previously had a different statusline and wants to restore it, use the backup path printed in Step 2.5.3. The previous command is stored in `~/.claude/plugins/claude-hud/previous-statusline.txt`. To restore:
+**Restoring a previous statusline**: If the user previously had a different statusline and wants to restore it, use the backup path printed in Step 2.5.3. The previous command is stored in `~/.claude/plugins/claude-hud-enhanced/previous-statusline.txt`. To restore:
 1. Find the most recent backup: `ls -t ~/.claude/settings.json.bak.* | head -1`
 2. Copy it back: `cp ~/.claude/settings.json.bak.{timestamp} ~/.claude/settings.json`
 3. Restart Claude Code.
@@ -657,7 +657,7 @@ Use AskUserQuestion:
   - "Session name" — Shows session slug or custom title from /rename
   - "Custom line" — Display a custom phrase in the HUD
 
-**If user selects any options**, write `plugins/claude-hud/config.json` inside the Claude config directory (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}` on bash, `$env:CLAUDE_CONFIG_DIR` or `Join-Path $HOME ".claude"` on PowerShell). Create directories if needed:
+**If user selects any options**, write `plugins/claude-hud-enhanced/config.json` inside the Claude config directory (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}` on bash, `$env:CLAUDE_CONFIG_DIR` or `Join-Path $HOME ".claude"` on PowerShell). Create directories if needed:
 
 | Selection | Config keys |
 |-----------|------------|
