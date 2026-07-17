@@ -1,5 +1,6 @@
 import type { RenderContext, AgentEntry } from '../types.js';
 import { yellow, green, magenta, label } from './colors.js';
+import { truncateString } from '../utils/truncate.js';
 
 const MAX_RECENT_COMPLETED = 2;
 const MAX_AGENTS_SHOWN = 3;
@@ -53,16 +54,11 @@ function formatAgent(
   const type = magenta(agent.type);
   const model = agent.model ? label(`[${agent.model}]`, colors) : '';
   const desc = agent.description
-    ? label(`: ${truncateDesc(agent.description)}`, colors)
+    ? label(`: ${truncateString(agent.description, 40)}`, colors)
     : '';
   const elapsed = formatElapsed(agent);
 
   return `${statusIcon} ${type}${model ? ` ${model}` : ''}${desc} ${label(`(${elapsed})`, colors)}`;
-}
-
-function truncateDesc(desc: string, maxLen: number = 40): string {
-  if (desc.length <= maxLen) return desc;
-  return desc.slice(0, maxLen - 3) + '...';
 }
 
 function formatElapsed(agent: AgentEntry): string {

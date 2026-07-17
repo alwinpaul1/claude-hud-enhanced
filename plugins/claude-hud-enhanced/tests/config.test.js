@@ -6,6 +6,7 @@ import {
   mergeConfig,
   DEFAULT_CONFIG,
   DEFAULT_ELEMENT_ORDER,
+  DEFAULT_MERGE_GROUPS,
 } from '../dist/config.js';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -32,6 +33,7 @@ test('loadConfig returns valid config structure', async () => {
 
   // showSeparators must be boolean
   assert.equal(typeof config.showSeparators, 'boolean', 'showSeparators should be boolean');
+  assert.ok(config.maxWidth === null || (typeof config.maxWidth === 'number' && config.maxWidth > 0), 'maxWidth should be null or a positive number');
   assert.ok(Array.isArray(config.elementOrder), 'elementOrder should be an array');
   assert.ok(config.elementOrder.length > 0, 'elementOrder should not be empty');
   assert.deepEqual(config.elementOrder, DEFAULT_ELEMENT_ORDER, 'elementOrder should default to the full expanded layout');
@@ -41,6 +43,7 @@ test('loadConfig returns valid config structure', async () => {
   assert.equal(typeof config.gitStatus.enabled, 'boolean');
   assert.equal(typeof config.gitStatus.showDirty, 'boolean');
   assert.equal(typeof config.gitStatus.showAheadBehind, 'boolean');
+  assert.ok(['truncate', 'wrap'].includes(config.gitStatus.branchOverflow), 'branchOverflow should be valid');
   assert.equal(typeof config.gitStatus.pushWarningThreshold, 'number');
   assert.equal(typeof config.gitStatus.pushCriticalThreshold, 'number');
 
@@ -51,18 +54,26 @@ test('loadConfig returns valid config structure', async () => {
   assert.ok(['percent', 'tokens', 'remaining', 'both'].includes(config.display.contextValue), 'contextValue should be valid');
   assert.equal(typeof config.display.showConfigCounts, 'boolean');
   assert.equal(typeof config.display.showDuration, 'boolean');
+  assert.equal(typeof config.display.showSpeed, 'boolean');
   assert.equal(typeof config.display.showTokenBreakdown, 'boolean');
   assert.equal(typeof config.display.showUsage, 'boolean');
+  assert.ok(['percent', 'remaining'].includes(config.display.usageValue), 'usageValue should be valid');
   assert.equal(typeof config.display.showTools, 'boolean');
   assert.equal(typeof config.display.showAgents, 'boolean');
   assert.equal(typeof config.display.showTodos, 'boolean');
   assert.equal(typeof config.display.showSessionName, 'boolean');
   assert.equal(typeof config.display.showClaudeCodeVersion, 'boolean');
   assert.equal(typeof config.display.showMemoryUsage, 'boolean');
+  assert.equal(typeof config.display.showPromptCache, 'boolean');
+  assert.equal(typeof config.display.promptCacheTtlSeconds, 'number');
   assert.equal(typeof config.display.showCost, 'boolean');
+  assert.equal(typeof config.display.showRoutedCost, 'boolean');
   assert.equal(typeof config.display.showOutputStyle, 'boolean');
+  assert.equal(typeof config.display.externalUsagePath, 'string');
+  assert.equal(typeof config.display.externalUsageFreshnessMs, 'number');
   assert.ok(['full', 'compact', 'short'].includes(config.display.modelFormat), 'modelFormat should be valid');
   assert.equal(typeof config.display.modelOverride, 'string', 'modelOverride should be string');
+  assert.ok(['stdin', 'auto', 'transcript'].includes(config.display.modelSource), 'modelSource should be valid');
   assert.equal(typeof config.colors, 'object');
   for (const key of ['context', 'usage', 'warning', 'usageWarning', 'critical', 'model', 'project', 'git', 'gitBranch', 'label', 'custom']) {
     const t = typeof config.colors[key];
@@ -77,7 +88,7 @@ test('getConfigPath returns correct path', () => {
   try {
     const configPath = getConfigPath();
     const homeDir = os.homedir();
-    assert.equal(configPath, path.join(homeDir, '.claude', 'plugins', 'claude-hud', 'config.json'));
+    assert.equal(configPath, path.join(homeDir, '.claude', 'plugins', 'claude-hud-enhanced', 'config.json'));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
   }
@@ -89,14 +100,50 @@ test('mergeConfig defaults showSessionName to false', () => {
   assert.equal(DEFAULT_CONFIG.display.showSessionName, false);
 });
 
+test('mergeConfig defaults forceMaxWidth to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.forceMaxWidth, false);
+  assert.equal(DEFAULT_CONFIG.forceMaxWidth, false);
+});
+
+test('mergeConfig preserves explicit forceMaxWidth=true', () => {
+  const config = mergeConfig({ forceMaxWidth: true });
+  assert.equal(config.forceMaxWidth, true);
+});
+
+test('mergeConfig falls back to false for invalid forceMaxWidth values', () => {
+  assert.equal(mergeConfig({ forceMaxWidth: 'yes' }).forceMaxWidth, false);
+  assert.equal(mergeConfig({ forceMaxWidth: 1 }).forceMaxWidth, false);
+});
+
+
 test('mergeConfig preserves explicit showSessionName=true', () => {
   const config = mergeConfig({ display: { showSessionName: true } });
   assert.equal(config.display.showSessionName, true);
 });
 
-test('mergeConfig preserves explicit showSessionName=true', () => {
-  const config = mergeConfig({ display: { showSessionName: true } });
-  assert.equal(config.display.showSessionName, true);
+test('mergeConfig defaults provider options to off/empty', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showProvider, false);
+  assert.equal(config.display.providerName, '');
+  assert.equal(DEFAULT_CONFIG.display.showProvider, false);
+});
+
+test('mergeConfig preserves provider options and caps providerName length', () => {
+  const config = mergeConfig({ display: { showProvider: true, providerName: 'x'.repeat(60) } });
+  assert.equal(config.display.showProvider, true);
+  assert.equal(config.display.providerName.length, 40);
+});
+
+test('mergeConfig defaults showRoutedCost to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showRoutedCost, false);
+  assert.equal(DEFAULT_CONFIG.display.showRoutedCost, false);
+});
+
+test('mergeConfig preserves explicit showRoutedCost=true', () => {
+  const config = mergeConfig({ display: { showRoutedCost: true } });
+  assert.equal(config.display.showRoutedCost, true);
 });
 
 test('mergeConfig defaults showClaudeCodeVersion to false', () => {
@@ -110,15 +157,43 @@ test('mergeConfig preserves explicit showClaudeCodeVersion=true', () => {
   assert.equal(config.display.showClaudeCodeVersion, true);
 });
 
-test('mergeConfig defaults showMemoryUsage to true', () => {
+test('mergeConfig defaults showMemoryUsage to false', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.showMemoryUsage, true);
-  assert.equal(DEFAULT_CONFIG.display.showMemoryUsage, true);
+  assert.equal(config.display.showMemoryUsage, false);
+  assert.equal(DEFAULT_CONFIG.display.showMemoryUsage, false);
 });
 
 test('mergeConfig preserves explicit showMemoryUsage=true', () => {
   const config = mergeConfig({ display: { showMemoryUsage: true } });
   assert.equal(config.display.showMemoryUsage, true);
+});
+
+test('mergeConfig defaults showPromptCache to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showPromptCache, false);
+  assert.equal(DEFAULT_CONFIG.display.showPromptCache, false);
+});
+
+test('mergeConfig preserves explicit showPromptCache=true', () => {
+  const config = mergeConfig({ display: { showPromptCache: true } });
+  assert.equal(config.display.showPromptCache, true);
+});
+
+test('mergeConfig defaults promptCacheTtlSeconds to 300', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.promptCacheTtlSeconds, 300);
+  assert.equal(DEFAULT_CONFIG.display.promptCacheTtlSeconds, 300);
+});
+
+test('mergeConfig preserves valid promptCacheTtlSeconds values', () => {
+  const config = mergeConfig({ display: { promptCacheTtlSeconds: 3600 } });
+  assert.equal(config.display.promptCacheTtlSeconds, 3600);
+});
+
+test('mergeConfig falls back to default promptCacheTtlSeconds for invalid values', () => {
+  assert.equal(mergeConfig({ display: { promptCacheTtlSeconds: 0 } }).display.promptCacheTtlSeconds, 300);
+  assert.equal(mergeConfig({ display: { promptCacheTtlSeconds: -1 } }).display.promptCacheTtlSeconds, 300);
+  assert.equal(mergeConfig({ display: { promptCacheTtlSeconds: 'fast' } }).display.promptCacheTtlSeconds, 300);
 });
 
 test('mergeConfig defaults showCost to false', () => {
@@ -134,6 +209,7 @@ test('mergeConfig preserves explicit showCost=true', () => {
 
 test('mergeConfig defaults git push thresholds to disabled', () => {
   const config = mergeConfig({});
+  assert.equal(config.gitStatus.branchOverflow, 'truncate');
   assert.equal(config.gitStatus.pushWarningThreshold, 0);
   assert.equal(config.gitStatus.pushCriticalThreshold, 0);
 });
@@ -144,6 +220,75 @@ test('mergeConfig preserves explicit git push thresholds', () => {
   });
   assert.equal(config.gitStatus.pushWarningThreshold, 15);
   assert.equal(config.gitStatus.pushCriticalThreshold, 30);
+});
+
+test('mergeConfig defaults context thresholds to 70/85', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.contextWarningThreshold, 70);
+  assert.equal(config.display.contextCriticalThreshold, 85);
+});
+
+test('mergeConfig preserves explicit context thresholds', () => {
+  const config = mergeConfig({
+    display: { contextWarningThreshold: 30, contextCriticalThreshold: 50 },
+  });
+  assert.equal(config.display.contextWarningThreshold, 30);
+  assert.equal(config.display.contextCriticalThreshold, 50);
+});
+
+test('mergeConfig clamps context thresholds to 0-100', () => {
+  const config = mergeConfig({
+    display: { contextWarningThreshold: -10, contextCriticalThreshold: 150 },
+  });
+  assert.equal(config.display.contextWarningThreshold, 0);
+  assert.equal(config.display.contextCriticalThreshold, 100);
+});
+
+test('mergeConfig falls back to defaults for invalid context thresholds', () => {
+  const config = mergeConfig({
+    display: { contextWarningThreshold: 'high', contextCriticalThreshold: null },
+  });
+  assert.equal(config.display.contextWarningThreshold, 70);
+  assert.equal(config.display.contextCriticalThreshold, 85);
+});
+
+test('mergeConfig defaults display thresholds from DEFAULT_CONFIG', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.usageThreshold, DEFAULT_CONFIG.display.usageThreshold);
+  assert.equal(config.display.sevenDayThreshold, DEFAULT_CONFIG.display.sevenDayThreshold);
+  assert.equal(config.display.environmentThreshold, DEFAULT_CONFIG.display.environmentThreshold);
+});
+
+test('mergeConfig preserves and clamps explicit display thresholds', () => {
+  const config = mergeConfig({
+    display: { usageThreshold: -10, sevenDayThreshold: 42, environmentThreshold: 150 },
+  });
+  assert.equal(config.display.usageThreshold, 0);
+  assert.equal(config.display.sevenDayThreshold, 42);
+  assert.equal(config.display.environmentThreshold, 100);
+});
+
+test('mergeConfig falls back to defaults for invalid display thresholds', () => {
+  const config = mergeConfig({
+    display: { usageThreshold: 'always', sevenDayThreshold: Number.NaN, environmentThreshold: null },
+  });
+  assert.equal(config.display.usageThreshold, DEFAULT_CONFIG.display.usageThreshold);
+  assert.equal(config.display.sevenDayThreshold, DEFAULT_CONFIG.display.sevenDayThreshold);
+  assert.equal(config.display.environmentThreshold, DEFAULT_CONFIG.display.environmentThreshold);
+  assert.equal(
+    mergeConfig({ display: { sevenDayThreshold: Number.POSITIVE_INFINITY } }).display.sevenDayThreshold,
+    DEFAULT_CONFIG.display.sevenDayThreshold,
+  );
+});
+
+test('mergeConfig preserves valid git branch overflow modes', () => {
+  assert.equal(mergeConfig({ gitStatus: { branchOverflow: 'wrap' } }).gitStatus.branchOverflow, 'wrap');
+  assert.equal(mergeConfig({ gitStatus: { branchOverflow: 'truncate' } }).gitStatus.branchOverflow, 'truncate');
+});
+
+test('mergeConfig falls back to truncate for invalid git branch overflow values', () => {
+  assert.equal(mergeConfig({ gitStatus: { branchOverflow: 'full' } }).gitStatus.branchOverflow, 'truncate');
+  assert.equal(mergeConfig({ gitStatus: { branchOverflow: null } }).gitStatus.branchOverflow, 'truncate');
 });
 
 test('mergeConfig defaults showOutputStyle to true', () => {
@@ -162,6 +307,21 @@ test('mergeConfig preserves customLine and truncates long values', () => {
   const config = mergeConfig({ display: { customLine } });
   assert.equal(config.display.customLine.length, 80);
   assert.equal(config.display.customLine, customLine.slice(0, 80));
+});
+
+test('mergeConfig defaults customLinePosition to last', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.customLinePosition, 'last');
+});
+
+test('mergeConfig preserves explicit customLinePosition', () => {
+  const config = mergeConfig({ display: { customLinePosition: 'first' } });
+  assert.equal(config.display.customLinePosition, 'first');
+});
+
+test('mergeConfig falls back to last for invalid customLinePosition', () => {
+  const config = mergeConfig({ display: { customLinePosition: 'middle' } });
+  assert.equal(config.display.customLinePosition, 'last');
 });
 
 test('mergeConfig defaults modelFormat to full', () => {
@@ -193,10 +353,74 @@ test('mergeConfig preserves modelOverride and truncates long values', () => {
   assert.equal(config.display.modelOverride, override.slice(0, 80));
 });
 
+test('mergeConfig defaults modelSource to stdin', () => {
+  assert.equal(DEFAULT_CONFIG.display.modelSource, 'stdin');
+  assert.equal(mergeConfig({}).display.modelSource, 'stdin');
+});
+
+test('mergeConfig preserves valid modelSource values', () => {
+  assert.equal(mergeConfig({ display: { modelSource: 'stdin' } }).display.modelSource, 'stdin');
+  assert.equal(mergeConfig({ display: { modelSource: 'auto' } }).display.modelSource, 'auto');
+  assert.equal(mergeConfig({ display: { modelSource: 'transcript' } }).display.modelSource, 'transcript');
+});
+
+test('mergeConfig falls back to stdin for invalid modelSource values', () => {
+  assert.equal(mergeConfig({ display: { modelSource: 'proxy' } }).display.modelSource, 'stdin');
+  assert.equal(mergeConfig({ display: { modelSource: 42 } }).display.modelSource, 'stdin');
+});
+
+test('mergeConfig defaults external usage fallback settings', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.externalUsagePath, '');
+  assert.equal(config.display.externalUsageFreshnessMs, 300000);
+});
+
+test('mergeConfig preserves valid external usage fallback settings', () => {
+  const config = mergeConfig({
+    display: {
+      externalUsagePath: ' /tmp/usage.json ',
+      externalUsageFreshnessMs: 12345,
+    },
+  });
+  assert.equal(config.display.externalUsagePath, '/tmp/usage.json');
+  assert.equal(config.display.externalUsageFreshnessMs, 12345);
+});
+
+test('mergeConfig sanitizes invalid external usage fallback settings', () => {
+  const config = mergeConfig({
+    display: {
+      externalUsagePath: 123,
+      externalUsageFreshnessMs: -10,
+    },
+  });
+  assert.equal(config.display.externalUsagePath, '');
+  assert.equal(config.display.externalUsageFreshnessMs, 0);
+});
+
 test('mergeConfig falls back to empty for non-string modelOverride', () => {
   assert.equal(mergeConfig({ display: { modelOverride: 123 } }).display.modelOverride, '');
   assert.equal(mergeConfig({ display: { modelOverride: null } }).display.modelOverride, '');
   assert.equal(mergeConfig({ display: { modelOverride: true } }).display.modelOverride, '');
+});
+
+test('mergeConfig defaults maxWidth to null', () => {
+  const config = mergeConfig({});
+  assert.equal(config.maxWidth, null);
+});
+
+test('mergeConfig preserves valid maxWidth', () => {
+  assert.equal(mergeConfig({ maxWidth: 50 }).maxWidth, 50);
+  assert.equal(mergeConfig({ maxWidth: 80 }).maxWidth, 80);
+  assert.equal(mergeConfig({ maxWidth: 30.7 }).maxWidth, 30);
+});
+
+test('mergeConfig rejects invalid maxWidth', () => {
+  assert.equal(mergeConfig({ maxWidth: 0 }).maxWidth, null);
+  assert.equal(mergeConfig({ maxWidth: -10 }).maxWidth, null);
+  assert.equal(mergeConfig({ maxWidth: NaN }).maxWidth, null);
+  assert.equal(mergeConfig({ maxWidth: 'wide' }).maxWidth, null);
+  assert.equal(mergeConfig({ maxWidth: null }).maxWidth, null);
+  assert.equal(mergeConfig({ maxWidth: Infinity }).maxWidth, null);
 });
 
 test('getConfigPath respects CLAUDE_CONFIG_DIR', async () => {
@@ -206,7 +430,7 @@ test('getConfigPath respects CLAUDE_CONFIG_DIR', async () => {
   try {
     process.env.CLAUDE_CONFIG_DIR = customConfigDir;
     const configPath = getConfigPath();
-    assert.equal(configPath, path.join(customConfigDir, 'plugins', 'claude-hud', 'config.json'));
+    assert.equal(configPath, path.join(customConfigDir, 'plugins', 'claude-hud-enhanced', 'config.json'));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(customConfigDir, { recursive: true, force: true });
@@ -219,14 +443,14 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
 
   try {
     process.env.CLAUDE_CONFIG_DIR = customConfigDir;
-    const pluginDir = path.join(customConfigDir, 'plugins', 'claude-hud');
+    const pluginDir = path.join(customConfigDir, 'plugins', 'claude-hud-enhanced');
     await mkdir(pluginDir, { recursive: true });
     await writeFile(
       path.join(pluginDir, 'config.json'),
       JSON.stringify({
         lineLayout: 'compact',
         pathLevels: 2,
-        display: { showTokenBreakdown: false },
+        display: { showSpeed: true },
       }),
       'utf8'
     );
@@ -234,7 +458,7 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
     const config = await loadConfig();
     assert.equal(config.lineLayout, 'compact');
     assert.equal(config.pathLevels, 2);
-    assert.equal(config.display.showTokenBreakdown, false);
+    assert.equal(config.display.showSpeed, true);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(customConfigDir, { recursive: true, force: true });
@@ -312,9 +536,67 @@ test('mergeConfig falls back to default for invalid contextValue', () => {
   assert.equal(config.display.contextValue, DEFAULT_CONFIG.display.contextValue);
 });
 
+test('mergeConfig accepts usageValue=remaining', () => {
+  const config = mergeConfig({
+    display: {
+      usageValue: 'remaining',
+    },
+  });
+  assert.equal(config.display.usageValue, 'remaining');
+});
+
+test('mergeConfig falls back to default for invalid usageValue', () => {
+  const config = mergeConfig({
+    display: {
+      usageValue: 'tokens',
+    },
+  });
+  assert.equal(config.display.usageValue, DEFAULT_CONFIG.display.usageValue);
+});
+
 test('mergeConfig defaults elementOrder to the full expanded layout', () => {
   const config = mergeConfig({});
   assert.deepEqual(config.elementOrder, DEFAULT_ELEMENT_ORDER);
+});
+
+test('mergeConfig defaults mergeGroups to context and usage', () => {
+  const config = mergeConfig({});
+  assert.deepEqual(config.display.mergeGroups, DEFAULT_MERGE_GROUPS);
+  assert.deepEqual(DEFAULT_CONFIG.display.mergeGroups, DEFAULT_MERGE_GROUPS);
+});
+
+test('mergeConfig preserves explicit empty mergeGroups to disable merged lines', () => {
+  const config = mergeConfig({
+    display: {
+      mergeGroups: [],
+    },
+  });
+  assert.deepEqual(config.display.mergeGroups, []);
+});
+
+test('mergeConfig accepts valid mergeGroups and filters invalid entries', () => {
+  const config = mergeConfig({
+    display: {
+      mergeGroups: [
+        ['project', 'context', 'usage'],
+        ['tools', 'todos', 'tools'],
+        ['memory'],
+        ['agents', 'unknown', 'environment'],
+      ],
+    },
+  });
+
+  assert.deepEqual(config.display.mergeGroups, [
+    ['project', 'context', 'usage'],
+    ['tools', 'todos'],
+    ['agents', 'environment'],
+  ]);
+});
+
+test('mergeConfig falls back to default mergeGroups when value is invalid', () => {
+  assert.deepEqual(mergeConfig({ display: { mergeGroups: 'context,usage' } }).display.mergeGroups, DEFAULT_MERGE_GROUPS);
+  assert.deepEqual(mergeConfig({ display: { mergeGroups: [['context'], ['unknown']] } }).display.mergeGroups, DEFAULT_MERGE_GROUPS);
+  assert.deepEqual(mergeConfig({ display: { mergeGroups: [null] } }).display.mergeGroups, DEFAULT_MERGE_GROUPS);
 });
 
 test('mergeConfig preserves valid custom elementOrder including activity elements', () => {
@@ -392,7 +674,7 @@ test('mergeConfig accepts valid color overrides and filters invalid values', () 
   assert.equal(config.colors.custom, '#ff6600');
 });
 
-// --- Custom color value tests (256-color and hex) ---
+// --- Custom colour value tests (256-colour and hex) ---
 
 test('mergeConfig accepts 256-color index values', () => {
   const config = mergeConfig({
@@ -493,4 +775,207 @@ test('mergeConfig rejects invalid hex strings', () => {
   assert.equal(config.colors.context, DEFAULT_CONFIG.colors.context);
   assert.equal(config.colors.usage, DEFAULT_CONFIG.colors.usage);
   assert.equal(config.colors.warning, DEFAULT_CONFIG.colors.warning);
+});
+
+test('mergeConfig accepts valid single-character barFilled and barEmpty', () => {
+  const config = mergeConfig({
+    colors: { barFilled: '●', barEmpty: '○' },
+  });
+  assert.equal(config.colors.barFilled, '●');
+  assert.equal(config.colors.barEmpty, '○');
+});
+
+test('mergeConfig accepts surrogate-pair emoji for bar chars', () => {
+  const config = mergeConfig({
+    colors: { barFilled: '🟢', barEmpty: '🔴' },
+  });
+  assert.equal(config.colors.barFilled, '🟢');
+  assert.equal(config.colors.barEmpty, '🔴');
+});
+
+test('mergeConfig accepts CJK and Unicode symbols for bar chars', () => {
+  const config = mergeConfig({
+    colors: { barFilled: '中', barEmpty: '★' },
+  });
+  assert.equal(config.colors.barFilled, '中');
+  assert.equal(config.colors.barEmpty, '★');
+});
+
+test('mergeConfig rejects control characters for bar chars', () => {
+  const config = mergeConfig({
+    colors: { barFilled: '\n', barEmpty: '\x1b' },
+  });
+  assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(config.colors.barEmpty, DEFAULT_CONFIG.colors.barEmpty);
+});
+
+test('mergeConfig rejects C1 control characters for bar chars', () => {
+  const config = mergeConfig({
+    colors: { barFilled: '\x80', barEmpty: '\x9f' },
+  });
+  assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(config.colors.barEmpty, DEFAULT_CONFIG.colors.barEmpty);
+});
+
+test('mergeConfig rejects multi-character strings for bar chars', () => {
+  const config = mergeConfig({
+    colors: { barFilled: 'ab', barEmpty: '##' },
+  });
+  assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(config.colors.barEmpty, DEFAULT_CONFIG.colors.barEmpty);
+});
+
+test('mergeConfig rejects non-string types for bar chars', () => {
+  const config = mergeConfig({
+    colors: { barFilled: 123, barEmpty: true },
+  });
+  assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(config.colors.barEmpty, DEFAULT_CONFIG.colors.barEmpty);
+});
+
+test('mergeConfig rejects bidirectional control characters for bar chars', () => {
+  const bidiChars = ['‮', '‎', '‏', '‪', '‫', '‬', '‭', '⁦', '⁩'];
+  for (const ch of bidiChars) {
+    const config = mergeConfig({ colors: { barFilled: ch } });
+    assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled,
+      `should reject U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+  }
+});
+
+test('mergeConfig rejects zero-width characters for bar chars', () => {
+  const zwChars = ['​', '‌', '‍', '﻿'];
+  for (const ch of zwChars) {
+    const config = mergeConfig({ colors: { barFilled: ch } });
+    assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled,
+      `should reject U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+  }
+});
+
+test('mergeConfig rejects variation selectors for bar chars', () => {
+  assert.equal(mergeConfig({ colors: { barFilled: '︀' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(mergeConfig({ colors: { barFilled: '️' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(mergeConfig({ colors: { barFilled: String.fromCodePoint(0xE0100) } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+});
+
+test('mergeConfig rejects other invisible format characters for bar chars', () => {
+  const formatChars = ['­', '؜', '⁠'];
+  for (const ch of formatChars) {
+    const config = mergeConfig({ colors: { barFilled: ch } });
+    assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled,
+      `should reject U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+  }
+});
+
+test('mergeConfig rejects compound emoji with zero-width joiners for bar chars', () => {
+  const config = mergeConfig({ colors: { barFilled: '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}' } });
+  assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+});
+
+test('mergeConfig rejects invisible code points attached to visible bar chars', () => {
+  assert.equal(mergeConfig({ colors: { barFilled: 'a\u202e' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(mergeConfig({ colors: { barFilled: '⭐\ufe0f' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+});
+
+test('mergeConfig rejects empty string for bar chars', () => {
+  const config = mergeConfig({ colors: { barFilled: '', barEmpty: '' } });
+  assert.equal(config.colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(config.colors.barEmpty, DEFAULT_CONFIG.colors.barEmpty);
+});
+
+test('mergeConfig rejects line and paragraph separators for bar chars', () => {
+  assert.equal(mergeConfig({ colors: { barFilled: ' ' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(mergeConfig({ colors: { barFilled: ' ' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+});
+
+test('mergeConfig rejects Unicode noncharacters for bar chars', () => {
+  assert.equal(mergeConfig({ colors: { barFilled: '﷐' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(mergeConfig({ colors: { barFilled: '￾' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+  assert.equal(mergeConfig({ colors: { barFilled: '￿' } }).colors.barFilled, DEFAULT_CONFIG.colors.barFilled);
+});
+
+test('mergeConfig independently validates barFilled and barEmpty', () => {
+  const config = mergeConfig({ colors: { barFilled: '█', barEmpty: '‮' } });
+  assert.equal(config.colors.barFilled, '█');
+  assert.equal(config.colors.barEmpty, DEFAULT_CONFIG.colors.barEmpty);
+});
+
+test('mergeConfig defaults showAdvisor to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showAdvisor, false);
+  assert.equal(DEFAULT_CONFIG.display.showAdvisor, false);
+});
+
+test('mergeConfig defaults showCompactions to false', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showCompactions, false);
+  assert.equal(DEFAULT_CONFIG.display.showCompactions, false);
+});
+
+test('mergeConfig preserves explicit showCompactions=true', () => {
+  const config = mergeConfig({ display: { showCompactions: true } });
+  assert.equal(config.display.showCompactions, true);
+});
+
+test('mergeConfig rejects non-boolean showCompactions', () => {
+  const config = mergeConfig({ display: { showCompactions: 'yes' } });
+  assert.equal(config.display.showCompactions, false);
+});
+
+test('mergeConfig preserves explicit showAdvisor=true', () => {
+  const config = mergeConfig({ display: { showAdvisor: true } });
+  assert.equal(config.display.showAdvisor, true);
+});
+
+test('mergeConfig defaults advisorOverride to empty string', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.advisorOverride, '');
+});
+
+test('mergeConfig preserves explicit advisorOverride and caps at 80 chars', () => {
+  const config = mergeConfig({ display: { advisorOverride: 'Opus 4.7 (custom)' } });
+  assert.equal(config.display.advisorOverride, 'Opus 4.7 (custom)');
+
+  const longValue = 'x'.repeat(120);
+  const capped = mergeConfig({ display: { advisorOverride: longValue } });
+  assert.equal(capped.display.advisorOverride.length, 80);
+});
+
+test('mergeConfig rejects non-string advisorOverride and non-boolean showAdvisor', () => {
+  const config = mergeConfig({ display: { showAdvisor: 'yes', advisorOverride: 42 } });
+  assert.equal(config.display.showAdvisor, false);
+  assert.equal(config.display.advisorOverride, '');
+});
+
+// --- Enhanced identity / migration locks (0.3.0) ---
+
+test('mergeConfig migrates legacy showPlan to showAuth', () => {
+  assert.equal(mergeConfig({ display: { showPlan: false } }).display.showAuth, false);
+  assert.equal(mergeConfig({ display: { showPlan: true } }).display.showAuth, true);
+});
+
+test('mergeConfig prefers explicit showAuth over legacy showPlan', () => {
+  const config = mergeConfig({ display: { showAuth: true, showPlan: false } });
+  assert.equal(config.display.showAuth, true);
+});
+
+test('mergeConfig defaults showAuth to true when neither showAuth nor showPlan set', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showAuth, true);
+  assert.equal(DEFAULT_CONFIG.display.showAuth, true);
+});
+
+test('enhanced defaults lock (0.3.0 product surface)', () => {
+  const d = DEFAULT_CONFIG.display;
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'expanded');
+  assert.equal(DEFAULT_CONFIG.showSeparators, true);
+  assert.equal(d.contextValue, 'both');
+  assert.equal(d.showTools, true);
+  assert.equal(d.showAgents, true);
+  assert.equal(d.showTodos, true);
+  assert.equal(d.showAuth, true);
+  assert.equal(d.showDuration, true);
+  assert.equal(d.showOutputStyle, true);
+  assert.equal(d.sevenDayThreshold, 0); // always show weekly when data exists
+  assert.equal(DEFAULT_CONFIG.gitStatus.showAheadBehind, true);
+  assert.equal(DEFAULT_CONFIG.gitStatus.showFileStats, true);
 });

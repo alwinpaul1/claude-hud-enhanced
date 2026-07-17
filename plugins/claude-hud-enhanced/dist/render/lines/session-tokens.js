@@ -1,12 +1,19 @@
 import { label } from '../colors.js';
-function formatTokens(n) {
-    if (n >= 1000000) {
-        return `${(n / 1000000).toFixed(1)}M`;
+import { t } from '../../i18n/index.js';
+import { formatTokens } from '../../utils/format.js';
+export function formatSessionTokenSummary(tokens, prefix) {
+    const total = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+    if (total === 0) {
+        return null;
     }
-    if (n >= 1000) {
-        return `${(n / 1000).toFixed(0)}k`;
+    const parts = [
+        `${t('format.in')}: ${formatTokens(tokens.inputTokens)}`,
+        `${t('format.out')}: ${formatTokens(tokens.outputTokens)}`,
+    ];
+    if (tokens.cacheCreationTokens > 0 || tokens.cacheReadTokens > 0) {
+        parts.push(`${t('format.cache')}: ${formatTokens(tokens.cacheCreationTokens + tokens.cacheReadTokens)}`);
     }
-    return n.toString();
+    return `${prefix} ${formatTokens(total)} (${parts.join(', ')})`;
 }
 export function renderSessionTokensLine(ctx) {
     const display = ctx.config?.display;
@@ -17,18 +24,8 @@ export function renderSessionTokensLine(ctx) {
     if (!tokens) {
         return null;
     }
-    const total = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
-    if (total === 0) {
-        return null;
-    }
     const colors = ctx.config?.colors;
-    const parts = [
-        `in: ${formatTokens(tokens.inputTokens)}`,
-        `out: ${formatTokens(tokens.outputTokens)}`,
-    ];
-    if (tokens.cacheCreationTokens > 0 || tokens.cacheReadTokens > 0) {
-        parts.push(`cache: ${formatTokens(tokens.cacheCreationTokens + tokens.cacheReadTokens)}`);
-    }
-    return label(`Tokens ${formatTokens(total)} (${parts.join(', ')})`, colors);
+    const summary = formatSessionTokenSummary(tokens, t('label.tokens'));
+    return summary ? label(summary, colors) : null;
 }
 //# sourceMappingURL=session-tokens.js.map

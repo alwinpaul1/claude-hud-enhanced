@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] - 2026-07-17
+
+### Changed
+- Rebase plugin on upstream [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) **v0.5.1** (auth, effort, external usage, skills/MCP line, expanded config surface, i18n zh-Hans/zh-Hant).
+- Identity remains **claude-hud-enhanced** (package, marketplace, plugin manifest); HUD data dir is `~/.claude/plugins/claude-hud-enhanced/` (config, caches, statusline launcher) — not the upstream `claude-hud` path.
+- Auto-migrate on first run / setup: rename `plugins/claude-hud` → `plugins/claude-hud-enhanced` when the enhanced path is missing; if both exist, copy missing `config.json` (never overwrite).
+- Plan label: upstream `showAuth` replaces legacy `showPlan`/`oauth.ts`. Existing `display.showPlan` configs migrate to `showAuth`.
+- Enhanced defaults vs stock upstream: separators on, tools/agents/todos/auth visible, duration/output-style on, context value `both`, git ahead-behind + file stats on, `sevenDayThreshold: 0` (weekly usage always visible when data exists). (`lineLayout` stays upstream `expanded` so added-dirs and multi-line elements work.)
+
+### Removed
+- `src/oauth.ts` and keychain-based plan detection (superseded by upstream `auth.ts` reading Claude Code's oauth account profile).
+
+
 All notable changes to Claude HUD will be documented in this file.
 
 ## [0.2.38] - 2026-06-23

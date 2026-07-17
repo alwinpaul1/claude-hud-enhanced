@@ -47,14 +47,15 @@ Claude HUD Enhanced gives you better insights into what's happening in your Clau
 
 ### Enhanced Features (vs Original)
 
-| Feature | Original | Enhanced |
-|---------|----------|----------|
-| 7-day usage | Only shown when ≥80% | **Always visible** |
-| 5h limit reached | Basic countdown | **Reset time** (e.g., "Resets 8:32 PM") |
-| 7d reset | Not shown | **Date/time** (e.g., "Resets Fri 12:30 PM") |
-| Credential source | File only | **File + macOS Keychain** |
-| Model quotas | ❌ | ✅ Shows Opus 4.5 limits |
-| Max tier detection | ❌ | ✅ Max5/Max20 with tokens/window |
+| Feature | Original (upstream defaults) | Enhanced (this fork) |
+|---------|------------------------------|----------------------|
+| 7-day usage | Hidden until ≥80% | **Always visible** when data exists (`sevenDayThreshold: 0`) |
+| Plan / auth label | Off by default | **On by default** (`showAuth`) from Claude Code oauth account |
+| Tools / agents / todos | Off by default | **On by default** |
+| Context display | Percent only | **Percent + tokens** (`contextValue: both`) |
+| Separators | Off | **On** |
+| Config path | `~/.claude/plugins/claude-hud/` | `~/.claude/plugins/claude-hud-enhanced/` (auto-migrates) |
+| Plugin identity | `claude-hud` | **`claude-hud-enhanced`** |
 
 ## What Each Line Shows
 
@@ -151,17 +152,19 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `layout` | string | `default` | Layout style: `default` or `separators` |
+| `lineLayout` | string | `expanded` | `compact` (single session line) or `expanded` (multi-element) |
+| `showSeparators` | boolean | true | Separator between session and activity lines |
 | `pathLevels` | 1-3 | 1 | Directory levels to show in project path |
 | `gitStatus.enabled` | boolean | true | Show git branch in HUD |
 | `gitStatus.showDirty` | boolean | true | Show `*` for uncommitted changes |
-| `gitStatus.showAheadBehind` | boolean | false | Show `↑N ↓N` for ahead/behind remote |
+| `gitStatus.showAheadBehind` | boolean | true | Show `↑N ↓N` for ahead/behind remote |
 | `display.showModel` | boolean | true | Show model name `[Opus]` |
 | `display.showContextBar` | boolean | true | Show visual context bar `████░░░░░░` |
-| `display.showConfigCounts` | boolean | true | Show CLAUDE.md, rules, MCPs, hooks counts |
-| `display.showDuration` | boolean | true | Show session duration `⏱️ 5m` |
-| `display.showUsage` | boolean | true | Show usage limits (Pro/Max/Team only) |
-| `display.showTokenBreakdown` | boolean | true | Show token details at high context (85%+) |
+| `display.contextValue` | string | `both` | `percent`, `tokens`, or `both` |
+| `display.showAuth` | boolean | true | Show plan/auth label from Claude Code login |
+| `display.showDuration` | boolean | true | Show session duration |
+| `display.showUsage` | boolean | true | Show 5h/7d usage from stdin `rate_limits` |
+| `display.sevenDayThreshold` | number | 0 | Min 7d % before weekly shows (0 = always) |
 | `display.showTools` | boolean | true | Show tools activity line |
 | `display.showAgents` | boolean | true | Show agents activity line |
 | `display.showTodos` | boolean | true | Show todos progress line |
@@ -191,31 +194,31 @@ Usage display is **enabled by default** for Claude Pro, Max, and Team subscriber
 To disable usage display, set `display.showUsage` to `false` in your config.
 
 **Requirements:**
-- Claude Pro, Max, or Team subscription (not available for API users)
-- OAuth credentials from Claude Code (created automatically when you log in)
+- Claude Pro, Max, or Team for rate-limit windows (API-key users typically have no `rate_limits` in stdin)
+- Claude Code login so stdin can include `rate_limits` and `{CLAUDE_CONFIG_DIR}.json` can expose plan/auth
 
-**Credential Sources (Enhanced):**
-- `~/.claude/.credentials.json` (file-based)
-- **macOS Keychain** (automatic fallback) — reads from "Claude Code-credentials"
+**How usage + plan are read (0.3.0+):**
+- **Usage** — native Claude Code stdin `rate_limits` (5h / 7d), not a separate Anthropic usage API call
+- **Plan / auth** — `auth.ts` reads the Claude Code oauth account profile in `{CLAUDE_CONFIG_DIR}.json` (e.g. `~/.claude.json`)
 
 **Troubleshooting:** If usage doesn't appear:
-- Ensure you're logged in with a Pro/Max/Team account (not API key)
-- Check `display.showUsage` is not set to `false` in config
-- On macOS, credentials may be in Keychain (this is supported automatically)
-- API users see no usage display (they have pay-per-token, not rate limits)
+- Ensure you're logged in with a Pro/Max/Team account (not API-only)
+- Check `display.showUsage` is not set to `false`
+- Wait until Claude Code has emitted `rate_limits` at least once this session
+- Confirm config lives under `~/.claude/plugins/claude-hud-enhanced/config.json`
 
 ### Layout Options
 
-**Default layout** — All info on first line:
+**Compact** (`lineLayout: "compact"`) — single session line:
 ```
-[Opus] ████░░░░░░ 42% | my-project git:(main) | 2 rules | ⏱️ 5m
-✓ Read ×3 | ✓ Edit ×1
+[Opus] ████░░░░░░ 42% (45k/200k) | my-project git:(main) | ⏱️ 5m
 ```
 
-**Separators layout** — Visual separator below header when activity exists:
+**Expanded** (default, `lineLayout: "expanded"`) — multi-element layout with separators:
 ```
-[Opus] ████░░░░░░ 42% | my-project git:(main) | 2 rules | ⏱️ 5m
-──────────────────────────────────────────────────────────────
+[Opus] │ my-project
+Context ████░░░░░░ 42% (45k/200k)
+─────────────────────────────────
 ✓ Read ×3 | ✓ Edit ×1
 ```
 
@@ -223,7 +226,8 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 
 ```json
 {
-  "layout": "default",
+  "lineLayout": "expanded",
+  "showSeparators": true,
   "pathLevels": 2,
   "gitStatus": {
     "enabled": true,
@@ -233,10 +237,11 @@ To disable usage display, set `display.showUsage` to `false` in your config.
   "display": {
     "showModel": true,
     "showContextBar": true,
-    "showConfigCounts": true,
+    "contextValue": "both",
+    "showAuth": true,
     "showDuration": true,
     "showUsage": true,
-    "showTokenBreakdown": true,
+    "sevenDayThreshold": 0,
     "showTools": true,
     "showAgents": true,
     "showTodos": true
@@ -262,7 +267,7 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 
 **Config not applying?**
 - Check for JSON syntax errors: invalid JSON silently falls back to defaults
-- Ensure valid values: `pathLevels` must be 1, 2, or 3; `layout` must be `default` or `separators`
+- Ensure valid values: `pathLevels` must be 1, 2, or 3; `lineLayout` must be `compact` or `expanded`
 - Delete config and run `/claude-hud-enhanced:configure` to regenerate
 
 **Git status missing?**
@@ -300,11 +305,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 This is an enhanced fork of [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud). 
 
 **Enhancements by [@alwinpaul1](https://github.com/alwinpaul1):**
-- macOS Keychain credential support
-- Always-visible 7-day usage limits
-- Live time-to-reset countdowns
-- Model quota tracking (Opus 4.5, etc.)
-- Max5/Max20 tier detection
+- Identity + data dir under `claude-hud-enhanced` (auto-migrates legacy path)
+- Always-visible 7-day usage (`sevenDayThreshold: 0`)
+- Plan/auth on by default via Claude Code oauth account profile
+- Richer defaults (tools/agents/todos/separators/context both)
+- Rebased on upstream v0.5.1 architecture (auth, effort, external usage, expanded layout)
 
 ---
 

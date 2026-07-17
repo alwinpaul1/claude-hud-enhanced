@@ -1,21 +1,10 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { createHash } from 'node:crypto';
 import { createDebug } from './debug.js';
 import { getClaudeConfigDir, getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
-const debug = createDebug('config');
-// TypeScript enforces that every ConfigCounts key is listed here.
-// Adding a field to ConfigCounts without updating this object causes a build error,
-// and the derived cache version string changes automatically — no manual bump needed.
-const CONFIG_COUNTS_SHAPE = {
-    claudeMdCount: true,
-    rulesCount: true,
-    mcpCount: true,
-    hooksCount: true,
-    outputStyle: true,
-};
-const CONFIG_CACHE_VERSION = Object.keys(CONFIG_COUNTS_SHAPE).sort().join(',');
+const debug = createDebug('config-reader');
 function getMcpServerNames(filePath) {
     if (!fs.existsSync(filePath))
         return new Set();
@@ -91,19 +80,50 @@ function readStringSetting(filePath, key) {
     }
     return undefined;
 }
-function countRulesInDir(rulesDir) {
-    if (!fs.existsSync(rulesDir))
+const MAX_RULE_TREE_ENTRIES = 10_000;
+const MAX_RULE_TREE_DIRECTORIES = 1_000;
+function newRuleTraversalState() {
+    return { visited: new Set(), entries: 0, directories: 0 };
+}
+function inspectRulePath(inputPath) {
+    try {
+        const realPath = fs.realpathSync.native(inputPath);
+        return { realPath, stat: fs.statSync(realPath) };
+    }
+    catch {
+        return null;
+    }
+}
+function countRulesInDir(rulesDir, state = newRuleTraversalState()) {
+    const root = inspectRulePath(rulesDir);
+    if (!root?.stat.isDirectory() || state.visited.has(root.realPath))
         return 0;
+    if (state.directories >= MAX_RULE_TREE_DIRECTORIES) {
+        debug(`Rule directory traversal limit reached at ${rulesDir}`);
+        return 0;
+    }
+    state.visited.add(root.realPath);
+    state.directories += 1;
     let count = 0;
     try {
-        const entries = fs.readdirSync(rulesDir, { withFileTypes: true });
+        const entries = fs.readdirSync(root.realPath, { withFileTypes: true });
         for (const entry of entries) {
-            const fullPath = path.join(rulesDir, entry.name);
-            if (entry.isDirectory()) {
-                count += countRulesInDir(fullPath);
+            if (state.entries >= MAX_RULE_TREE_ENTRIES) {
+                debug(`Rule entry traversal limit reached at ${rulesDir}`);
+                break;
             }
-            else if (entry.isFile() && entry.name.endsWith('.md')) {
-                count++;
+            state.entries += 1;
+            const fullPath = path.join(root.realPath, entry.name);
+            const node = inspectRulePath(fullPath);
+            if (!node || state.visited.has(node.realPath)) {
+                continue;
+            }
+            if (node.stat.isDirectory()) {
+                count += countRulesInDir(fullPath, state);
+            }
+            else if (node.stat.isFile() && entry.name.endsWith('.md')) {
+                state.visited.add(node.realPath);
+                count += 1;
             }
         }
     }
@@ -132,7 +152,8 @@ function pathsReferToSameLocation(pathA, pathB) {
         const realPathB = fs.realpathSync.native(pathB);
         return normalizePathForComparison(realPathA) === normalizePathForComparison(realPathB);
     }
-    catch {
+    catch (err) {
+        debug('Failed to compare paths %s and %s:', pathA, pathB, err instanceof Error ? err.message : err);
         return false;
     }
 }
@@ -144,9 +165,14 @@ function getConfigCachePath(cwd, claudeConfigDir, homeDir) {
 function statSentinel(filePath) {
     try {
         const stat = fs.statSync(filePath);
-        return { mtimeMs: stat.mtimeMs, size: stat.size };
+        return {
+            mtimeMs: stat.mtimeMs,
+            size: stat.size,
+            realPath: normalizePathForComparison(fs.realpathSync.native(filePath)),
+        };
     }
-    catch {
+    catch (err) {
+        debug('Failed to stat sentinel %s:', filePath, err instanceof Error ? err.message : err);
         return null;
     }
 }
@@ -166,17 +192,31 @@ function buildSentinelPaths(claudeDir, claudeConfigJsonPath, cwd) {
     }
     return paths;
 }
-function collectRuleDirectorySentinels(rulesDir) {
-    if (!fs.existsSync(rulesDir))
+function collectRuleDirectorySentinels(rulesDir, state = newRuleTraversalState()) {
+    const root = inspectRulePath(rulesDir);
+    if (!root?.stat.isDirectory() || state.visited.has(root.realPath))
         return [];
+    if (state.directories >= MAX_RULE_TREE_DIRECTORIES) {
+        debug(`Rule sentinel traversal limit reached at ${rulesDir}`);
+        return [];
+    }
+    state.visited.add(root.realPath);
+    state.directories += 1;
     const sentinels = [rulesDir];
     try {
-        const entries = fs.readdirSync(rulesDir, { withFileTypes: true });
+        const entries = fs.readdirSync(root.realPath, { withFileTypes: true });
         for (const entry of entries) {
-            if (!entry.isDirectory()) {
+            if (state.entries >= MAX_RULE_TREE_ENTRIES) {
+                debug(`Rule sentinel entry limit reached at ${rulesDir}`);
+                break;
+            }
+            state.entries += 1;
+            const fullPath = path.join(root.realPath, entry.name);
+            const node = inspectRulePath(fullPath);
+            if (!node?.stat.isDirectory() || state.visited.has(node.realPath)) {
                 continue;
             }
-            sentinels.push(...collectRuleDirectorySentinels(path.join(rulesDir, entry.name)));
+            sentinels.push(...collectRuleDirectorySentinels(fullPath, state));
         }
     }
     catch (error) {
@@ -191,6 +231,15 @@ function statSentinels(paths) {
     }
     return result;
 }
+function ensurePrivateDir(dir) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+        fs.chmodSync(dir, 0o700);
+    }
+    catch {
+        // Best-effort: some filesystems do not support POSIX modes.
+    }
+}
 function sentinelsMatch(a, b) {
     const keysA = Object.keys(a);
     const keysB = Object.keys(b);
@@ -203,7 +252,7 @@ function sentinelsMatch(a, b) {
             continue;
         if (sa === null || sb === null)
             return false;
-        if (sa.mtimeMs !== sb.mtimeMs || sa.size !== sb.size)
+        if (sa.mtimeMs !== sb.mtimeMs || sa.size !== sb.size || sa.realPath !== sb.realPath)
             return false;
     }
     return true;
@@ -232,9 +281,6 @@ function readConfigCache(cacheKey, homeDir) {
         const cachePath = getConfigCachePath(cacheKey.cwd, cacheKey.claudeConfigDir, homeDir);
         const raw = fs.readFileSync(cachePath, 'utf8');
         const parsed = JSON.parse(raw);
-        if (parsed.version !== CONFIG_CACHE_VERSION) {
-            return null;
-        }
         if (parsed.key?.cwd !== cacheKey.cwd || parsed.key?.claudeConfigDir !== cacheKey.claudeConfigDir) {
             return null;
         }
@@ -243,19 +289,26 @@ function readConfigCache(cacheKey, homeDir) {
         }
         return parsed;
     }
-    catch {
+    catch (err) {
+        debug('Failed to read config cache:', err instanceof Error ? err.message : err);
         return null;
     }
 }
 function writeConfigCache(key, data, homeDir) {
     try {
         const cachePath = getConfigCachePath(key.cwd, key.claudeConfigDir, homeDir);
-        fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-        const payload = { version: CONFIG_CACHE_VERSION, key, data };
-        fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
+        ensurePrivateDir(path.dirname(cachePath));
+        const payload = { key, data };
+        fs.writeFileSync(cachePath, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 });
+        try {
+            fs.chmodSync(cachePath, 0o600);
+        }
+        catch {
+            // Best-effort: some filesystems do not support POSIX modes.
+        }
     }
-    catch {
-        // Cache write failures are non-fatal.
+    catch (err) {
+        debug('Failed to write config cache:', err instanceof Error ? err.message : err);
     }
 }
 function computeConfigCountsFresh(cwd) {

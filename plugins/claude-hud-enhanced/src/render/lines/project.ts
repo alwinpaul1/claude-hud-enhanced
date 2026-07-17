@@ -1,15 +1,25 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { RenderContext } from '../../types.js';
-import { getModelName, formatModelName, getProviderLabel } from '../../stdin.js';
+import { getModelName, formatModelName, resolveModelName } from '../../stdin.js';
+import { getOutputSpeed } from '../../speed-tracker.js';
 import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor } from '../colors.js';
 import { t } from '../../i18n/index.js';
 import { renderCostEstimate } from './cost.js';
+import { renderAdvisorLine } from './advisor.js';
+import { normalizeAddedDirs, sanitize as sanitizeDisplayText, basenameOf, truncateBasename, MAX_RENDERED_ADDED_DIRS } from './added-dirs.js';
+import { hyperlink, getFileHref, safeHyperlink } from '../../utils/hyperlinks.js';
+import { formatModelDisplay } from '../model-display.js';
+import { formatAuthSegment } from '../../auth.js';
 
-function hyperlink(uri: string, text: string): string {
-  const esc = '\x1b';
-  const st = '\\';
-  return `${esc}]8;;${uri}${esc}${st}${text}${esc}]8;;${esc}${st}`;
+function resolvePathWithinCwd(cwd: string, candidatePath: string): string | null {
+  const resolvedCwd = path.resolve(cwd);
+  const resolvedPath = path.resolve(cwd, candidatePath);
+  const relative = path.relative(resolvedCwd, resolvedPath);
+  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    return resolvedPath;
+  }
+  return null;
 }
 
 export function renderProjectLine(ctx: RenderContext): string | null {
@@ -17,12 +27,15 @@ export function renderProjectLine(ctx: RenderContext): string | null {
   const colors = ctx.config?.colors;
   const parts: string[] = [];
 
+  const customLine = display?.customLine;
+  const customLinePosition = display?.customLinePosition ?? 'last';
+  if (customLine && customLinePosition === 'first') {
+    parts.push(customColor(customLine, colors));
+  }
+
   if (display?.showModel !== false) {
-    const model = formatModelName(getModelName(ctx.stdin), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
-    const providerLabel = getProviderLabel(ctx.stdin);
-    const planLabel = display?.showPlan !== false && !display?.modelOverride ? ctx.planLabel : null;
-    const qualifiers = [providerLabel, planLabel].filter((q): q is string => !!q);
-    const modelDisplay = qualifiers.length > 0 ? `${model} | ${qualifiers.join(' | ')}` : model;
+    const model = formatModelName(resolveModelName(ctx.stdin, ctx.transcript, ctx.config?.display?.modelSource), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
+    const modelDisplay = formatModelDisplay(model, ctx);
     parts.push(modelColor(`[${modelDisplay}]`, colors));
   }
 
@@ -30,19 +43,39 @@ export function renderProjectLine(ctx: RenderContext): string | null {
   if (display?.showProject !== false && ctx.stdin.cwd) {
     const segments = ctx.stdin.cwd.split(/[/\\]/).filter(Boolean);
     const pathLevels = ctx.config?.pathLevels ?? 1;
-    const projectPath = segments.length > 0 ? segments.slice(-pathLevels).join('/') : '/';
+    const projectPath = sanitizeDisplayText(segments.length > 0 ? segments.slice(-pathLevels).join('/') : '/');
     const coloredProject = projectColor(projectPath, colors);
-    projectPart = hyperlink(`file://${ctx.stdin.cwd}`, coloredProject);
+    projectPart = safeHyperlink(getFileHref(ctx.stdin.cwd), coloredProject);
+  }
+
+  let addedDirsPart: string | null = null;
+  const addedDirs = normalizeAddedDirs(ctx.stdin.workspace?.added_dirs);
+  const addedDirsLayout = display?.addedDirsLayout ?? 'inline';
+  if (display?.showAddedDirs !== false && addedDirsLayout === 'inline' && addedDirs.length > 0) {
+    const visible = addedDirs.slice(0, MAX_RENDERED_ADDED_DIRS);
+    const overflow = addedDirs.length - visible.length;
+    const rendered = visible.map((dir) => {
+      const name = truncateBasename(sanitizeDisplayText(basenameOf(dir)));
+      const text = dim(`+${name}`);
+      return safeHyperlink(getFileHref(dir), text);
+    });
+    if (overflow > 0) {
+      rendered.push(dim(`+${overflow} more`));
+    }
+    addedDirsPart = rendered.join(' ');
   }
 
   let gitPart = '';
   const gitConfig = ctx.config?.gitStatus;
   const showGit = gitConfig?.enabled ?? true;
+  const branchOverflow = gitConfig?.branchOverflow ?? 'truncate';
 
   if (showGit && ctx.gitStatus) {
-    const branchText = ctx.gitStatus.branch + ((gitConfig?.showDirty ?? true) && ctx.gitStatus.isDirty ? '*' : '');
+    const branchText = sanitizeDisplayText(
+      ctx.gitStatus.branch + ((gitConfig?.showDirty ?? true) && ctx.gitStatus.isDirty ? '*' : '')
+    );
     const coloredBranch = gitBranchColor(branchText, colors);
-    const linkedBranch = ctx.gitStatus.branchUrl ? hyperlink(ctx.gitStatus.branchUrl, coloredBranch) : coloredBranch;
+    const linkedBranch = safeHyperlink(ctx.gitStatus.branchUrl, coloredBranch);
     const gitInner: string[] = [linkedBranch];
 
     if (gitConfig?.showAheadBehind) {
@@ -65,12 +98,30 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     gitPart = `${gitColor('git:(', colors)}${gitInner.join(' ')}${gitColor(')', colors)}`;
   }
 
-  if (projectPart && gitPart) {
-    parts.push(`${projectPart} ${gitPart}`);
-  } else if (projectPart) {
-    parts.push(projectPart);
+  const projectWithDirs = projectPart && addedDirsPart
+    ? `${projectPart} ${addedDirsPart}`
+    : projectPart ?? addedDirsPart;
+
+  if (projectWithDirs && gitPart) {
+    if (branchOverflow === 'wrap') {
+      parts.push(projectWithDirs);
+      parts.push(gitPart);
+    } else {
+      parts.push(`${projectWithDirs} ${gitPart}`);
+    }
+  } else if (projectWithDirs) {
+    parts.push(projectWithDirs);
   } else if (gitPart) {
     parts.push(gitPart);
+  }
+
+  // Advisor model sits inline with the model/project/git badge so the
+  // configured /advisor is visible on the first line at a glance.
+  if (display?.showAdvisor) {
+    const advisorPart = renderAdvisorLine(ctx);
+    if (advisorPart) {
+      parts.push(advisorPart);
+    }
   }
 
   if (display?.showSessionName && ctx.transcript.sessionName) {
@@ -85,7 +136,7 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     parts.push(label(ctx.extraLabel, colors));
   }
 
-  if (display?.showDuration !== false && ctx.sessionDuration) {
+  if (display?.showDuration === true && ctx.sessionDuration) {
     parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));
   }
 
@@ -94,8 +145,19 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     parts.push(costEstimate);
   }
 
-  const customLine = display?.customLine;
-  if (customLine) {
+  if (display?.showSpeed) {
+    const speed = getOutputSpeed(ctx.stdin);
+    if (speed !== null) {
+      parts.push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors));
+    }
+  }
+
+  const authSegment = formatAuthSegment(ctx.authInfo, display);
+  if (authSegment) {
+    parts.push(label(authSegment, colors));
+  }
+
+  if (customLine && customLinePosition === 'last') {
     parts.push(customColor(customLine, colors));
   }
 
@@ -138,8 +200,10 @@ export function renderGitFilesLine(ctx: RenderContext, terminalWidth: number | n
   const cwd = ctx.stdin.cwd;
   const sorted = [...trackedFiles].sort((a, b) => {
     try {
-      const aMtime = cwd ? fs.statSync(path.join(cwd, a.fullPath)).mtimeMs : 0;
-      const bMtime = cwd ? fs.statSync(path.join(cwd, b.fullPath)).mtimeMs : 0;
+      const aPath = cwd ? resolvePathWithinCwd(cwd, a.fullPath) : null;
+      const bPath = cwd ? resolvePathWithinCwd(cwd, b.fullPath) : null;
+      const aMtime = aPath ? fs.statSync(aPath).mtimeMs : 0;
+      const bMtime = bPath ? fs.statSync(bPath).mtimeMs : 0;
       return bMtime - aMtime;
     } catch {
       return 0;
@@ -152,12 +216,14 @@ export function renderGitFilesLine(ctx: RenderContext, terminalWidth: number | n
 
   for (const trackedFile of shown) {
     const prefix = trackedFile.type === 'added' ? green('+') : trackedFile.type === 'deleted' ? red('-') : yellow('~');
+    const safeBasename = sanitizeDisplayText(trackedFile.basename);
     const coloredName = trackedFile.type === 'added'
-      ? green(trackedFile.basename)
+      ? green(safeBasename)
       : trackedFile.type === 'deleted'
-        ? red(trackedFile.basename)
-        : yellow(trackedFile.basename);
-    const linkedName = cwd ? hyperlink(`file://${path.join(cwd, trackedFile.fullPath)}`, coloredName) : coloredName;
+        ? red(safeBasename)
+        : yellow(safeBasename);
+    const resolvedPath = cwd ? resolvePathWithinCwd(cwd, trackedFile.fullPath) : null;
+    const linkedName = resolvedPath ? safeHyperlink(getFileHref(resolvedPath), coloredName) : coloredName;
     let entry = `${prefix}${linkedName}`;
 
     if (trackedFile.lineDiff) {

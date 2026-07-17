@@ -1,8 +1,11 @@
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { AUTOCOMPACT_BUFFER_PERCENT } from './constants.js';
-import { getHudPluginDir } from './claude-config-dir.js';
+import { createDebug } from './debug.js';
+import { sanitizeTranscriptModel } from './model-source.js';
+import { sanitizeDisplayText } from './utils/sanitize.js';
+const debug = createDebug('stdin');
+const SCOPED_USAGE_MAX_WINDOWS = 8;
+const SCOPED_USAGE_LABEL_MAX_LENGTH = 64;
+const SCOPED_USAGE_RESET_MAX_LENGTH = 64;
 const DEFAULT_FIRST_BYTE_TIMEOUT_MS = 250;
 const DEFAULT_IDLE_TIMEOUT_MS = 30;
 const DEFAULT_MAX_STDIN_BYTES = 256 * 1024;
@@ -16,7 +19,8 @@ export async function readStdin(stream = process.stdin, options = {}) {
     try {
         stream.setEncoding('utf8');
     }
-    catch {
+    catch (err) {
+        debug('Failed to set stream encoding:', err);
         return null;
     }
     return await new Promise((resolve) => {
@@ -55,7 +59,8 @@ export async function readStdin(stream = process.stdin, options = {}) {
             try {
                 return JSON.parse(trimmed);
             }
-            catch {
+            catch (err) {
+                debug('JSON parse incomplete/invalid, waiting for more data');
                 return undefined;
             }
         };
@@ -90,7 +95,8 @@ export async function readStdin(stream = process.stdin, options = {}) {
             const parsed = tryParse();
             finish(parsed ?? null);
         };
-        const onError = () => {
+        const onError = (err) => {
+            debug('stdin stream error:', err);
             finish(null);
         };
         firstByteTimer = setTimeout(() => {
@@ -112,15 +118,25 @@ export function getTotalTokens(stdin) {
 /**
  * Get native percentage from Claude Code v2.1.6+ if available.
  * Returns null if not available or invalid, triggering fallback to manual calculation.
+ *
+ * A value of 0 is treated as "not yet populated": on a fresh session Claude Code
+ * may emit used_percentage=0 before the first API response arrives, while
+ * current_usage already contains the real initial-context tokens (system prompt,
+ * tools, memory files, etc.).  Falling through to the token-based calculation
+ * ensures those tokens are reflected in the context bar from the very first tick.
  */
 function getNativePercent(stdin) {
     const nativePercent = stdin.context_window?.used_percentage;
-    if (typeof nativePercent === 'number' && !Number.isNaN(nativePercent)) {
+    if (typeof nativePercent === 'number' && !Number.isNaN(nativePercent) && nativePercent > 0) {
         return Math.min(100, Math.max(0, Math.round(nativePercent)));
     }
     return null;
 }
-export function getContextPercent(stdin) {
+export function getContextPercent(stdin, autoCompactWindow) {
+    if (typeof autoCompactWindow === 'number' && autoCompactWindow > 0) {
+        const totalTokens = getTotalTokens(stdin);
+        return Math.min(100, Math.round((totalTokens / autoCompactWindow) * 100));
+    }
     // Prefer native percentage (v2.1.6+) - accurate and matches /context
     const native = getNativePercent(stdin);
     if (native !== null) {
@@ -134,7 +150,11 @@ export function getContextPercent(stdin) {
     const totalTokens = getTotalTokens(stdin);
     return Math.min(100, Math.round((totalTokens / size) * 100));
 }
-export function getBufferedPercent(stdin) {
+export function getBufferedPercent(stdin, autoCompactWindow) {
+    if (typeof autoCompactWindow === 'number' && autoCompactWindow > 0) {
+        const totalTokens = getTotalTokens(stdin);
+        return Math.min(100, Math.round((totalTokens / autoCompactWindow) * 100));
+    }
     // Prefer native percentage (v2.1.6+) so the HUD matches Claude Code's
     // own context output. The buffered fallback only approximates older versions.
     const native = getNativePercent(stdin);
@@ -156,6 +176,12 @@ export function getBufferedPercent(stdin) {
     const buffer = size * AUTOCOMPACT_BUFFER_PERCENT * scale;
     return Math.min(100, Math.round(((totalTokens + buffer) / size) * 100));
 }
+// Enterprise plan alias → human-readable display name
+const ENTERPRISE_ALIAS_LABELS = {
+    opusplan: 'Claude Opus',
+    sonnetplan: 'Claude Sonnet',
+    haikuplan: 'Claude Haiku',
+};
 export function getModelName(stdin) {
     const displayName = stdin.model?.display_name?.trim();
     if (displayName) {
@@ -165,8 +191,48 @@ export function getModelName(stdin) {
     if (!modelId) {
         return 'Unknown';
     }
+    // Resolve enterprise plan aliases to readable labels
+    const enterpriseLabel = ENTERPRISE_ALIAS_LABELS[modelId.toLowerCase()];
+    if (enterpriseLabel) {
+        return enterpriseLabel;
+    }
     const normalizedBedrockLabel = normalizeBedrockModelLabel(modelId);
     return normalizedBedrockLabel ?? modelId;
+}
+/**
+ * Returns true if the model string looks like a Claude/Anthropic model.
+ * Used by the "auto" modelSource heuristic to detect proxy redirects.
+ */
+function isClaudeModel(model) {
+    if (!model)
+        return true; // treat missing as Claude (safe fallback)
+    const lower = model.toLowerCase();
+    return lower.startsWith('claude-') || lower.startsWith('anthropic.');
+}
+/**
+ * Resolves the model name to display, respecting `display.modelSource` config.
+ *
+ * - "stdin":      Always use the model from Claude Code's stdin (display_name).
+ * - "transcript": Always use the model from the API response (message.model).
+ *                 Falls back to stdin when transcript has no assistant messages yet.
+ * - "auto": Use stdin for Claude models, transcript for non-Claude.
+ *                      Detects proxy redirects (cc-switch, LiteLLM, etc.) that
+ *                      serve a different model than what Claude Code requested.
+ */
+export function resolveModelName(stdin, transcript, modelSource = 'stdin') {
+    const stdinModel = getModelName(stdin);
+    // Treat TranscriptData as untrusted at the render boundary too. Callers and
+    // poisoned cache objects can bypass parse-time normalization.
+    const transcriptModel = sanitizeTranscriptModel(transcript?.lastAssistantModel);
+    if (modelSource === 'stdin' || !transcriptModel) {
+        return stdinModel;
+    }
+    if (modelSource === 'transcript') {
+        return transcriptModel;
+    }
+    // auto: prefer transcript only when the API served a non-Claude model
+    // (indicates proxy redirect). Claude models keep stdin for pretty formatting.
+    return isClaudeModel(transcriptModel) ? stdinModel : transcriptModel;
 }
 export function isBedrockModelId(modelId) {
     if (!modelId) {
@@ -175,11 +241,34 @@ export function isBedrockModelId(modelId) {
     const normalized = modelId.toLowerCase();
     return normalized.includes('anthropic.claude-');
 }
+// Vertex AI model IDs use '@' as version separator (e.g. claude-3-5-sonnet@20241022)
+export function isVertexModelId(modelId) {
+    if (!modelId) {
+        return false;
+    }
+    return modelId.includes('@');
+}
+const ENTERPRISE_MODEL_IDS = new Set(['opusplan', 'sonnetplan', 'haikuplan']);
+export function isEnterpriseModelId(modelId) {
+    if (!modelId) {
+        return false;
+    }
+    return ENTERPRISE_MODEL_IDS.has(modelId.toLowerCase());
+}
 export function getProviderLabel(stdin) {
-    if (isBedrockModelId(stdin.model?.id)) {
+    if (process.env.CLAUDE_CODE_USE_BEDROCK === '1') {
         return 'Bedrock';
     }
+    if (process.env.CLAUDE_CODE_USE_VERTEX === '1') {
+        return 'Vertex';
+    }
+    if (isEnterpriseModelId(stdin.model?.id)) {
+        return 'Enterprise';
+    }
     return null;
+}
+export function shouldHideUsage(stdin) {
+    return getProviderLabel(stdin) === 'Bedrock' || isBedrockModelId(stdin.model?.id);
 }
 function parseRateLimitPercent(value) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -200,7 +289,8 @@ export function getUsageFromStdin(stdin) {
     }
     const fiveHour = parseRateLimitPercent(rateLimits.five_hour?.used_percentage);
     const sevenDay = parseRateLimitPercent(rateLimits.seven_day?.used_percentage);
-    if (fiveHour === null && sevenDay === null) {
+    const scopedWindows = parseScopedWindows(rateLimits.model_scoped);
+    if (fiveHour === null && sevenDay === null && scopedWindows.length === 0) {
         return null;
     }
     return {
@@ -208,62 +298,51 @@ export function getUsageFromStdin(stdin) {
         sevenDay,
         fiveHourResetAt: parseRateLimitResetAt(rateLimits.five_hour?.resets_at),
         sevenDayResetAt: parseRateLimitResetAt(rateLimits.seven_day?.resets_at),
+        ...(scopedWindows.length > 0 && { scopedWindows }),
     };
 }
-function getUsageCachePath() {
-    return path.join(getHudPluginDir(os.homedir()), 'usage-cache.json');
-}
-function writeUsageCache(usage) {
-    try {
-        const file = getUsageCachePath();
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(file, JSON.stringify({
-            fiveHour: usage.fiveHour,
-            sevenDay: usage.sevenDay,
-            fiveHourResetAt: usage.fiveHourResetAt?.toISOString() ?? null,
-            sevenDayResetAt: usage.sevenDayResetAt?.toISOString() ?? null,
-        }));
-    }
-    catch {
-        // Best-effort cache — never block the render path.
-    }
-}
-function readUsageCache() {
-    try {
-        const raw = fs.readFileSync(getUsageCachePath(), 'utf8');
-        const parsed = JSON.parse(raw);
-        const fiveHourResetAt = parsed.fiveHourResetAt ? new Date(parsed.fiveHourResetAt) : null;
-        const sevenDayResetAt = parsed.sevenDayResetAt ? new Date(parsed.sevenDayResetAt) : null;
-        const now = Date.now();
-        const fiveHourLive = fiveHourResetAt && fiveHourResetAt.getTime() > now;
-        const sevenDayLive = sevenDayResetAt && sevenDayResetAt.getTime() > now;
-        if (!fiveHourLive && !sevenDayLive) {
-            return null;
-        }
-        return {
-            fiveHour: fiveHourLive ? parsed.fiveHour : null,
-            sevenDay: sevenDayLive ? parsed.sevenDay : null,
-            fiveHourResetAt: fiveHourLive ? fiveHourResetAt : null,
-            sevenDayResetAt: sevenDayLive ? sevenDayResetAt : null,
-        };
-    }
-    catch {
-        return null;
-    }
-}
 /**
- * Returns usage from stdin when available, falling back to a persisted cache
- * so the HUD can still show Usage/Weekly on a fresh session start (before
- * Claude Code has sent rate_limits into stdin). Cache entries with expired
- * reset times are filtered out per-window.
+ * Parses `rate_limits.model_scoped` (model-scoped weekly windows, e.g. Fable).
+ * The upstream schema carries `utilization` on the same 0-100 scale used by
+ * the generic rate-limit windows. Malformed entries are dropped, and both the
+ * retained entry count and label size are bounded because stdin is untrusted.
  */
-export function getUsageWithCache(stdin) {
-    const fresh = getUsageFromStdin(stdin);
-    if (fresh) {
-        writeUsageCache(fresh);
-        return fresh;
+function parseScopedWindows(modelScoped) {
+    if (!Array.isArray(modelScoped)) {
+        return [];
     }
-    return readUsageCache();
+    const windows = [];
+    for (const raw of modelScoped) {
+        if (windows.length >= SCOPED_USAGE_MAX_WINDOWS) {
+            break;
+        }
+        const entry = raw;
+        const label = typeof entry?.display_name === 'string'
+            ? sanitizeDisplayText(entry.display_name).trim().slice(0, SCOPED_USAGE_LABEL_MAX_LENGTH)
+            : '';
+        if (!label) {
+            continue;
+        }
+        const utilization = entry?.utilization;
+        const percent = utilization === null
+            ? null
+            : parseRateLimitPercent(utilization);
+        if (utilization !== null && percent === null) {
+            continue;
+        }
+        const resetAtRaw = entry?.resets_at;
+        const resetAt = typeof resetAtRaw === 'string'
+            && resetAtRaw.length <= SCOPED_USAGE_RESET_MAX_LENGTH
+            && !Number.isNaN(Date.parse(resetAtRaw))
+            ? new Date(resetAtRaw)
+            : null;
+        windows.push({
+            label,
+            percent,
+            resetAt,
+        });
+    }
+    return windows;
 }
 /**
  * Strips redundant context-window size suffixes from model display names.

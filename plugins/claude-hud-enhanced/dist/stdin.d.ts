@@ -1,4 +1,4 @@
-import type { StdinData, UsageData } from './types.js';
+import type { StdinData, UsageData, TranscriptData } from './types.js';
 import type { ModelFormatMode } from './config.js';
 type StdinStream = Pick<NodeJS.ReadStream, 'setEncoding' | 'on' | 'off' | 'pause'> & {
     isTTY?: boolean;
@@ -10,19 +10,26 @@ type ReadStdinOptions = {
 };
 export declare function readStdin(stream?: StdinStream, options?: ReadStdinOptions): Promise<StdinData | null>;
 export declare function getTotalTokens(stdin: StdinData): number;
-export declare function getContextPercent(stdin: StdinData): number;
-export declare function getBufferedPercent(stdin: StdinData): number;
+export declare function getContextPercent(stdin: StdinData, autoCompactWindow?: number | null): number;
+export declare function getBufferedPercent(stdin: StdinData, autoCompactWindow?: number | null): number;
 export declare function getModelName(stdin: StdinData): string;
-export declare function isBedrockModelId(modelId?: string): boolean;
-export declare function getProviderLabel(stdin: StdinData): string | null;
-export declare function getUsageFromStdin(stdin: StdinData): UsageData | null;
 /**
- * Returns usage from stdin when available, falling back to a persisted cache
- * so the HUD can still show Usage/Weekly on a fresh session start (before
- * Claude Code has sent rate_limits into stdin). Cache entries with expired
- * reset times are filtered out per-window.
+ * Resolves the model name to display, respecting `display.modelSource` config.
+ *
+ * - "stdin":      Always use the model from Claude Code's stdin (display_name).
+ * - "transcript": Always use the model from the API response (message.model).
+ *                 Falls back to stdin when transcript has no assistant messages yet.
+ * - "auto": Use stdin for Claude models, transcript for non-Claude.
+ *                      Detects proxy redirects (cc-switch, LiteLLM, etc.) that
+ *                      serve a different model than what Claude Code requested.
  */
-export declare function getUsageWithCache(stdin: StdinData): UsageData | null;
+export declare function resolveModelName(stdin: StdinData, transcript: TranscriptData | undefined, modelSource?: 'auto' | 'stdin' | 'transcript'): string;
+export declare function isBedrockModelId(modelId?: string): boolean;
+export declare function isVertexModelId(modelId?: string): boolean;
+export declare function isEnterpriseModelId(modelId?: string): boolean;
+export declare function getProviderLabel(stdin: StdinData): string | null;
+export declare function shouldHideUsage(stdin: StdinData): boolean;
+export declare function getUsageFromStdin(stdin: StdinData): UsageData | null;
 /**
  * Strips redundant context-window size suffixes from model display names.
  *

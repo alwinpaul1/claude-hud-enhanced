@@ -52,32 +52,40 @@ Claude Code → stdin JSON → parse → render lines → stdout → Claude Code
 - Hooks count from `~/.claude/settings.json` (hooks)
 - Rules count from CLAUDE.md files
 
-**From OAuth credentials** (`~/.claude/.credentials.json`, when `display.showUsage` enabled):
-- `claudeAiOauth.accessToken` - OAuth token for API calls
-- `claudeAiOauth.subscriptionType` - User's plan (Pro, Max, Team)
+**From Claude Code auth profile** (`{CLAUDE_CONFIG_DIR}.json` `oauthAccount`, via `auth.ts`):
+- Plan / org tier label (e.g. Claude Max 20x) when `display.showAuth` is on
+- Optional account user segment when `display.showAuthUser` is on
 
-**From Anthropic Usage API** (`api.anthropic.com/api/oauth/usage`):
-- 5-hour and 7-day usage percentages
-- Reset timestamps (cached 60s success, 120s failure)
+**From stdin `rate_limits`** (native Claude Code usage, not a separate OAuth usage API):
+- 5-hour and 7-day usage percentages + reset timestamps
+- Optional external usage snapshot (`external-usage.ts`) for fallback paths
+
+**HUD data directory** (config + caches + statusline launcher):
+- `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/claude-hud-enhanced/`
+- Auto-migrates legacy `plugins/claude-hud/` on first run / setup
 
 ### File Structure
 
 ```
 src/
-├── index.ts           # Entry point
-├── stdin.ts           # Parse Claude's JSON input
-├── transcript.ts      # Parse transcript JSONL
-├── config-reader.ts   # Read MCP/rules configs
-├── config.ts          # Load/validate user config
-├── git.ts             # Git status (branch, dirty, ahead/behind)
-├── usage-api.ts       # Fetch usage from Anthropic API
-├── types.ts           # TypeScript interfaces
+├── index.ts              # Entry point
+├── stdin.ts              # Parse Claude's JSON input (incl. rate_limits)
+├── transcript.ts         # Parse transcript JSONL
+├── config-reader.ts      # Read MCP/rules configs
+├── config.ts             # Load/validate user config
+├── claude-config-dir.ts  # Config-dir + HUD data-dir resolution / migrate
+├── auth.ts               # Plan/auth segment from Claude Code oauth account
+├── external-usage.ts     # Optional external usage snapshot
+├── effort.ts             # Effort level (when Claude Code exposes it)
+├── git.ts                # Git status (branch, dirty, ahead/behind)
+├── types.ts              # TypeScript interfaces
 └── render/
-    ├── index.ts       # Main render coordinator
-    ├── session-line.ts   # Line 1: model, context, project, git, usage
-    ├── tools-line.ts     # Line 2: tool activity
-    ├── agents-line.ts    # Line 3: agent status
-    ├── todos-line.ts     # Line 4: todo progress
+    ├── index.ts          # Main render coordinator
+    ├── session-line.ts   # Compact session line
+    ├── lines/            # Expanded element renderers (usage, project, …)
+    ├── tools-line.ts     # Tool activity
+    ├── agents-line.ts    # Agent status
+    ├── todos-line.ts     # Todo progress
     └── colors.ts         # ANSI color helpers
 ```
 

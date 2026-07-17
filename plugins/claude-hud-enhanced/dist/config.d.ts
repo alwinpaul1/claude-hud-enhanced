@@ -2,6 +2,8 @@ import type { Language } from './i18n/types.js';
 export type LineLayoutType = 'compact' | 'expanded';
 export type AutocompactBufferMode = 'enabled' | 'disabled';
 export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
+export type UsageValueMode = 'percent' | 'remaining';
+export type GitBranchOverflowMode = 'truncate' | 'wrap';
 /**
  * Controls how the model name is displayed in the HUD badge.
  *
@@ -10,7 +12,10 @@ export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
  *   short:   Strip context suffix AND "Claude " prefix (e.g. "Opus 4.6")
  */
 export type ModelFormatMode = 'full' | 'compact' | 'short';
-export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos';
+export type TimeFormatMode = 'relative' | 'absolute' | 'both' | 'elapsed' | 'elapsedAndAbsolute';
+export type CustomLinePosition = 'first' | 'last';
+export type HudElement = 'project' | 'addedDirs' | 'context' | 'usage' | 'promptCache' | 'memory' | 'environment' | 'tools' | 'skills' | 'mcp' | 'agents' | 'todos' | 'sessionTime';
+export type AddedDirsLayout = 'inline' | 'line';
 export type HudColorName = 'dim' | 'red' | 'green' | 'yellow' | 'magenta' | 'cyan' | 'brightBlue' | 'brightMagenta';
 /** A color value: named preset, 256-color index (0-255), or hex string (#rrggbb). */
 export type HudColorValue = HudColorName | number | string;
@@ -26,55 +31,88 @@ export interface HudColorOverrides {
     gitBranch: HudColorValue;
     label: HudColorValue;
     custom: HudColorValue;
+    barFilled: string;
+    barEmpty: string;
 }
 export declare const DEFAULT_ELEMENT_ORDER: HudElement[];
+export declare const DEFAULT_MERGE_GROUPS: HudElement[][];
 export interface HudConfig {
     language: Language;
     lineLayout: LineLayoutType;
     showSeparators: boolean;
     pathLevels: 1 | 2 | 3;
+    maxWidth: number | null;
+    forceMaxWidth: boolean;
     elementOrder: HudElement[];
     gitStatus: {
         enabled: boolean;
         showDirty: boolean;
         showAheadBehind: boolean;
         showFileStats: boolean;
+        branchOverflow: GitBranchOverflowMode;
         pushWarningThreshold: number;
         pushCriticalThreshold: number;
     };
     display: {
         showModel: boolean;
         showProject: boolean;
+        showAddedDirs: boolean;
+        addedDirsLayout: AddedDirsLayout;
         showContextBar: boolean;
         contextValue: ContextValueMode;
         showConfigCounts: boolean;
-        showClaudeMdCount: boolean;
-        showRulesCount: boolean;
-        showMcpCount: boolean;
-        showHooksCount: boolean;
         showCost: boolean;
+        showRoutedCost: boolean;
         showDuration: boolean;
+        showSpeed: boolean;
         showTokenBreakdown: boolean;
         showUsage: boolean;
-        usageOnNewLine: boolean;
+        usageValue: UsageValueMode;
         usageBarEnabled: boolean;
+        showResetLabel: boolean;
+        usageCompact: boolean;
         showTools: boolean;
+        showSkills: boolean;
+        showMcp: boolean;
+        toolNameMaxLength: number;
+        toolsMaxVisible: number;
         showAgents: boolean;
         showTodos: boolean;
         showSessionName: boolean;
+        showAuth: boolean;
+        showAuthUser: boolean;
+        authUserLength: number;
         showClaudeCodeVersion: boolean;
+        showEffortLevel: boolean;
         showMemoryUsage: boolean;
+        showPromptCache: boolean;
+        promptCacheTtlSeconds: number;
         showSessionTokens: boolean;
         showOutputStyle: boolean;
-        showPlan: boolean;
+        showSessionStartDate: boolean;
+        showLastResponseAt: boolean;
+        showCompactions: boolean;
+        mergeGroups: HudElement[][];
         autocompactBuffer: AutocompactBufferMode;
+        contextWarningThreshold: number;
+        contextCriticalThreshold: number;
         usageThreshold: number;
         sevenDayThreshold: number;
         environmentThreshold: number;
+        externalUsagePath: string;
+        externalUsageWritePath: string;
+        externalUsageFreshnessMs: number;
         modelFormat: ModelFormatMode;
         modelOverride: string;
+        modelSource: 'auto' | 'stdin' | 'transcript';
+        showProvider: boolean;
+        providerName: string;
         customLine: string;
-        wrapLines: boolean;
+        customLinePosition: CustomLinePosition;
+        timeFormat: TimeFormatMode;
+        showAdvisor: boolean;
+        advisorOverride: string;
+        autoCompactWindow: number | null;
     };
     colors: HudColorOverrides;
 }

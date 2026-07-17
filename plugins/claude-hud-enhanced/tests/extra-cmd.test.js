@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitize, parseExtraCmdArg, runExtraCmd } from '../dist/extra-cmd.js';
+import { sanitize, parseExtraCmdArg, runExtraCmd, isExtraCmdAllowed } from '../dist/extra-cmd.js';
 
 // ============================================================================
 // sanitize() tests
@@ -54,44 +54,64 @@ test('parseExtraCmdArg returns null when no --extra-cmd present', () => {
   assert.equal(parseExtraCmdArg(argv), null);
 });
 
+test('isExtraCmdAllowed requires explicit opt-in', () => {
+  assert.equal(isExtraCmdAllowed({}), false);
+  assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: '0' }), false);
+  assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), true);
+  assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: 'true' }), true);
+  assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: ' TRUE ' }), true);
+  assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: 'yes' }), true);
+  assert.equal(isExtraCmdAllowed({ CLAUDE_HUD_ALLOW_EXTRA_CMD: 'on' }), true);
+});
+
+test('parseExtraCmdArg ignores --extra-cmd unless explicitly enabled', () => {
+  const argv = ['node', 'index.js', '--extra-cmd', 'echo hello'];
+  assert.equal(parseExtraCmdArg(argv, {}), null);
+});
+
+test('parseExtraCmdArg ignores --extra-cmd=value unless explicitly enabled', () => {
+  const argv = ['node', 'index.js', '--extra-cmd=echo hello'];
+  assert.equal(parseExtraCmdArg(argv, {}), null);
+});
+
 test('parseExtraCmdArg parses --extra-cmd value syntax', () => {
   const argv = ['node', 'index.js', '--extra-cmd', 'echo hello'];
-  assert.equal(parseExtraCmdArg(argv), 'echo hello');
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), 'echo hello');
 });
 
 test('parseExtraCmdArg parses --extra-cmd=value syntax', () => {
   const argv = ['node', 'index.js', '--extra-cmd=echo hello'];
-  assert.equal(parseExtraCmdArg(argv), 'echo hello');
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), 'echo hello');
 });
 
 test('parseExtraCmdArg returns null when --extra-cmd is last arg with space syntax', () => {
   const argv = ['node', 'index.js', '--extra-cmd'];
-  assert.equal(parseExtraCmdArg(argv), null);
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), null);
 });
 
 test('parseExtraCmdArg returns null for empty value with equals syntax', () => {
   const argv = ['node', 'index.js', '--extra-cmd='];
-  assert.equal(parseExtraCmdArg(argv), null);
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), null);
 });
 
 test('parseExtraCmdArg returns null for empty value with space syntax', () => {
   const argv = ['node', 'index.js', '--extra-cmd', ''];
-  assert.equal(parseExtraCmdArg(argv), null);
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), null);
 });
 
 test('parseExtraCmdArg handles command with equals sign in value', () => {
   const argv = ['node', 'index.js', '--extra-cmd=echo "key=value"'];
-  assert.equal(parseExtraCmdArg(argv), 'echo "key=value"');
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), 'echo "key=value"');
 });
 
 test('parseExtraCmdArg takes first occurrence when multiple present', () => {
   const argv = ['node', 'index.js', '--extra-cmd', 'first', '--extra-cmd', 'second'];
-  assert.equal(parseExtraCmdArg(argv), 'first');
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), 'first');
 });
 
 test('parseExtraCmdArg handles command with spaces and quotes', () => {
   const argv = ['node', 'index.js', '--extra-cmd', 'echo "hello world"'];
-  assert.equal(parseExtraCmdArg(argv), 'echo "hello world"');
+  assert.equal(parseExtraCmdArg(argv, { CLAUDE_HUD_ALLOW_EXTRA_CMD: '1' }), 'echo "hello world"');
 });
 
 // ============================================================================
@@ -103,9 +123,14 @@ test('runExtraCmd returns label from valid JSON output', async () => {
   assert.equal(result, 'test');
 });
 
-test('runExtraCmd returns null for non-JSON output', async () => {
-  const result = await runExtraCmd('echo "not json"');
-  assert.equal(result, null);
+test('runExtraCmd returns the last non-empty line from plain output', async () => {
+  const result = await runExtraCmd('printf "setup\\nnot json\\n"');
+  assert.equal(result, 'not json');
+});
+
+test('runExtraCmd sanitizes terminal escapes from plain output', async () => {
+  const result = await runExtraCmd('printf "plain\\033[31mred\\033[0m\\n"');
+  assert.equal(result, 'plainred');
 });
 
 test('runExtraCmd returns null for JSON without label field', async () => {

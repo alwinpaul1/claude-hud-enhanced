@@ -1,6 +1,10 @@
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { createDebug } from './debug.js';
 import type { MemoryInfo } from './types.js';
+
+const debug = createDebug('memory');
 
 type MemoryReader = () => { totalBytes: number; freeBytes: number };
 
@@ -21,10 +25,36 @@ export function parseVmStat(
   };
 }
 
+export function parseLinuxMeminfo(
+  output: string,
+): { totalBytes: number; freeBytes: number } | null {
+  const totalMatch = output.match(/^MemTotal:\s+(\d+)\s+kB/m);
+  const availMatch = output.match(/^MemAvailable:\s+(\d+)\s+kB/m);
+  if (!totalMatch || !availMatch) return null;
+
+  const totalBytes = Number(totalMatch[1]) * 1024;
+  const freeBytes = Number(availMatch[1]) * 1024;
+  if (!Number.isFinite(totalBytes) || !Number.isFinite(freeBytes)) {
+    return null;
+  }
+
+  return { totalBytes, freeBytes };
+}
+
 const readDefaultMemory: MemoryReader = () => ({
   totalBytes: os.totalmem(),
   freeBytes: os.freemem(),
 });
+
+const readLinuxMemory: MemoryReader = () => {
+  try {
+    const content = readFileSync('/proc/meminfo', 'utf8');
+    return parseLinuxMeminfo(content) ?? readDefaultMemory();
+  } catch (err) {
+    debug('Failed to read /proc/meminfo:', err instanceof Error ? err.message : err);
+    return readDefaultMemory();
+  }
+};
 
 const readMacOSMemory: MemoryReader = () => {
   try {
@@ -37,13 +67,16 @@ const readMacOSMemory: MemoryReader = () => {
     const totalBytes = os.totalmem();
     const usedBytes = (parsed.active + parsed.wired) * parsed.pageSize;
     return { totalBytes, freeBytes: totalBytes - usedBytes };
-  } catch {
+  } catch (err) {
+    debug('Failed to run vm_stat:', err instanceof Error ? err.message : err);
     return readDefaultMemory();
   }
 };
 
 let readMemory: MemoryReader =
-  process.platform === 'darwin' ? readMacOSMemory : readDefaultMemory;
+  process.platform === 'darwin' ? readMacOSMemory :
+  process.platform === 'linux' ? readLinuxMemory :
+  readDefaultMemory;
 
 export async function getMemoryUsage(): Promise<MemoryInfo | null> {
   try {
@@ -64,7 +97,8 @@ export async function getMemoryUsage(): Promise<MemoryInfo | null> {
       freeBytes: safeFreeBytes,
       usedPercent: Math.min(Math.max(usedPercent, 0), 100),
     };
-  } catch {
+  } catch (err) {
+    debug('Failed to get memory usage:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -88,5 +122,9 @@ export function formatBytes(bytes: number): string {
 }
 
 export function _setMemoryReaderForTests(reader: MemoryReader | null): void {
-  readMemory = reader ?? (process.platform === 'darwin' ? readMacOSMemory : readDefaultMemory);
+  readMemory = reader ?? (
+    process.platform === 'darwin' ? readMacOSMemory :
+    process.platform === 'linux' ? readLinuxMemory :
+    readDefaultMemory
+  );
 }
