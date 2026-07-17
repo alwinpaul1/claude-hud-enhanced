@@ -945,3 +945,37 @@ test('mergeConfig rejects non-string advisorOverride and non-boolean showAdvisor
   assert.equal(config.display.showAdvisor, false);
   assert.equal(config.display.advisorOverride, '');
 });
+
+// --- Enhanced identity / migration locks (0.3.0) ---
+
+test('mergeConfig migrates legacy showPlan to showAuth', () => {
+  assert.equal(mergeConfig({ display: { showPlan: false } }).display.showAuth, false);
+  assert.equal(mergeConfig({ display: { showPlan: true } }).display.showAuth, true);
+});
+
+test('mergeConfig prefers explicit showAuth over legacy showPlan', () => {
+  const config = mergeConfig({ display: { showAuth: true, showPlan: false } });
+  assert.equal(config.display.showAuth, true);
+});
+
+test('mergeConfig defaults showAuth to true when neither showAuth nor showPlan set', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showAuth, true);
+  assert.equal(DEFAULT_CONFIG.display.showAuth, true);
+});
+
+test('enhanced defaults lock (0.3.0 product surface)', () => {
+  const d = DEFAULT_CONFIG.display;
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'expanded');
+  assert.equal(DEFAULT_CONFIG.showSeparators, true);
+  assert.equal(d.contextValue, 'both');
+  assert.equal(d.showTools, true);
+  assert.equal(d.showAgents, true);
+  assert.equal(d.showTodos, true);
+  assert.equal(d.showAuth, true);
+  assert.equal(d.showDuration, true);
+  assert.equal(d.showOutputStyle, true);
+  assert.equal(d.sevenDayThreshold, 0); // always show weekly when data exists
+  assert.equal(DEFAULT_CONFIG.gitStatus.showAheadBehind, true);
+  assert.equal(DEFAULT_CONFIG.gitStatus.showFileStats, true);
+});

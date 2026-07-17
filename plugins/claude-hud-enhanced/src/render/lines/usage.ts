@@ -104,7 +104,7 @@ export function renderUsageLine(
     return balanceLabel ? `${usageLabel} ${balanceLabel}` : null;
   }
 
-  const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
+  const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
 
   if (usageCompact) {
     const fiveHourPart = fiveHour !== null

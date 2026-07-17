@@ -162,18 +162,26 @@ Technical documentation for agents who need to understand, modify, or debug Clau
       Searches cwd, ~/.claude/, and project .claude/ directories.
     </file>
     <file name="config.ts" purpose="Load and validate user configuration">
-      Reads config.json from ~/.claude/plugins/claude-hud/.
+      Reads config.json from ~/.claude/plugins/claude-hud-enhanced/.
       Validates and merges user settings with defaults.
+      Migrates legacy display.showPlan → showAuth.
       Exports HudConfig interface and loadConfig function.
+    </file>
+    <file name="claude-config-dir.ts" purpose="Config dir + HUD data dir">
+      Resolves CLAUDE_CONFIG_DIR and plugins/claude-hud-enhanced.
+      Auto-migrates legacy plugins/claude-hud on first access.
     </file>
     <file name="git.ts" purpose="Git repository status">
       Gets branch name, dirty state, and ahead/behind counts.
       Uses execFile with array args for safe command execution.
     </file>
-    <file name="usage-api.ts" purpose="Fetch usage from Anthropic API">
-      Reads OAuth credentials from ~/.claude/.credentials.json.
-      Calls api.anthropic.com/api/oauth/usage endpoint (opt-in).
-      Caches results (60s success, 15s failure).
+    <file name="auth.ts" purpose="Plan/auth label from Claude Code profile">
+      Reads oauthAccount from {CLAUDE_CONFIG_DIR}.json.
+      Formats plan/tier segment when display.showAuth is enabled.
+    </file>
+    <file name="external-usage.ts" purpose="Optional external usage snapshot">
+      Fallback usage path when configured via externalUsagePath.
+      Native usage primarily comes from stdin rate_limits.
     </file>
     <file name="types.ts" purpose="TypeScript interfaces">
       StdinData, ToolEntry, AgentEntry, TodoItem, TranscriptData, RenderContext.

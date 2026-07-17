@@ -2046,7 +2046,7 @@ test('renderSessionLine displays usage percentages (7d hidden when low)', () => 
   assert.ok(line.includes('6%'), 'should include 5h percentage');
 });
 
-test('default merged config hides low weekly usage in compact and expanded layouts', () => {
+test('enhanced default (sevenDayThreshold 0) always shows weekly usage when data exists', () => {
   const ctx = baseContext();
   ctx.config = mergeConfig({});
   ctx.usageData = {
@@ -2060,9 +2060,28 @@ test('default merged config hides low weekly usage in compact and expanded layou
   const compactLine = stripAnsi(renderSessionLine(ctx));
   const expandedLine = stripAnsi(renderUsageLine(ctx) ?? '');
   assert.ok(compactLine.includes('Usage'), `compact usage should include the 5h window: ${compactLine}`);
-  assert.ok(!compactLine.includes('Weekly'), `compact usage should hide low weekly usage: ${compactLine}`);
+  assert.ok(compactLine.includes('Weekly'), `enhanced default should show weekly even at 0%: ${compactLine}`);
   assert.ok(expandedLine.includes('Usage'), `expanded usage should include the 5h window: ${expandedLine}`);
-  assert.ok(!expandedLine.includes('Weekly'), `expanded usage should hide low weekly usage: ${expandedLine}`);
+  assert.ok(expandedLine.includes('Weekly'), `enhanced default should show weekly even at 0%: ${expandedLine}`);
+});
+
+test('sevenDayThreshold 80 hides low weekly usage when set (upstream-style)', () => {
+  const ctx = baseContext();
+  ctx.config = mergeConfig({ display: { sevenDayThreshold: 80 } });
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 10,
+    sevenDay: 0,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const compactLine = stripAnsi(renderSessionLine(ctx));
+  const expandedLine = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(compactLine.includes('Usage'), `compact usage should include the 5h window: ${compactLine}`);
+  assert.ok(!compactLine.includes('Weekly'), `threshold 80 should hide low weekly: ${compactLine}`);
+  assert.ok(expandedLine.includes('Usage'), `expanded usage should include the 5h window: ${expandedLine}`);
+  assert.ok(!expandedLine.includes('Weekly'), `threshold 80 should hide low weekly: ${expandedLine}`);
 });
 
 test('renderSessionLine displays external balance labels', () => {

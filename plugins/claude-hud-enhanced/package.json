@@ -35,6 +35,9 @@
     "c8": "^11.0.0",
     "typescript": "^7.0.2"
   },
-  "repository": null,
-  "homepage": null
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alwinpaul1/claude-hud-enhanced.git"
+  },
+  "homepage": "https://github.com/alwinpaul1/claude-hud-enhanced"
 }

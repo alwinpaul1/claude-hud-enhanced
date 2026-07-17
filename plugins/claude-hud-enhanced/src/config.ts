@@ -259,7 +259,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     contextWarningThreshold: 70,
     contextCriticalThreshold: 85,
     usageThreshold: 0,
-    sevenDayThreshold: 80,
+    sevenDayThreshold: 0, // enhanced: always show weekly window when data exists
     environmentThreshold: 0,
     externalUsagePath: '',
     externalUsageWritePath: '',

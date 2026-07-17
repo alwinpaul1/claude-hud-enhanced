@@ -76,7 +76,7 @@ export function renderUsageLine(ctx, labelOptions = {}) {
     if (effectiveUsage < threshold) {
         return balanceLabel ? `${usageLabel} ${balanceLabel}` : null;
     }
-    const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
+    const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
     if (usageCompact) {
         const fiveHourPart = fiveHour !== null
             ? formatCompactWindowPart("5h", fiveHour, ctx.usageData.fiveHourResetAt, FIVE_HOUR_WINDOW_MS, timeFormat, colors, usageValueMode)

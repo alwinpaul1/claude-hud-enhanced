@@ -203,7 +203,7 @@ export function renderSessionLine(ctx) {
                     const fiveHourPart = fiveHour !== null
                         ? formatCompactWindowPart('5h', fiveHour, ctx.usageData.fiveHourResetAt, timeFormat, colors, usageValueMode)
                         : null;
-                    const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
+                    const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
                     const sevenDayPart = (sevenDay !== null && (fiveHour === null || sevenDay >= sevenDayThreshold))
                         ? formatCompactWindowPart('7d', sevenDay, ctx.usageData.sevenDayResetAt, timeFormat, colors, usageValueMode)
                         : null;
@@ -247,7 +247,7 @@ export function renderSessionLine(ctx) {
                         showResetLabel,
                         usageValueMode,
                     });
-                    const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
+                    const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
                     if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
                         const sevenDayPart = formatUsageWindowPart({
                             label: t('label.weekly'),
