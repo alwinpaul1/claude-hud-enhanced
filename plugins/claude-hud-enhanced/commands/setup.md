@@ -111,8 +111,10 @@ if [ -d "$LEGACY" ] && [ ! -e "$NEXT" ]; then
   mv "$LEGACY" "$NEXT"
   echo "Migrated HUD data dir: $LEGACY → $NEXT"
 elif [ -d "$LEGACY" ] && [ -d "$NEXT" ]; then
-  # Prefer existing enhanced files; only copy missing config/launcher
-  for f in config.json previous-statusline.txt statusline.mjs; do
+  # Prefer existing enhanced files; only copy missing name-agnostic files.
+  # statusline.mjs is intentionally omitted: the legacy launcher globs the old
+  # `claude-hud` plugin dir. It is regenerated fresh for the enhanced path below.
+  for f in config.json previous-statusline.txt; do
     if [ -f "$LEGACY/$f" ] && [ ! -f "$NEXT/$f" ]; then
       cp "$LEGACY/$f" "$NEXT/$f"
       echo "Copied $f into $NEXT"
@@ -135,7 +137,9 @@ if ((Test-Path $legacy) -and -not (Test-Path $next)) {
   Move-Item -Path $legacy -Destination $next
   Write-Host "Migrated HUD data dir: $legacy → $next"
 } elseif ((Test-Path $legacy) -and (Test-Path $next)) {
-  foreach ($f in @("config.json", "previous-statusline.txt", "statusline.mjs")) {
+  # statusline.mjs is intentionally omitted: the legacy launcher globs the old
+  # `claude-hud` plugin dir. It is regenerated fresh for the enhanced path below.
+  foreach ($f in @("config.json", "previous-statusline.txt")) {
     $from = Join-Path $legacy $f
     $to = Join-Path $next $f
     if ((Test-Path $from) -and -not (Test-Path $to)) {
@@ -151,8 +155,9 @@ if ((Test-Path $legacy) -and -not (Test-Path $next)) {
 ```
 
 The runtime also auto-migrates on first HUD paint via `getHudPluginDir()` — this
-setup step makes the rename visible immediately and ensures the Windows
-`statusline.mjs` launcher lands under the enhanced path.
+setup step makes the rename visible immediately. On Windows the `statusline.mjs`
+launcher is regenerated fresh in Step 1 so it always targets the enhanced plugin
+path (`claude-hud-enhanced`), never the legacy `claude-hud` one.
 
 ---
 
@@ -705,32 +710,35 @@ After successfully writing the config, tell the user:
 
 ## Step 4: Optional Features
 
-After the statusLine is applied, ask the user if they'd like to enable additional HUD features beyond the default 2-line display.
+claude-hud-enhanced ships with a rich default HUD. **On by default:** model,
+context bar, project, usage, **tools activity, agents, todos, and session
+duration**. Most users keep these — so this step is about opting *out* of the
+defaults or turning on a couple of extras that are off.
 
 Use AskUserQuestion:
-- header: "Extras"
-- question: "Enable any optional HUD features? (all hidden by default)"
+- header: "Customize"
+- question: "The enhanced HUD shows tools, agents, todos, and session duration by default. Adjust anything? (skip to keep the full HUD)"
 - multiSelect: true
 - options:
-  - "Tools activity" — Shows running/completed tools (◐ Edit: file.ts | ✓ Read ×3)
-  - "Agents & Todos" — Shows subagent status and todo progress
-  - "Session info" — Shows session duration and config counts (CLAUDE.md, rules, MCPs)
-  - "Session name" — Shows session slug or custom title from /rename
+  - "Minimal mode" — Hide tools, agents, todos, and session duration for a leaner HUD
+  - "Config counts" — Show CLAUDE.md / MCP / hooks counts (off by default)
+  - "Session name" — Show session slug or custom title from /rename (off by default)
   - "Custom line" — Display a custom phrase in the HUD
 
 **If user selects any options**, write `plugins/claude-hud-enhanced/config.json` inside the Claude config directory (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}` on bash, `$env:CLAUDE_CONFIG_DIR` or `Join-Path $HOME ".claude"` on PowerShell). Create directories if needed:
 
 | Selection | Config keys |
 |-----------|------------|
-| Tools activity | `display.showTools: true` |
-| Agents & Todos | `display.showAgents: true, display.showTodos: true` |
-| Session info | `display.showDuration: true, display.showConfigCounts: true` |
+| Minimal mode | `display.showTools: false, display.showAgents: false, display.showTodos: false, display.showDuration: false` |
+| Config counts | `display.showConfigCounts: true` |
 | Session name | `display.showSessionName: true` |
 | Custom line | `display.customLine: "<user's text>"` — ask user for the text (max 80 chars) |
 
-Merge with existing config if the file already exists. Only write keys the user selected — don't write `false` for unselected items (defaults handle that).
+Merge with existing config if the file already exists. Only write the keys implied by the user's selections. Because the enhanced defaults are on, "Minimal mode" is the one case where you write `false` values explicitly.
 
-**If user selects nothing** (or picks "Other" and says skip/none), do not create a config file. The defaults are fine.
+**If user selects nothing** (or picks "Other" and says skip/none), do not create a config file. The full enhanced HUD is the default.
+
+For deeper customization (colors, layout, per-element order, cost, session tokens, effort level, and every other toggle), tell the user they can run `/claude-hud-enhanced:configure` anytime.
 
 ---
 
