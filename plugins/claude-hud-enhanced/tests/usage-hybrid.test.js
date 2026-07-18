@@ -30,17 +30,18 @@ function makeFs(seedSnapshot) {
   return {
     _files: files,
     _mtimes: mtimes,
+    _now: NOW, // settable clock so writes get a realistic mtime
     existsSync: (p) => files.has(p),
     readFileSync: (p) => {
       if (!files.has(p)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
       return files.get(p);
     },
-    writeFileSync: (p, data, opts) => {
+    writeFileSync(p, data, opts) {
       if (opts && opts.flag === 'wx' && files.has(p)) {
         throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
       }
       files.set(p, String(data));
-      mtimes.set(p, NOW);
+      mtimes.set(p, this._now);
     },
     renameSync: (a, b) => {
       files.set(b, files.get(a));
@@ -180,4 +181,60 @@ test('resolveUsage idle + stale but in backoff: no refresher', () => {
 test('resolveUsage idle + no snapshot: returns null', () => {
   const out = resolveUsage(null, true, { now: () => NOW, homeDir: HOME, fs: makeFs(), spawnRefresher: () => {} });
   assert.equal(out, null);
+});
+
+// The real-world idle shape: Claude Code keeps RE-SENDING the last frozen
+// rate_limits on every render — stdin usage is never null mid-session. Idle must
+// be detected as "stdin stopped advancing", not "stdin disappeared".
+test('resolveUsage frozen stdin: refresher fires once the snapshot goes stale', () => {
+  let spawned = 0;
+  const fs = makeFs();
+  const deps = (t) => {
+    fs._now = t; // keep the fake fs mtime clock in sync with the render time
+    return { now: () => t, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
+  };
+
+  // T=0: user messages — fresh stdin writes the snapshot (updated_at = NOW).
+  const s = stdin();
+  resolveUsage(s, true, deps(NOW));
+  assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW));
+
+  // Idle renders with the SAME frozen stdin, inside the TTL: no refresh.
+  resolveUsage(s, true, deps(NOW + 60_000));
+  resolveUsage(s, true, deps(NOW + 120_000));
+  assert.equal(spawned, 0, 'fresh snapshot suppresses refresh while frozen');
+  assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW), 'frozen stdin must not bump updated_at');
+
+  // Past the TTL, still the same frozen stdin: exactly one refresh fires.
+  const later = NOW + USAGE_TTL_MS + 30_000;
+  const out = resolveUsage(s, true, deps(later));
+  assert.equal(spawned, 1, 'stale snapshot + frozen stdin triggers the refresher');
+  assert.equal(out, s, 'equal stdin/snapshot still renders the stdin values');
+
+  // Next render 300ms later: the lock throttles — no second spawn.
+  resolveUsage(s, true, deps(later + 300));
+  assert.equal(spawned, 1, 'single-flight lock prevents a refresher stampede');
+});
+
+test('resolveUsage frozen stdin + newer OAuth snapshot: serves the snapshot', () => {
+  // The refresher wrote a fresher account-wide value (other-device usage).
+  const fs = makeFs(snap({
+    five_hour: { used_percentage: 90, resets_at: ISO(NOW + 3 * 3600_000) },
+    updated_at: ISO(NOW - 10_000),
+  }));
+  let spawned = 0;
+  const out = resolveUsage(stdin({ fiveHour: 40 }), true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ });
+  assert.equal(out.fiveHour, 90, 'newer OAuth snapshot wins over frozen stdin');
+  assert.equal(spawned, 0, 'fresh snapshot needs no refresh');
+});
+
+test('resolveUsage active stdin advance resets the idle clock', () => {
+  let spawned = 0;
+  const fs = makeFs(snap({ updated_at: ISO(NOW - USAGE_TTL_MS - 1000) })); // stale
+  const s = stdin({ fiveHour: 60 }); // stdin ADVANCED past the snapshot's 50
+  const deps = { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
+  const out = resolveUsage(s, true, deps);
+  assert.equal(out, s, 'advancing stdin is authoritative');
+  assert.equal(spawned, 0, 'activity suppresses the refresher even with a stale snapshot');
+  assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW), 'advance stamps updated_at');
 });

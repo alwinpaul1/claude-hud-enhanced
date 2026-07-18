@@ -2,13 +2,16 @@ import { defaultSnapshotFs, getLockPath, getSnapshotPath, readSnapshot, writeSna
 /**
  * ccstatusline-style hybrid usage resolution.
  *
- *   - While CHATTING: Claude Code hands fresh `rate_limits` on stdin every render.
- *     stdin is authoritative; we persist it to the snapshot (which also resets the
- *     idle TTL clock, so the refresher never fires during active use).
- *   - While IDLE: stdin carries no usage, so we serve the last snapshot and — only
- *     when it is older than the TTL and not in backoff — spawn the detached OAuth
- *     refresher (refresh-usage.js) to pull the live account-wide number (e.g. usage
- *     burned on another device). Rendering never blocks on the network.
+ *   - While CHATTING: Claude Code hands fresh `rate_limits` on stdin. stdin is
+ *     authoritative; we persist it to the snapshot (which also resets the idle TTL
+ *     clock, so the refresher never fires during active use).
+ *   - While IDLE: Claude Code keeps re-sending the last-known FROZEN rate_limits on
+ *     every render (stdin usage is essentially never null mid-session). Idle is
+ *     therefore detected as "stdin stopped advancing", not "stdin disappeared":
+ *     frozen stdin doesn't rewrite the snapshot, so `updated_at` ages, and once it
+ *     is past the TTL (and not in backoff) we spawn the detached OAuth refresher
+ *     (refresh-usage.js) to pull the live account-wide number (e.g. usage burned on
+ *     another device). Rendering never blocks on the network.
  *
  * Monotonic newer-detection: rate-limit data only moves one way within a window
  * (resets_at advances, utilization rises), so "is stdin newer than the snapshot?"
@@ -131,33 +134,41 @@ export function resolveUsage(stdinUsage, enabled, deps) {
     const lockPath = getLockPath(deps.homeDir);
     const snap = readSnapshot(snapshotPath, deps.fs);
     const now = deps.now();
+    // Spawn the detached refresher iff the snapshot is past the TTL and not in
+    // backoff. Throttled by the single-flight lock; never blocks or throws.
+    const maybeRefresh = (s) => {
+        const age = now - (parseMs(s.updated_at) ?? 0);
+        const inBackoff = s.next_attempt_at != null && (parseMs(s.next_attempt_at) ?? 0) > now;
+        if (age > USAGE_TTL_MS && !inBackoff && tryTakeLock(lockPath, now, deps.fs)) {
+            try {
+                deps.spawnRefresher(deps.homeDir);
+            }
+            catch {
+                /* never let a spawn failure break the render */
+            }
+        }
+    };
     if (stdinUsage != null) {
-        // Active: stdin present. Serve the snapshot only if it is strictly newer than
-        // stdin (OAuth caught other-device usage stdin hasn't seen yet); otherwise stdin
-        // wins and we persist it — which also resets the idle TTL so no refresher fires.
+        // stdin present (fresh OR frozen — Claude Code re-sends the last values while
+        // idle). Serve the snapshot only if it is strictly newer than stdin (OAuth
+        // caught other-device usage stdin hasn't seen yet); otherwise stdin wins.
         const cmp = snap ? compareStdinSnapshot(stdinUsage, snap) : 1;
-        if (snap && cmp < 0) {
-            return snapshotToUsage(snap);
-        }
         if (snap == null || cmp > 0) {
+            // stdin advanced → user is active. Persist it, which stamps updated_at and
+            // resets the idle TTL, so no refresher fires while chatting.
             writeSnapshotAtomic(snapshotPath, usageToSnapshot(stdinUsage, 'stdin', now, snap), now, deps.fs);
+            return stdinUsage;
         }
-        return stdinUsage;
+        // stdin did NOT advance (cmp <= 0) → frozen stdin, i.e. idle. The snapshot's
+        // updated_at keeps aging, so refresh when it goes stale.
+        maybeRefresh(snap);
+        return cmp < 0 ? snapshotToUsage(snap) : stdinUsage;
     }
-    // Idle: no stdin usage this render. Serve the snapshot, and if it is stale and not
-    // in backoff, kick off a single detached refresh for next time.
+    // No stdin usage at all this render (e.g. rate_limits absent). Serve the
+    // snapshot and refresh it when stale.
     if (snap == null)
         return null;
-    const age = now - (parseMs(snap.updated_at) ?? 0);
-    const inBackoff = snap.next_attempt_at != null && (parseMs(snap.next_attempt_at) ?? 0) > now;
-    if (age > USAGE_TTL_MS && !inBackoff && tryTakeLock(lockPath, now, deps.fs)) {
-        try {
-            deps.spawnRefresher(deps.homeDir);
-        }
-        catch {
-            /* never let a spawn failure break the render */
-        }
-    }
+    maybeRefresh(snap);
     return snapshotToUsage(snap);
 }
 export { defaultSnapshotFs };
