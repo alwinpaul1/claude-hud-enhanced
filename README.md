@@ -165,6 +165,7 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 | `display.showDuration` | boolean | true | Show session duration |
 | `display.showUsage` | boolean | true | Show 5h/7d usage from stdin `rate_limits` |
 | `display.idleUsageReset` | boolean | false | While idle, show a window as reset (~0%) once its reset time passes (local-only) |
+| `display.oauthUsagePoll` | boolean | false | Hybrid usage sync via a shared per-profile snapshot: idle terminals pick up usage from active ones (local); optionally spawns an owner-supplied OAuth refresher for cross-device live usage (see docs/oauth-usage-poll-handoff.md) |
 | `display.sevenDayThreshold` | number | 0 | Min 7d % before weekly shows (0 = always) |
 | `display.showTools` | boolean | true | Show tools activity line |
 | `display.showAgents` | boolean | true | Show agents activity line |
@@ -203,6 +204,8 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 - **Plan / auth** — `auth.ts` reads the Claude Code oauth account profile in `{CLAUDE_CONFIG_DIR}.json` (e.g. `~/.claude.json`)
 
 **Idle usage refresh (`display.idleUsageReset`, opt-in):** Claude Code only refreshes `rate_limits` on stdin when you send a message, so between messages the numbers are frozen. With this on, once a window's reset time has passed while you're idle the HUD shows that window as reset (~0%) and rolls its reset forward — the true value, since your own usage on this machine can't rise without a message. It stays **local-only** (no network, no API calls). Scope: it only zeroes on rollover — it does not reflect usage burned on *other* devices while this machine is idle, and the percentage between resets is the last stdin snapshot.
+
+**Hybrid usage sync (`display.oauthUsagePoll`, opt-in):** keeps a shared per-profile snapshot (`usage-snapshot.json` in the HUD data dir). When any active terminal's stdin advances the usage numbers, the snapshot is updated — and other, idle terminals on the same machine serve that fresher value instead of their frozen stdin. Fully local. Idle is detected as "stdin stopped advancing" (Claude Code re-sends frozen values while idle). The flag can also drive a detached OAuth refresher for cross-**device** live usage, but that refresher (`dist/refresh-usage.js`) is deliberately **not shipped**: it would read the Claude Code OAuth token and call an undocumented endpoint. If you want it, add it yourself per `plugins/claude-hud-enhanced/docs/oauth-usage-poll-handoff.md`; without it the refresher path is a clean no-op.
 
 **Troubleshooting:** If usage doesn't appear:
 - Ensure you're logged in with a Pro/Max/Team account (not API-only)

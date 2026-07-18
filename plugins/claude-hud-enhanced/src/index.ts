@@ -12,12 +12,16 @@ import { readAuthInfo } from "./auth.js";
 import { resolveEffortLevel } from "./effort.js";
 import { applyContextWindowFallback } from "./context-cache.js";
 import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
+import { resolveUsage, defaultSnapshotFs } from "./usage-hybrid.js";
 import { setLanguage, t } from "./i18n/index.js";
 import type { RenderContext } from "./types.js";
 
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
-import { realpathSync } from "node:fs";
+import { realpathSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import * as os from "node:os";
+import * as nodePath from "node:path";
 
 export type MainDeps = {
   readStdin: typeof readStdin;
@@ -46,6 +50,36 @@ export type MainDeps = {
  * HUD, so users can launch sessions without it (`CLAUDE_HUD_DISABLE=1 claude`)
  * while keeping the statusLine entry in settings.json intact.
  */
+/**
+ * Fire-and-forget launch of the detached OAuth usage refresher. The refresher
+ * (dist/refresh-usage.js) is NOT part of this repo's build — see
+ * docs/oauth-usage-poll-handoff.md; if it is absent this is a silent no-op, so
+ * the oauthUsagePoll flag degrades gracefully to plain stdin behavior.
+ */
+function refresherScriptPath(): string {
+  return nodePath.join(
+    nodePath.dirname(fileURLToPath(import.meta.url)),
+    "refresh-usage.js",
+  );
+}
+
+function spawnUsageRefresher(_homeDir: string): void {
+  try {
+    const script = refresherScriptPath();
+    if (!existsSync(script)) return; // hand-off file not installed yet
+    const child = spawn(process.execPath, [script], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: process.env, // inherit CLAUDE_CONFIG_DIR so the profile matches
+    });
+    child.on("error", () => {}); // never let a spawn failure surface
+    child.unref();
+  } catch {
+    /* never break the HUD over a failed spawn */
+  }
+}
+
 export function isHudDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env.CLAUDE_HUD_DISABLE?.trim().toLowerCase();
   if (value === undefined || value === "") {
@@ -144,6 +178,21 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
             }),
           };
         }
+      }
+
+      // Hybrid OAuth poll (opt-in): stdin while active; when stdin stops
+      // advancing (idle), serve/refresh the shared snapshot via a detached
+      // background refresher so account-wide usage stays current.
+      if (config.display.oauthUsagePoll) {
+        usageData = resolveUsage(usageData, true, {
+          now: deps.now,
+          homeDir: os.homedir(),
+          fs: defaultSnapshotFs,
+          spawnRefresher: spawnUsageRefresher,
+          // Skip lock churn entirely while the owner-supplied refresher script
+          // is absent (see docs/oauth-usage-poll-handoff.md).
+          canRefresh: () => existsSync(refresherScriptPath()),
+        });
       }
 
       // Local idle reset detection (no network): reflect a window that rolled

@@ -30,13 +30,6 @@ export type MainDeps = {
     now: () => number;
     log: (...args: unknown[]) => void;
 };
-/**
- * Returns true when the HUD is disabled for this invocation via the
- * CLAUDE_HUD_DISABLE environment variable. Any non-blank value other than an
- * explicit negative (`0`, `false`, `off`, `no`, case-insensitive) disables the
- * HUD, so users can launch sessions without it (`CLAUDE_HUD_DISABLE=1 claude`)
- * while keeping the statusLine entry in settings.json intact.
- */
 export declare function isHudDisabled(env?: NodeJS.ProcessEnv): boolean;
 export declare function main(overrides?: Partial<MainDeps>): Promise<void>;
 export declare function formatSessionDuration(sessionStart?: Date, now?: () => number): string;

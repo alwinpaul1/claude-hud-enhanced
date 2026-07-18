@@ -99,6 +99,7 @@ export const DEFAULT_CONFIG = {
         usageOnNewLine: true,
         compactSingleRow: false,
         idleUsageReset: false,
+        oauthUsagePoll: false,
         customLine: '',
         customLinePosition: 'last',
         timeFormat: 'absolute', // enhanced: absolute reset clock times ("resets at 11:00 PM")
@@ -511,6 +512,9 @@ export function mergeConfig(userConfig) {
         idleUsageReset: typeof migrated.display?.idleUsageReset === 'boolean'
             ? migrated.display.idleUsageReset
             : DEFAULT_CONFIG.display.idleUsageReset,
+        oauthUsagePoll: typeof migrated.display?.oauthUsagePoll === 'boolean'
+            ? migrated.display.oauthUsagePoll
+            : DEFAULT_CONFIG.display.oauthUsagePoll,
         providerName: typeof migrated.display?.providerName === 'string'
             ? migrated.display.providerName.slice(0, 40)
             : DEFAULT_CONFIG.display.providerName,

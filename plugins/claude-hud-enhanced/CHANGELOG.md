@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.6] - 2026-07-19
+
+### Added
+- **`display.oauthUsagePoll`** (opt-in, default off): hybrid usage resolution backed by a per-profile shared snapshot. What it does **today**: cross-**terminal** usage sync — with several sessions open on one machine, an idle terminal's HUD picks up the fresher usage an active terminal just wrote (stdin advances → snapshot updated → idle terminals serve it when strictly newer), fully local, no network. Idle detection is "stdin stopped advancing" (Claude Code re-sends frozen `rate_limits` while idle, so stdin never disappears). Monotonic newer-detection (reset time before percent) guarantees a previous-window snapshot can never beat post-reset stdin, and stdin-only extras (model-scoped windows, balance label) survive snapshot serving. The flag also wires an optional detached OAuth refresher for cross-**device** live usage: the HUD spawns `dist/refresh-usage.js` (180s TTL, single-flight `wx` lock, backoff) **only if that file exists** — it is intentionally not shipped (it would read the Claude Code OAuth token and call an undocumented endpoint); see `docs/oauth-usage-poll-handoff.md` to add it yourself. Without it the refresher path is a clean no-op (no lock churn).
+
 ## [0.4.5] - 2026-07-18
 
 ### Added
