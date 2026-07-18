@@ -1,4 +1,5 @@
 import { readStdin, getUsageFromStdin } from "./stdin.js";
+import { applyIdleUsageReset } from "./idle-usage-reset.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
@@ -143,6 +144,12 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
             }),
           };
         }
+      }
+
+      // Local idle reset detection (no network): reflect a window that rolled
+      // over while idle (reset time passed) as ~0% instead of a stale value.
+      if (config.display.idleUsageReset) {
+        usageData = applyIdleUsageReset(usageData, deps.now());
       }
     }
 
