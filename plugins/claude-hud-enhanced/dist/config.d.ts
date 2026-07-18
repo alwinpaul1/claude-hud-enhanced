@@ -111,6 +111,7 @@ export interface HudConfig {
         authShortLabel: boolean;
         usageOnNewLine: boolean;
         compactSingleRow: boolean;
+        idleUsageReset: boolean;
         customLine: string;
         customLinePosition: CustomLinePosition;
         timeFormat: TimeFormatMode;

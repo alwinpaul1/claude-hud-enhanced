@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.5] - 2026-07-18
+
+### Added
+- **`display.idleUsageReset`** (opt-in, default off): local idle usage refresh, no network. Claude Code only refreshes stdin `rate_limits` on a message, so between messages the numbers are frozen. With this on, once a usage window's reset time has passed while idle the HUD shows that window as reset (~0%) and rolls its reset forward — the true value, since your own usage on this machine can't rise without a message. Stays **local-only** (no API calls, no undocumented endpoints). Scope: it only zeroes on rollover — it doesn't reflect usage burned on *other* devices while this machine is idle, and the percentage between resets is the last stdin snapshot. (Chosen over a CodexBar-style OAuth poll, which would require reading credentials + calling an undocumented endpoint and couldn't be verified before shipping.)
+
 ## [0.4.4] - 2026-07-18
 
 ### Added

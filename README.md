@@ -164,6 +164,7 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 | `display.showAuth` | boolean | true | Show plan/auth label from Claude Code login |
 | `display.showDuration` | boolean | true | Show session duration |
 | `display.showUsage` | boolean | true | Show 5h/7d usage from stdin `rate_limits` |
+| `display.idleUsageReset` | boolean | false | While idle, show a window as reset (~0%) once its reset time passes (local-only) |
 | `display.sevenDayThreshold` | number | 0 | Min 7d % before weekly shows (0 = always) |
 | `display.showTools` | boolean | true | Show tools activity line |
 | `display.showAgents` | boolean | true | Show agents activity line |
@@ -200,6 +201,8 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 **How usage + plan are read (0.3.0+):**
 - **Usage** — native Claude Code stdin `rate_limits` (5h / 7d), not a separate Anthropic usage API call
 - **Plan / auth** — `auth.ts` reads the Claude Code oauth account profile in `{CLAUDE_CONFIG_DIR}.json` (e.g. `~/.claude.json`)
+
+**Idle usage refresh (`display.idleUsageReset`, opt-in):** Claude Code only refreshes `rate_limits` on stdin when you send a message, so between messages the numbers are frozen. With this on, once a window's reset time has passed while you're idle the HUD shows that window as reset (~0%) and rolls its reset forward — the true value, since your own usage on this machine can't rise without a message. It stays **local-only** (no network, no API calls). Scope: it only zeroes on rollover — it does not reflect usage burned on *other* devices while this machine is idle, and the percentage between resets is the last stdin snapshot.
 
 **Troubleshooting:** If usage doesn't appear:
 - Ensure you're logged in with a Pro/Max/Team account (not API-only)

@@ -197,6 +197,10 @@ export interface HudConfig {
     // each — overflow is dropped at a segment boundary instead of wrapping onto
     // an extra row, so the HUD stays a tight 2-row pair. Default off (wrap).
     compactSingleRow: boolean;
+    // Local idle reset detection (no network): when a usage window's reset time
+    // has passed, show it as reset (~0%) and roll the reset forward — the true
+    // value while idle, since usage only rises on a message. Default off.
+    idleUsageReset: boolean;
     customLine: string;
     customLinePosition: CustomLinePosition;
     timeFormat: TimeFormatMode;
@@ -288,6 +292,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     authShortLabel: true,
     usageOnNewLine: true,
     compactSingleRow: false,
+    idleUsageReset: false,
     customLine: '',
     customLinePosition: 'last',
     timeFormat: 'absolute', // enhanced: absolute reset clock times ("resets at 11:00 PM")
@@ -768,6 +773,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     compactSingleRow: typeof migrated.display?.compactSingleRow === 'boolean'
       ? migrated.display.compactSingleRow
       : DEFAULT_CONFIG.display.compactSingleRow,
+    idleUsageReset: typeof migrated.display?.idleUsageReset === 'boolean'
+      ? migrated.display.idleUsageReset
+      : DEFAULT_CONFIG.display.idleUsageReset,
     providerName: typeof migrated.display?.providerName === 'string'
       ? migrated.display.providerName.slice(0, 40)
       : DEFAULT_CONFIG.display.providerName,
