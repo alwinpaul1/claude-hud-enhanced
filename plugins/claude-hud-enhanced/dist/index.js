@@ -12,10 +12,14 @@ import { readAuthInfo } from "./auth.js";
 import { resolveEffortLevel } from "./effort.js";
 import { applyContextWindowFallback } from "./context-cache.js";
 import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
+import { resolveUsage, defaultSnapshotFs } from "./usage-hybrid.js";
 import { setLanguage, t } from "./i18n/index.js";
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
-import { realpathSync } from "node:fs";
+import { realpathSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import * as os from "node:os";
+import * as nodePath from "node:path";
 /**
  * Returns true when the HUD is disabled for this invocation via the
  * CLAUDE_HUD_DISABLE environment variable. Any non-blank value other than an
@@ -23,6 +27,30 @@ import { realpathSync } from "node:fs";
  * HUD, so users can launch sessions without it (`CLAUDE_HUD_DISABLE=1 claude`)
  * while keeping the statusLine entry in settings.json intact.
  */
+/**
+ * Fire-and-forget launch of the detached OAuth usage refresher. The refresher
+ * (dist/refresh-usage.js) is NOT part of this repo's build — see
+ * docs/oauth-usage-poll-handoff.md; if it is absent this is a silent no-op, so
+ * the oauthUsagePoll flag degrades gracefully to plain stdin behavior.
+ */
+function spawnUsageRefresher(_homeDir) {
+    try {
+        const script = nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), "refresh-usage.js");
+        if (!existsSync(script))
+            return; // hand-off file not installed yet
+        const child = spawn(process.execPath, [script], {
+            detached: true,
+            stdio: "ignore",
+            windowsHide: true,
+            env: process.env, // inherit CLAUDE_CONFIG_DIR so the profile matches
+        });
+        child.on("error", () => { }); // never let a spawn failure surface
+        child.unref();
+    }
+    catch {
+        /* never break the HUD over a failed spawn */
+    }
+}
 export function isHudDisabled(env = process.env) {
     const value = env.CLAUDE_HUD_DISABLE?.trim().toLowerCase();
     if (value === undefined || value === "") {
@@ -110,6 +138,17 @@ export async function main(overrides = {}) {
                         }),
                     };
                 }
+            }
+            // Hybrid OAuth poll (opt-in): stdin while active; when stdin stops
+            // advancing (idle), serve/refresh the shared snapshot via a detached
+            // background refresher so account-wide usage stays current.
+            if (config.display.oauthUsagePoll) {
+                usageData = resolveUsage(usageData, true, {
+                    now: deps.now,
+                    homeDir: os.homedir(),
+                    fs: defaultSnapshotFs,
+                    spawnRefresher: spawnUsageRefresher,
+                });
             }
             // Local idle reset detection (no network): reflect a window that rolled
             // over while idle (reset time passed) as ~0% instead of a stale value.

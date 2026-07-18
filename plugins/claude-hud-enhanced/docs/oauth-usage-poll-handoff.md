@@ -28,6 +28,13 @@ architecture below is already written, built, and unit-tested.
     stdin from a second idle session can't clobber a fresher OAuth snapshot.
 - `tests/usage-hybrid.test.js` — 15 passing cases (compare/roundtrip/lock/resolve).
 
+> **UPDATE:** Steps 2 and 3 below are now DONE on this branch — the `oauthUsagePoll`
+> flag exists in config.ts and index.ts spawns `dist/refresh-usage.js` when the flag
+> is on (silent no-op while that file is absent). The idle trigger was also fixed to
+> detect "stdin stopped advancing" (Claude Code re-sends frozen values while idle, so
+> stdin never goes null). **The ONLY remaining step is Step 1: add refresh-usage.ts,
+> build, ship, and enable the flag.**
+
 ## What YOU add — 3 steps
 
 ### 1. `src/refresh-usage.ts` (the credential + network file)

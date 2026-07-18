@@ -112,6 +112,7 @@ export interface HudConfig {
         usageOnNewLine: boolean;
         compactSingleRow: boolean;
         idleUsageReset: boolean;
+        oauthUsagePoll: boolean;
         customLine: string;
         customLinePosition: CustomLinePosition;
         timeFormat: TimeFormatMode;

@@ -201,6 +201,12 @@ export interface HudConfig {
     // has passed, show it as reset (~0%) and roll the reset forward — the true
     // value while idle, since usage only rises on a message. Default off.
     idleUsageReset: boolean;
+    // Hybrid OAuth usage poll (ccstatusline-style): while idle, refresh the
+    // 5h/weekly windows from Anthropic's OAuth usage endpoint via a detached
+    // background refresher so account-wide usage (e.g. another device) shows up.
+    // Requires dist/refresh-usage.js to be present; without it the flag is a
+    // no-op. Reuses the Claude Code token read-only. Default off.
+    oauthUsagePoll: boolean;
     customLine: string;
     customLinePosition: CustomLinePosition;
     timeFormat: TimeFormatMode;
@@ -293,6 +299,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     usageOnNewLine: true,
     compactSingleRow: false,
     idleUsageReset: false,
+    oauthUsagePoll: false,
     customLine: '',
     customLinePosition: 'last',
     timeFormat: 'absolute', // enhanced: absolute reset clock times ("resets at 11:00 PM")
@@ -776,6 +783,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     idleUsageReset: typeof migrated.display?.idleUsageReset === 'boolean'
       ? migrated.display.idleUsageReset
       : DEFAULT_CONFIG.display.idleUsageReset,
+    oauthUsagePoll: typeof migrated.display?.oauthUsagePoll === 'boolean'
+      ? migrated.display.oauthUsagePoll
+      : DEFAULT_CONFIG.display.oauthUsagePoll,
     providerName: typeof migrated.display?.providerName === 'string'
       ? migrated.display.providerName.slice(0, 40)
       : DEFAULT_CONFIG.display.providerName,
