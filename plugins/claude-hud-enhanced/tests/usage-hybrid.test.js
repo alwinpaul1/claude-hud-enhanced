@@ -16,6 +16,7 @@ const HOME = '/tmp/hud-test-home';
 const SNAP_PATH = getSnapshotPath(HOME);
 const LOCK_PATH = getLockPath(HOME);
 const DIR = path.dirname(SNAP_PATH);
+const DAY = 86400_000;
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0);
 const ISO = (ms) => new Date(ms).toISOString();
 
@@ -101,6 +102,20 @@ test('compareStdinSnapshot: identical windows compare equal', () => {
   assert.equal(compareStdinSnapshot(stdin(), snap({ source: 'stdin' })), 0);
 });
 
+// Safety-critical: after a window reset, fresh low-percent stdin (later resets_at)
+// must beat a previous-window snapshot stuck at a high percent — reset comparison
+// runs BEFORE percent comparison.
+test('compareStdinSnapshot: post-reset stdin beats a high-percent previous-window snapshot', () => {
+  const s = stdin({ fiveHour: 5, fiveHourResetAt: new Date(NOW + 5 * 3600_000) });
+  const prevWindow = snap({ five_hour: { used_percentage: 90, resets_at: ISO(NOW - 3600_000) } });
+  assert.equal(compareStdinSnapshot(s, prevWindow), 1, 'later reset wins regardless of percent');
+});
+
+test('compareStdinSnapshot: null resets_at is undecidable (equal)', () => {
+  const s = stdin({ fiveHourResetAt: null, sevenDayResetAt: null, fiveHour: 80 });
+  assert.equal(compareStdinSnapshot(s, snap()), 0, 'missing reset on one side cannot decide');
+});
+
 test('snapshot <-> usage roundtrip preserves the 5h/7d windows', () => {
   const u = snapshotToUsage(snap());
   assert.equal(u.fiveHour, 50);
@@ -171,6 +186,18 @@ test('resolveUsage idle + stale snapshot: serves snapshot AND spawns one refresh
   assert.ok(fs.existsSync(LOCK_PATH), 'refresher lock was taken');
 });
 
+test('resolveUsage stale + canRefresh false: no lock, no spawn (churn guard)', () => {
+  let spawned = 0;
+  const fs = makeFs(snap({ updated_at: ISO(NOW - USAGE_TTL_MS - 1000) })); // stale
+  resolveUsage(null, true, {
+    now: () => NOW, homeDir: HOME, fs,
+    spawnRefresher: () => spawned++,
+    canRefresh: () => false, // refresher script not installed
+  });
+  assert.equal(spawned, 0, 'no spawn when refresher cannot run');
+  assert.equal(fs.existsSync(LOCK_PATH), false, 'no lock file churn either');
+});
+
 test('resolveUsage idle + stale but in backoff: no refresher', () => {
   let spawned = 0;
   const fs = makeFs(snap({ updated_at: ISO(NOW - USAGE_TTL_MS - 1000), next_attempt_at: ISO(NOW + 60_000) }));
@@ -223,9 +250,16 @@ test('resolveUsage frozen stdin + newer OAuth snapshot: serves the snapshot', ()
     updated_at: ISO(NOW - 10_000),
   }));
   let spawned = 0;
-  const out = resolveUsage(stdin({ fiveHour: 40 }), true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ });
+  const scoped = [{ label: 'Fable', percent: 12, resetAt: new Date(NOW + DAY) }];
+  const out = resolveUsage(
+    stdin({ fiveHour: 40, scopedWindows: scoped, balanceLabel: '¥6.35' }),
+    true,
+    { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ },
+  );
   assert.equal(out.fiveHour, 90, 'newer OAuth snapshot wins over frozen stdin');
   assert.equal(spawned, 0, 'fresh snapshot needs no refresh');
+  assert.deepEqual(out.scopedWindows, scoped, 'stdin-only scoped windows survive snapshot serving');
+  assert.equal(out.balanceLabel, '¥6.35', 'stdin-only balance label survives snapshot serving');
 });
 
 test('resolveUsage active stdin advance resets the idle clock', () => {

@@ -41,6 +41,11 @@ function parseMs(s: string | null | undefined): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/** ISO string for a valid Date, null otherwise (an Invalid Date would throw). */
+function isoOrNull(d: Date | null | undefined): string | null {
+  return d instanceof Date && Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
 /**
  * Compare one window (A vs B). Returns >0 if A is newer, <0 if B is newer, 0 if
  * equal or undecidable. Later reset = newer window; within the same window a higher
@@ -96,6 +101,19 @@ export function snapshotToUsage(snap: UsageSnapshot): UsageData {
 }
 
 /**
+ * Serve the snapshot's 5h/7d windows while keeping the stdin-only extras
+ * (model-scoped windows, balance label) the snapshot doesn't carry — so a newer
+ * snapshot never makes the Fable weekly bar or balance segment vanish.
+ */
+export function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: UsageData): UsageData {
+  return {
+    ...snapshotToUsage(snap),
+    ...(stdinUsage.scopedWindows != null && { scopedWindows: stdinUsage.scopedWindows }),
+    ...(stdinUsage.balanceLabel != null && { balanceLabel: stdinUsage.balanceLabel }),
+  };
+}
+
+/**
  * UsageData → snapshot. `source` marks who wrote it. Refresher-owned fields
  * (`status`, `next_attempt_at`) are carried verbatim from the previous snapshot so
  * a stdin write never clears an in-flight backoff the poller set.
@@ -111,11 +129,11 @@ export function usageToSnapshot(
     source,
     five_hour: {
       used_percentage: usage.fiveHour,
-      resets_at: usage.fiveHourResetAt ? usage.fiveHourResetAt.toISOString() : null,
+      resets_at: isoOrNull(usage.fiveHourResetAt),
     },
     seven_day: {
       used_percentage: usage.sevenDay,
-      resets_at: usage.sevenDayResetAt ? usage.sevenDayResetAt.toISOString() : null,
+      resets_at: isoOrNull(usage.sevenDayResetAt),
     },
     status: prev?.status ?? 'ok',
     next_attempt_at: prev?.next_attempt_at ?? null,
@@ -159,6 +177,12 @@ export interface HybridDeps {
   fs: SnapshotFsDeps;
   /** Launch the detached OAuth refresher for this profile. Must never throw/block. */
   spawnRefresher: (homeDir: string) => void;
+  /**
+   * Whether spawning the refresher can accomplish anything (e.g. its script is
+   * installed). When false, skip the lock entirely so idle sessions don't churn
+   * lock files for a spawn that would no-op. Absent = assume it can.
+   */
+  canRefresh?: () => boolean;
 }
 
 /**
@@ -181,6 +205,7 @@ export function resolveUsage(
   // Spawn the detached refresher iff the snapshot is past the TTL and not in
   // backoff. Throttled by the single-flight lock; never blocks or throws.
   const maybeRefresh = (s: UsageSnapshot): void => {
+    if (deps.canRefresh?.() === false) return; // refresher not installed — no lock churn
     const age = now - (parseMs(s.updated_at) ?? 0);
     const inBackoff =
       s.next_attempt_at != null && (parseMs(s.next_attempt_at) ?? 0) > now;
@@ -210,9 +235,11 @@ export function resolveUsage(
       return stdinUsage;
     }
     // stdin did NOT advance (cmp <= 0) → frozen stdin, i.e. idle. The snapshot's
-    // updated_at keeps aging, so refresh when it goes stale.
+    // updated_at keeps aging, so refresh when it goes stale. When the snapshot is
+    // strictly newer (another terminal/device advanced it), serve its windows while
+    // keeping stdin-only extras (scoped windows, balance label).
     maybeRefresh(snap);
-    return cmp < 0 ? snapshotToUsage(snap) : stdinUsage;
+    return cmp < 0 ? snapshotOverStdin(snap, stdinUsage) : stdinUsage;
   }
 
   // No stdin usage at all this render (e.g. rate_limits absent). Serve the

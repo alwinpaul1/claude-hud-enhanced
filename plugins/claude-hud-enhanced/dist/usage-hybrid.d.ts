@@ -28,6 +28,12 @@ export declare function isStrictlyNewer(stdin: UsageData, snap: UsageSnapshot): 
 /** Snapshot → UsageData. Note: snapshots only carry the 5h/7d windows. */
 export declare function snapshotToUsage(snap: UsageSnapshot): UsageData;
 /**
+ * Serve the snapshot's 5h/7d windows while keeping the stdin-only extras
+ * (model-scoped windows, balance label) the snapshot doesn't carry — so a newer
+ * snapshot never makes the Fable weekly bar or balance segment vanish.
+ */
+export declare function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: UsageData): UsageData;
+/**
  * UsageData → snapshot. `source` marks who wrote it. Refresher-owned fields
  * (`status`, `next_attempt_at`) are carried verbatim from the previous snapshot so
  * a stdin write never clears an in-flight backoff the poller set.
@@ -45,6 +51,12 @@ export interface HybridDeps {
     fs: SnapshotFsDeps;
     /** Launch the detached OAuth refresher for this profile. Must never throw/block. */
     spawnRefresher: (homeDir: string) => void;
+    /**
+     * Whether spawning the refresher can accomplish anything (e.g. its script is
+     * installed). When false, skip the lock entirely so idle sessions don't churn
+     * lock files for a spawn that would no-op. Absent = assume it can.
+     */
+    canRefresh?: () => boolean;
 }
 /**
  * Resolve the usage to render, blending live stdin with the persisted snapshot.

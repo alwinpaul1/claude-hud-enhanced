@@ -56,12 +56,16 @@ export type MainDeps = {
  * docs/oauth-usage-poll-handoff.md; if it is absent this is a silent no-op, so
  * the oauthUsagePoll flag degrades gracefully to plain stdin behavior.
  */
+function refresherScriptPath(): string {
+  return nodePath.join(
+    nodePath.dirname(fileURLToPath(import.meta.url)),
+    "refresh-usage.js",
+  );
+}
+
 function spawnUsageRefresher(_homeDir: string): void {
   try {
-    const script = nodePath.join(
-      nodePath.dirname(fileURLToPath(import.meta.url)),
-      "refresh-usage.js",
-    );
+    const script = refresherScriptPath();
     if (!existsSync(script)) return; // hand-off file not installed yet
     const child = spawn(process.execPath, [script], {
       detached: true,
@@ -185,6 +189,9 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
           homeDir: os.homedir(),
           fs: defaultSnapshotFs,
           spawnRefresher: spawnUsageRefresher,
+          // Skip lock churn entirely while the owner-supplied refresher script
+          // is absent (see docs/oauth-usage-poll-handoff.md).
+          canRefresh: () => existsSync(refresherScriptPath()),
         });
       }
 
