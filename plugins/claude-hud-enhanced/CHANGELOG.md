@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.7] - 2026-07-19
+
+### Added
+- **OAuth idle usage refresher now ships (`dist/refresh-usage.js`)** — completes the `display.oauthUsagePoll` feature from 0.4.6 with the cross-**device** half: when the machine is fully idle (shared snapshot older than 180s), a detached child fetches the account-wide 5h/7d usage from Anthropic's `oauth/usage` endpoint, so usage burned on another device shows up in every terminal's HUD within ~3 minutes. Token-read + endpoint shape ported from ccstatusline (`src/utils/usage-fetch.ts`): Claude Code OAuth token read **read-only** from the macOS Keychain (`Claude Code-credentials`), falling back to `${CLAUDE_CONFIG_DIR}/.credentials.json`; never written back. Rate-limit hygiene: single-flight `wx` lock + 180s TTL cap requests at ~1 per 3 min per profile machine-wide regardless of terminal count, failures preserve last-good values without bumping the idle-TTL clock and set backoff (429 → `Retry-After` or 2×TTL, error 5 min, auth-expired 30 min — fixes the ccstatusline #204 retry-storm shape), 5s fetch timeout, 15s watchdog, lock always released in `finally`. Deviations from ccstatusline, both to stay dependency-free: global `fetch` instead of `https` + `https-proxy-agent` (so `HTTPS_PROXY` is **not** honored), and no `dump-keychain` candidate sweep. The flag stays opt-in, default off — enabling it is the one exception to the README's local-only rule, and the token goes only to its issuer (`api.anthropic.com`).
+
+### Changed
+- README: `oauthUsagePoll` docs updated — the refresher is no longer "owner-supplied"; documented the network behavior, privacy scope, and request-rate ceiling.
+
 ## [0.4.6] - 2026-07-19
 
 ### Added

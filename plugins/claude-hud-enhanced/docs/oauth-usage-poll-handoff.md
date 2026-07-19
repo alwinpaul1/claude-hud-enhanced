@@ -28,6 +28,10 @@ architecture below is already written, built, and unit-tested.
     stdin from a second idle session can't clobber a fresher OAuth snapshot.
 - `tests/usage-hybrid.test.js` — 15 passing cases (compare/roundtrip/lock/resolve).
 
+> **UPDATE (v0.4.7):** ALL steps are DONE — `src/refresh-usage.ts` was added (owner-
+> directed port from ccstatusline) and ships in `dist/`. This doc is kept as the
+> design record. Original status notes follow.
+>
 > **UPDATE:** Steps 2 and 3 below are now DONE on this branch — the `oauthUsagePoll`
 > flag exists in config.ts and index.ts spawns `dist/refresh-usage.js` when the flag
 > is on (silent no-op while that file is absent). The idle trigger was also fixed to
