@@ -444,13 +444,40 @@ Instead, use `sort -V` (GNU version sort, included with Git for Windows) which a
 
 **WSL (Windows Subsystem for Linux)**: If running in WSL, use the macOS/Linux instructions. Ensure the plugin is installed in the Linux environment (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/...`), not the Windows side.
 
-## Step 2: Test Command
+## Step 2: Test Command and Benchmark Refresh Interval
 
 Run the generated command. It should produce output (the HUD lines) within a few seconds.
 
 - If it errors, do not proceed to Step 3.
 - If it hangs for more than a few seconds, cancel and debug.
 - This test catches issues like broken runtime binaries, missing plugins, or path problems.
+
+### 2.1: Benchmark to pick `refreshInterval`
+
+The idle repaint timer should be as fast as this machine can afford. Run the
+generated command **3 times**, timing each run's wall clock (feed it the same
+empty-stdin input as the test above). The first run is a cold start — take the
+**fastest** of the three as the machine's render time. Timing recipe (macOS
+lacks `date +%N`; use the runtime you already validated):
+
+```bash
+node -e 'const{execSync}=require("child_process");const t=Date.now();execSync(process.argv[1],{stdio:"ignore",shell:true});console.log(Date.now()-t+"ms")' '{GENERATED_COMMAND} < /dev/null'
+```
+
+Pick the tier:
+
+| Fastest render | `refreshInterval` |
+|---|---|
+| < 150 ms | `2` |
+| 150–500 ms | `5` |
+| > 500 ms | `10` |
+
+**Windows floor**: on `win32` always use at least `5` regardless of the
+benchmark — process spawn overhead there is high-variance (see the Windows
+launcher notes above), and an interval the render can't keep up with makes
+Claude Code cancel in-flight runs on every tick, so the HUD may never finish a
+paint. The same logic is why the interval must comfortably exceed the measured
+render time everywhere.
 
 ## Step 2.5: Detect Existing Statusline and Create Backup
 
@@ -671,10 +698,13 @@ If a write fails with `File has been unexpectedly modified`, re-read the file an
   "statusLine": {
     "type": "command",
     "command": "{GENERATED_COMMAND}",
-    "refreshInterval": 5
+    "refreshInterval": {BENCHMARKED_INTERVAL}
   }
 }
 ```
+
+`{BENCHMARKED_INTERVAL}` comes from the Step 2.1 benchmark (2, 5, or 10; use 5
+if the benchmark could not run).
 
 **`refreshInterval` is required for idle updates.** Claude Code only re-runs the
 statusline on conversation events (new assistant message, `/compact`, permission
