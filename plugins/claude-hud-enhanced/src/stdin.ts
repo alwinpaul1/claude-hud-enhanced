@@ -334,7 +334,11 @@ export function getProviderLabel(stdin: StdinData): string | null {
 }
 
 export function shouldHideUsage(stdin: StdinData): boolean {
-  return getProviderLabel(stdin) === 'Bedrock' || isBedrockModelId(stdin.model?.id);
+  // Subscription usage windows only exist for OAuth sessions; hide them for
+  // API-billed providers (Bedrock, Vertex). Enterprise model aliases
+  // (opusplan etc.) are subscription plan-mode aliases — usage stays visible.
+  const provider = getProviderLabel(stdin);
+  return provider === 'Bedrock' || provider === 'Vertex' || isBedrockModelId(stdin.model?.id);
 }
 
 function parseRateLimitPercent(value: number | null | undefined): number | null {
