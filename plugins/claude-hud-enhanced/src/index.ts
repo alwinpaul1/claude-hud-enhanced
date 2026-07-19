@@ -148,7 +148,16 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     }
 
     const transcriptPath = stdin.transcript_path ?? "";
-    const transcript = await deps.parseTranscript(transcriptPath);
+    // Transcript parse, config counts, and config load are independent I/O
+    // (verified: none reads another's output) — run them concurrently instead
+    // of serializing three awaits on the repaint hot path. Git status stays
+    // sequential after config: its enabled-gate is config data, and running
+    // git work for users who disabled it would violate their intent.
+    const [transcript, configCounts, config] = await Promise.all([
+      deps.parseTranscript(transcriptPath),
+      deps.countConfigs(stdin.cwd),
+      deps.loadConfig(),
+    ]);
 
     deps.applyContextWindowFallback(stdin, {}, transcript.sessionName, {
       lastCompactBoundaryAt: transcript.lastCompactBoundaryAt,
@@ -156,9 +165,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     });
 
     const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } =
-      await deps.countConfigs(stdin.cwd);
+      configCounts;
 
-    const config = await deps.loadConfig();
     setLanguage(config.language);
     const gitStatus = config.gitStatus.enabled
       ? await deps.getGitStatus(stdin.cwd)

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.13] - 2026-07-19
+
+Follow-up round of the 0.4.12 review (final verifier verdicts).
+
+### Changed
+- **Render pipeline parallelized**: transcript parse, config counts, and config load — three independent I/O operations previously serialized on the repaint hot path — now run concurrently (`Promise.all`). Verified safe: no data dependencies, no test asserts call order, and the synchronous migration check cannot interleave on Node's event loop. Git status stays sequential behind its `gitStatus.enabled` gate so disabled users never pay even the cached-path cost.
+- **`shouldHideUsage` classification as data**: the API-billed providers now live in an explicit `API_BILLED_PROVIDERS` set with a "decide new providers here" note — same behavior as 0.4.12's fix, but adding a provider label can no longer silently skip the usage-visibility decision (and the inverted-default alternative, hide-everything-but-Enterprise, was deliberately rejected).
+- Issue #2 (getHudPluginDir memoization) annotated with a verified constraint: a `homeDir`-keyed cache is provably wrong (ambient `CLAUDE_CONFIG_DIR` breaks an existing test); the key must include the resolved config dir.
+
 ## [0.4.12] - 2026-07-19
 
 Fix batch from a 10-agent adversarial review of the 0.4.6–0.4.11 changes (8 finder angles + resource-safety audit + independent reviewer, each finding cross-verified).
