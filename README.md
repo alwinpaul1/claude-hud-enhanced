@@ -327,4 +327,6 @@ MIT — see [LICENSE](LICENSE)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=alwinpaul1/claude-hud-enhanced&type=Date)](https://star-history.com/#alwinpaul1/claude-hud-enhanced&Date)
+[![GitHub stars](https://img.shields.io/github/stars/alwinpaul1/claude-hud-enhanced?style=social)](https://star-history.com/#alwinpaul1/claude-hud-enhanced&Date)
+
+*(click for the interactive star-history chart)*
