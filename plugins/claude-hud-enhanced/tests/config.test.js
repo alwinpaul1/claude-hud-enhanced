@@ -100,6 +100,22 @@ test('mergeConfig defaults showSessionName to false', () => {
   assert.equal(DEFAULT_CONFIG.display.showSessionName, false);
 });
 
+test('flagship layout is the default on every platform (0.5.1)', () => {
+  const config = mergeConfig({});
+  // The screenshot look: tight two-row compact header out of the box.
+  assert.equal(config.display.compactSingleRow, true);
+  assert.equal(DEFAULT_CONFIG.display.compactSingleRow, true);
+  // Visual defaults that complete the look (already on; pinned here).
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
+  assert.equal(DEFAULT_CONFIG.display.usageOnNewLine, true);
+  assert.equal(DEFAULT_CONFIG.display.showAuthInModel, true);
+  assert.equal(DEFAULT_CONFIG.display.timeFormat, 'absolute');
+  // Behavior flags stay OPT-IN (network/idle semantics, not layout).
+  assert.equal(DEFAULT_CONFIG.display.oauthUsagePoll, false);
+  assert.equal(DEFAULT_CONFIG.display.idleUsageReset, false);
+  assert.equal(DEFAULT_CONFIG.daemon.enabled, false);
+});
+
 test('mergeConfig defaults forceMaxWidth to false', () => {
   const config = mergeConfig({});
   assert.equal(config.forceMaxWidth, false);

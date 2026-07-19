@@ -46,21 +46,39 @@ export function getIpcPath(homeDir: string = os.homedir()): string {
       .slice(0, 16);
     return `\\\\.\\pipe\\claude-hud-enhanced-${key}`;
   }
-  // Unix: getHudPluginDir is already per-profile — no hashing needed…
+  // Unix: getHudPluginDir is already per-profile — no hashing needed.
   const preferred = path.join(getIpcDir(homeDir), 'hud.sock');
-  // …UNLESS the path would exceed the sun_path limit (~104 bytes on macOS,
-  // 108 on Linux): bind() fails EINVAL for deep CLAUDE_CONFIG_DIRs or long
-  // home paths. Fall back to a short per-profile-hashed name under the
-  // OS temp dir. The socket itself is chmod 0600 after listen, so on a
-  // shared /tmp others can't connect; a squatter pre-creating the name only
-  // degrades that profile to inline mode (EADDRINUSE → daemon exits,
-  // client keeps rendering inline) — never breaks the HUD.
-  if (preferred.length <= 100) return preferred;
+
+  // Fall back to a native, short, per-profile-hashed 0700 SUBDIR when the
+  // preferred path can't host a working native socket:
+  //   - >100 bytes → bind() fails EINVAL past the ~104-byte sun_path limit
+  //     (deep CLAUDE_CONFIG_DIRs / long home paths);
+  //   - under a WSL DrvFS mount (/mnt/c/…) → AF_UNIX there interops with the
+  //     Windows namespace and neither binds nor connects like a native
+  //     socket, otherwise causing endless doomed respawns.
+  // The 0700 SUBDIR (created via ensurePrivateDir) is the access guard on
+  // every platform — deliberately not relying on socket FILE permissions,
+  // whose enforcement on connect() is historically inconsistent across Unix
+  // flavors (Linux enforces; some BSDs ignore — not verified per-host). A
+  // squatter pre-creating the name only degrades that profile to inline mode
+  // (EADDRINUSE → daemon exits, clients keep rendering inline) — never breaks
+  // the HUD.
+  const onDrvFs = /^\/mnt\/[a-z]\//i.test(preferred);
+  // Byte length, not UTF-16 code units: sun_path is byte-limited (~103 usable
+  // on macOS) and a multi-byte character in a home path (accented username)
+  // would be under-counted by .length, passing the check yet failing bind().
+  if (!onDrvFs && Buffer.byteLength(preferred, 'utf8') <= 100) return preferred;
+
   const key = createHash('sha256')
     .update(path.resolve(getClaudeConfigDir(homeDir)))
     .digest('hex')
     .slice(0, 16);
-  return path.join(os.tmpdir(), `claude-hud-${key}.sock`);
+  // XDG_RUNTIME_DIR (/run/user/<uid>, tmpfs, 0700) is ideal on Linux/WSL;
+  // tmpdir otherwise. Caveat (accepted): a user who exported TMPDIR to a
+  // DrvFS path for interop lands the fallback back on DrvFS — niche, and it
+  // degrades to inline mode, not breakage (not verified per-host).
+  const runtimeBase = process.env.XDG_RUNTIME_DIR?.trim() || os.tmpdir();
+  return path.join(runtimeBase, `claude-hud-${key}`, 'hud.sock');
 }
 
 export function getSpawnLockPath(homeDir: string = os.homedir()): string {

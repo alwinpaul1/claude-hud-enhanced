@@ -1,12 +1,18 @@
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { promisify } from 'node:util';
 import { createDebug } from './debug.js';
 import type { MemoryInfo } from './types.js';
 
 const debug = createDebug('memory');
+const execFileAsync = promisify(execFile);
 
-type MemoryReader = () => { totalBytes: number; freeBytes: number };
+type MemResult = { totalBytes: number; freeBytes: number };
+// Sync OR async: test injectors return a plain object; the real macOS reader
+// is async so vm_stat never blocks the (now possibly shared, daemon) event
+// loop. getMemoryUsage awaits either.
+type MemoryReader = () => MemResult | Promise<MemResult>;
 
 export function parseVmStat(
   output: string,
@@ -56,13 +62,13 @@ const readLinuxMemory: MemoryReader = () => {
   }
 };
 
-const readMacOSMemory: MemoryReader = () => {
+const readMacOSMemory: MemoryReader = async () => {
   try {
-    const output = execFileSync('/usr/bin/vm_stat', {
+    const { stdout } = await execFileAsync('/usr/bin/vm_stat', {
       encoding: 'utf8',
       timeout: 5000,
     });
-    const parsed = parseVmStat(output);
+    const parsed = parseVmStat(stdout);
     if (!parsed) return readDefaultMemory();
     const totalBytes = os.totalmem();
     const usedBytes = (parsed.active + parsed.wired) * parsed.pageSize;
@@ -80,7 +86,7 @@ let readMemory: MemoryReader =
 
 export async function getMemoryUsage(): Promise<MemoryInfo | null> {
   try {
-    const { totalBytes, freeBytes } = readMemory();
+    const { totalBytes, freeBytes } = await readMemory();
     if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
       return null;
     }

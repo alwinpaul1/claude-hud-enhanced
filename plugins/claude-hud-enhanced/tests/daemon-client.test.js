@@ -14,6 +14,11 @@ function makeHome() {
   fs.mkdirSync(path.join(home, '.claude', 'plugins', 'claude-hud-enhanced', 'daemon'), {
     recursive: true,
   });
+  // These sandbox homes are long enough to trigger the sun_path fallback
+  // (socket in a hashed tmpdir SUBDIR). The real daemon creates that subdir
+  // via ensurePrivateDir before listening; the raw stub servers here don't,
+  // so pre-create it.
+  fs.mkdirSync(path.dirname(getIpcPath(home)), { recursive: true, mode: 0o700 });
   return home;
 }
 
