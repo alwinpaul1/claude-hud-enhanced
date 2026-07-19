@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.8] - 2026-07-19
+
+### Fixed
+- **Usage is hidden for Vertex sessions, like Bedrock.** `shouldHideUsage` only excluded Bedrock; with the 0.4.7 hybrid snapshot able to backfill usage while stdin has no `rate_limits`, a Vertex (API-billed) session could show subscription usage windows that don't apply to it. The hide rule is now: Bedrock (env or `anthropic.claude-*` model id) and Vertex (`CLAUDE_CODE_USE_VERTEX=1`). Enterprise plan-mode aliases (`opusplan`, `sonnetplan`, `haikuplan`) intentionally keep usage visible — they are subscription aliases with real usage windows. Usage remains shown by default for all OAuth/subscription sessions (`showUsage` default unchanged).
+
 ## [0.4.7] - 2026-07-19
 
 ### Added

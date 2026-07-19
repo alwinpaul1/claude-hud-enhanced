@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
-import { readStdin, getProviderLabel, getContextPercent, getBufferedPercent } from '../dist/stdin.js';
+import { readStdin, getProviderLabel, getContextPercent, getBufferedPercent, shouldHideUsage } from '../dist/stdin.js';
 import { mergeConfig } from '../dist/config.js';
 
 test('readStdin returns null for TTY input', async () => {
@@ -152,6 +152,32 @@ test('autoCompactWindow overrides native used_percentage', () => {
   };
 
   assert.equal(getContextPercent(stdin, 200000), 35);
+});
+
+// shouldHideUsage tests — subscription usage windows only exist for OAuth
+// sessions; any API-based provider (Bedrock, Vertex, Enterprise) hides them.
+
+test('shouldHideUsage hides usage for Vertex sessions', () => {
+  const orig = process.env.CLAUDE_CODE_USE_VERTEX;
+  try {
+    process.env.CLAUDE_CODE_USE_VERTEX = '1';
+    assert.equal(shouldHideUsage({ model: { id: 'claude-sonnet-4-6' } }), true);
+  } finally {
+    if (orig === undefined) delete process.env.CLAUDE_CODE_USE_VERTEX;
+    else process.env.CLAUDE_CODE_USE_VERTEX = orig;
+  }
+});
+
+test('shouldHideUsage keeps usage for enterprise plan-mode aliases (subscription)', () => {
+  assert.equal(shouldHideUsage({ model: { id: 'opusplan' } }), false);
+});
+
+test('shouldHideUsage hides usage for Bedrock model ids without env var', () => {
+  assert.equal(shouldHideUsage({ model: { id: 'anthropic.claude-sonnet-4-6' } }), true);
+});
+
+test('shouldHideUsage shows usage for plain subscription sessions', () => {
+  assert.equal(shouldHideUsage({ model: { id: 'claude-opus-4-8' } }), false);
 });
 
 // getProviderLabel tests
