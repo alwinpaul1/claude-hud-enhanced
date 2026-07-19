@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.10] - 2026-07-19
+
+### Changed
+- **Setup now benchmarks the machine and picks the fastest safe `refreshInterval` (2/5/10s)** instead of a flat 5s. The idle-repaint cost is the HUD's own render time (runtime spawn + transcript parse + git), which varies ~30× across hardware: Apple Silicon + bun renders in ~90ms warm (2s is cheap, ~5% of a core), older Intel/node lands 150–500ms (5s), and slow-spawn environments (Windows especially) can exceed 500ms (10s; Windows also gets a hard floor of 5s). The interval must comfortably exceed the render time — Claude Code cancels in-flight runs on each new tick, so an interval the render can't keep up with means the HUD may never finish a paint (the failure mode ccstatusline's diagnostics warn about for inline commands ≤2s). Setup times 3 runs of the generated command and picks the tier from the fastest.
+
 ## [0.4.9] - 2026-07-19
 
 ### Fixed

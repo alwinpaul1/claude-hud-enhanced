@@ -29,7 +29,8 @@ Claude Code → stdin JSON → parse → render lines → stdout → Claude Code
 **Key insight**: The statusline is invoked by Claude Code on conversation events
 (new assistant message, `/compact`, permission-mode/vim-mode change), debounced
 at 300ms — plus on a fixed timer while idle when `statusLine.refreshInterval` is
-set (setup writes `5`). Without `refreshInterval` the triggers go quiet while
+set (setup benchmarks the render and writes `2`, `5`, or `10` — fastest the
+machine can afford). Without `refreshInterval` the triggers go quiet while
 idle and the HUD freezes at its last render. Each invocation:
 1. Receives JSON via stdin (model, context, tokens - native accurate data)
 2. Parses the transcript JSONL file for tools, agents, and todos
