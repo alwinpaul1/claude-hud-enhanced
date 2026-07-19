@@ -1647,6 +1647,182 @@ test('parseTranscript does not cache partial results when stream creation fails 
   }
 });
 
+// Incremental-parse equivalence: parsing a file that GREW (resume from cache)
+// must produce byte-identical output to a full parse of the same final bytes.
+// This is the safety net for the incremental-parsing optimization.
+function normalizeForCompare(data) {
+  // Dates → ISO so deepEqual is stable across Date object identity.
+  return JSON.parse(JSON.stringify(data));
+}
+
+async function fullParseFresh(lines) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-eq-full-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 't.jsonl');
+  const origCfg = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  try {
+    await writeFile(transcriptPath, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+    return normalizeForCompare(await parseTranscript(transcriptPath));
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+const EQ_LINES = [
+  { type: 'assistant', timestamp: '2024-01-01T00:00:00.000Z', message: { id: 'm1', model: 'claude-opus-4-8', usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }, content: [
+    { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: '/a.txt' } },
+    { type: 'tool_use', id: 's1', name: 'Skill', input: { skill: 'my-skill' } },
+    { type: 'tool_use', id: 'x1', name: 'mcp__srv__do', input: {} },
+  ] } },
+  { type: 'user', timestamp: '2024-01-01T00:00:01.000Z', message: { content: [ { type: 'tool_result', tool_use_id: 'r1', content: 'ok' } ] } },
+  // Duplicate (dual-logged) assistant record — same message.id m1: tokens must NOT double-count across the split.
+  { type: 'assistant', timestamp: '2024-01-01T00:00:00.000Z', message: { id: 'm1', usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }, content: [] } },
+  { type: 'assistant', timestamp: '2024-01-01T00:00:02.000Z', message: { id: 'm2', usage: { input_tokens: 20, output_tokens: 8, cache_creation_input_tokens: 2, cache_read_input_tokens: 3 }, content: [
+    { type: 'tool_use', id: 'a1', name: 'Task', input: { subagent_type: 'x', description: 'do a thing', run_in_background: true } },
+    { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '/b.txt' } },
+  ] } },
+  // Background-agent completion via queue-operation (exercises queueCompletionMap serialization).
+  { type: 'queue-operation', operation: 'enqueue', timestamp: '2024-01-01T00:02:30.000Z', content: '<task-id>t9</task-id><tool-use-id>a1</tool-use-id>' },
+  { type: 'system', subtype: 'compact_boundary', timestamp: '2024-01-01T00:03:00.000Z', compactMetadata: { postTokens: 7679 } },
+  { type: 'assistant', timestamp: '2024-01-01T00:04:00.000Z', message: { id: 'm3', usage: { input_tokens: 5, output_tokens: 2, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }, content: [
+    { type: 'tool_use', id: 'td', name: 'TodoWrite', input: { todos: [ { content: 'ship it', status: 'in_progress', activeForm: 'shipping' } ] } },
+  ] } },
+];
+
+test('parseTranscript incremental resume === full parse (byte-identical output)', async () => {
+  // Split the lines into a prefix (parsed first, cached) and a suffix (appended).
+  for (const split of [1, 2, 3, 4, 5, 6, 7]) {
+    const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-eq-inc-'));
+    const configDir = path.join(dir, '.claude-test');
+    const transcriptPath = path.join(dir, 't.jsonl');
+    const origCfg = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    try {
+      const prefix = EQ_LINES.slice(0, split);
+      const suffix = EQ_LINES.slice(split);
+      // 1) parse the prefix (writes the resume cache)
+      await writeFile(transcriptPath, prefix.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+      await parseTranscript(transcriptPath);
+      // 2) APPEND the suffix and re-parse — must take the resume path
+      await fs.promises.appendFile(transcriptPath, suffix.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+      const resumed = normalizeForCompare(await parseTranscript(transcriptPath));
+      // 3) full parse of the same final bytes from a clean cache
+      const full = await fullParseFresh(EQ_LINES);
+      assert.deepEqual(resumed, full, `incremental (split=${split}) must equal full parse`);
+    } finally {
+      restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('parseTranscript resume actually reuses cached state (skipped prefix line is NOT re-parsed)', async () => {
+  // Proof that the resume path is taken, not a silent full re-parse: after
+  // caching the prefix, we CORRUPT a mid-prefix line (index >= 1, so line 0's
+  // hash still matches) to invalid JSON, then append. A true resume SKIPS that
+  // line (trusting cached state), so its token contribution survives. A full
+  // re-parse would hit the corrupt line, fail it, and LOSE its tokens.
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-eq-proof-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 't.jsonl');
+  const origCfg = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  try {
+    const prefix = EQ_LINES.slice(0, 4);
+    const suffix = EQ_LINES.slice(4);
+    await writeFile(transcriptPath, prefix.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+    const before = await parseTranscript(transcriptPath);
+    const tokensBefore = before.sessionTokens.inputTokens;
+    assert.ok(tokensBefore > 0);
+
+    // Corrupt line index 3 (the m2 record, a committed prefix line) in place,
+    // preserving byte length so earlier offsets/line-count stay aligned.
+    const raw = await readFile(transcriptPath, 'utf8');
+    const lines = raw.split('\n');
+    lines[3] = '#'.repeat(lines[3].length); // now invalid JSON, same length
+    await writeFile(transcriptPath, lines.join('\n'), 'utf8');
+    await fs.promises.appendFile(transcriptPath, suffix.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+
+    const after = await parseTranscript(transcriptPath);
+    // If resume worked, m2's tokens (from cached state) survive despite the
+    // corruption; a full re-parse would drop them.
+    assert.ok(
+      after.sessionTokens.inputTokens >= tokensBefore,
+      `resume must preserve cached tokens (got ${after.sessionTokens.inputTokens}, cached ${tokensBefore})`,
+    );
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('parseTranscript resume: a TaskUpdate across the resume boundary still applies (taskIdToIndex survives)', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-taskid-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 't.jsonl');
+  const origCfg = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  try {
+    // Prefix: a TodoWrite establishes a todo, TaskCreate binds a non-numeric taskId to it.
+    const prefix = [
+      { type: 'assistant', timestamp: '2024-01-01T00:00:00.000Z', message: { id: 'm1', content: [
+        { type: 'tool_use', id: 'tw', name: 'TodoWrite', input: { todos: [{ content: 'do the thing', status: 'pending', activeForm: 'doing' }] } },
+      ] } },
+      { type: 'assistant', timestamp: '2024-01-01T00:00:01.000Z', message: { id: 'm2', content: [
+        { type: 'tool_use', id: 'tc', name: 'TaskCreate', input: { taskId: 'task-abc', subject: 'do the thing' } },
+      ] } },
+    ];
+    await writeFile(transcriptPath, prefix.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+    await parseTranscript(transcriptPath);
+    // Append a TaskUpdate for the SAME taskId — resume must still resolve it via the restored taskIdToIndex.
+    const update = { type: 'assistant', timestamp: '2024-01-01T00:01:00.000Z', message: { id: 'm3', content: [
+      { type: 'tool_use', id: 'tu', name: 'TaskUpdate', input: { taskId: 'task-abc', status: 'completed' } },
+    ] } };
+    await fs.promises.appendFile(transcriptPath, JSON.stringify(update) + '\n', 'utf8');
+    const resumed = normalizeForCompare(await parseTranscript(transcriptPath));
+    // The invariant is resume === full parse: the restored taskIdToIndex must
+    // resolve the appended TaskUpdate exactly as a from-scratch parse would.
+    const full = await fullParseFresh([...prefix, update]);
+    assert.deepEqual(resumed.todos, full.todos, 'TaskUpdate across the resume boundary must match a full parse');
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('parseTranscript does NOT resume on a same-size in-place rewrite (full re-parse instead)', async () => {
+  // A same-size rewrite with a changed mtime must not slip into the resume
+  // path (which would trust stale committed lines). The strict size>cached
+  // gate forces a full re-parse reflecting the NEW content.
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-rewrite-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 't.jsonl');
+  const origCfg = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  try {
+    const a = { type: 'assistant', timestamp: '2024-01-01T00:00:00.000Z', message: { id: 'mA', content: [{ type: 'tool_use', id: 'tA', name: 'Read', input: { file_path: '/AAAA.txt' } }] } };
+    const b = { type: 'assistant', timestamp: '2024-01-01T00:00:00.000Z', message: { id: 'mB', content: [{ type: 'tool_use', id: 'tB', name: 'Read', input: { file_path: '/BBBB.txt' } }] } };
+    await writeFile(transcriptPath, JSON.stringify(a) + '\n', 'utf8');
+    const first = await parseTranscript(transcriptPath);
+    assert.equal(first.tools[0].target, '/AAAA.txt');
+
+    // Rewrite to the SAME byte length (a and b are constructed equal length),
+    // different content, and bump mtime so the exact-hit check misses.
+    assert.equal(JSON.stringify(a).length, JSON.stringify(b).length, 'test setup: equal-length records');
+    await writeFile(transcriptPath, JSON.stringify(b) + '\n', 'utf8');
+    fs.utimesSync(transcriptPath, 1710009999, 1710009999);
+
+    const second = await parseTranscript(transcriptPath);
+    assert.equal(second.tools.length, 1, 'must reflect the rewritten content, not stale resume');
+    assert.equal(second.tools[0].target, '/BBBB.txt', 'full re-parse picked up the rewrite');
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('parseTranscript reuses cached data when transcript state is unchanged', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-transcript-cache-'));
   const configDir = path.join(dir, '.claude-test');

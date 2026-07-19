@@ -7,7 +7,7 @@ import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
 import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage } from './types.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
-import { CACHE_SWEEP_SAMPLE_RATE, sweepCacheDir } from './utils/cache-file.js';
+import { CACHE_SWEEP_SAMPLE_RATE, sweepCacheDir, writeJsonCacheAtomic } from './utils/cache-file.js';
 import { sanitizeTranscriptModel } from './model-source.js';
 
 const debug = createDebug('transcript');
@@ -91,18 +91,66 @@ interface SerializedTranscriptData {
   lastAssistantModel?: string;
 }
 
+/**
+ * Full intermediate parse state, persisted so the next parse of a GROWN
+ * transcript can restore it and process only the appended lines instead of
+ * re-parsing the whole file (issue #1). Every accumulator in parseTranscript
+ * is captured here; Dates are ISO strings, Maps/Sets are arrays.
+ */
+interface SerializedAcc {
+  tools: SerializedToolEntry[]; // toolMap values (key === entry.id)
+  agents: SerializedAgentEntry[]; // agentMap values (key === entry.id)
+  skills: string[];
+  mcpServers: string[];
+  todos: TodoItem[];
+  taskIdToIndex: [string, number][];
+  queueCompletion: [string, string][]; // [toolUseId, ISO]
+  seenMessageIds: string[];
+  latestSlug?: string;
+  customTitle?: string;
+  latestAdvisorModel?: string;
+  latestUltracodeActive?: boolean;
+  lastCompactBoundaryAt?: string;
+  lastCompactPostTokens?: number;
+  compactionCount: number;
+  lastUsageKey?: string;
+  sessionTokens: SessionTokenUsage;
+  sessionStart?: string;
+  lastAssistantResponseAt?: string;
+  lastAssistantModel?: string;
+}
+
 interface TranscriptCacheFile {
   version?: number;
   transcriptPath: string;
   transcriptState: TranscriptFileState;
   data: SerializedTranscriptData;
+  // Incremental-resume fields (issue #1). Absent in older caches → full parse.
+  acc?: SerializedAcc;
+  firstLineHash?: string; // detects file rotation/rewrite (not an append)
+  resumeSkip?: number; // lines to skip (already committed) on the next resume
 }
 
-const TRANSCRIPT_CACHE_VERSION = 12;
+// Bumped to 13: adds the incremental-resume accumulator; older caches lack it
+// and safely fall back to a full parse.
+const TRANSCRIPT_CACHE_VERSION = 13;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
 const SEEN_MESSAGE_IDS_MAX = 4096;
+// Cap on tool/agent entries persisted in the resume accumulator — well beyond
+// the 20/10 display window, so bounding it never changes the rendered result.
+const RESUME_ENTRY_CAP = 256;
+// Throttle the (now larger) resume-cache write: during active streaming the
+// transcript mtime changes on nearly every repaint, but re-serializing the
+// full accumulator every ~300ms would eat the CPU the resume saves. The
+// rendered output is computed fresh each parse regardless — only persistence
+// is throttled, so a skipped write just means the next resume replays a few
+// extra seconds of lines (cheap). Matches context-cache's WRITE_TTL_MS.
+const TRANSCRIPT_WRITE_TTL_MS = 3000;
+// Cap the max length of an untrusted tool target / agent description persisted
+// in the resume accumulator (the display truncates well below this anyway).
+const RESUME_TEXT_MAX_LEN = 256;
 
 // Hard cap on the advisor model ID captured from the transcript. Real Claude
 // model IDs (e.g. "claude-haiku-4-5-20251001") fit comfortably under this; the
@@ -278,51 +326,99 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
   };
 }
 
-function readTranscriptCache(transcriptPath: string, state: TranscriptFileState): TranscriptData | null {
+function reviveToolEntry(s: SerializedToolEntry): ToolEntry {
+  return { ...s, startTime: new Date(s.startTime), endTime: s.endTime ? new Date(s.endTime) : undefined };
+}
+
+function reviveAgentEntry(s: SerializedAgentEntry): AgentEntry {
+  return { ...s, startTime: new Date(s.startTime), endTime: s.endTime ? new Date(s.endTime) : undefined };
+}
+
+function hashLine(line: string): string {
+  return createHash('sha256').update(line).digest('hex').slice(0, 32);
+}
+
+/** True iff the file's last byte is a newline (i.e. it ends on a line boundary). */
+function fileEndsWithNewline(transcriptPath: string, size: number): boolean {
+  if (size === 0) return true;
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(transcriptPath, 'r');
+    const buf = Buffer.alloc(1);
+    fs.readSync(fd, buf, 0, 1, size - 1);
+    return buf[0] === 0x0a;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* best effort */ }
+    }
+  }
+}
+
+/**
+ * Read + validate the raw cache file (for both exact-hit and resume paths).
+ * Supersedes the old data-only reader — the exact-hit deserialize now happens
+ * at the call site so the same read can also feed the resume accumulator.
+ */
+function readTranscriptCacheRaw(transcriptPath: string): TranscriptCacheFile | null {
   try {
     const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
-    const raw = fs.readFileSync(cachePath, 'utf8');
-    const parsed = JSON.parse(raw) as TranscriptCacheFile;
+    const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as TranscriptCacheFile;
     if (
       parsed.version !== TRANSCRIPT_CACHE_VERSION
       || !parsed.data
       || !parsed.transcriptPath
       || parsed.transcriptPath !== path.resolve(transcriptPath)
-      || parsed.transcriptState?.mtimeMs !== state.mtimeMs
-      || parsed.transcriptState?.size !== state.size
+      || typeof parsed.transcriptState?.mtimeMs !== 'number'
+      || typeof parsed.transcriptState?.size !== 'number'
     ) {
       return null;
     }
-
-    return deserializeTranscriptData(parsed.data);
+    return parsed;
   } catch (err) {
     debug('Failed to read transcript cache:', err instanceof Error ? err.message : err);
     return null;
   }
 }
 
-function writeTranscriptCache(transcriptPath: string, state: TranscriptFileState, data: TranscriptData): void {
+function writeTranscriptCache(
+  transcriptPath: string,
+  state: TranscriptFileState,
+  data: TranscriptData,
+  resume?: { acc: SerializedAcc; firstLineHash: string; resumeSkip: number },
+): void {
   try {
     const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
-    const cacheDir = path.dirname(cachePath);
-    fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+    // Throttle: skip the write if the cache was persisted within the TTL. The
+    // parse already produced the rendered result; a fresh cache file means a
+    // recent write we don't need to repeat during a streaming burst.
     try {
-      fs.chmodSync(cacheDir, 0o700);
+      const st = fs.statSync(cachePath);
+      if (Date.now() - st.mtimeMs < TRANSCRIPT_WRITE_TTL_MS) {
+        return;
+      }
     } catch {
-      // Best-effort: some filesystems do not support POSIX modes.
+      // No cache yet (or unreadable) → fall through and write.
     }
+    const cacheDir = path.dirname(cachePath);
     const payload: TranscriptCacheFile = {
       version: TRANSCRIPT_CACHE_VERSION,
       transcriptPath: path.resolve(transcriptPath),
       transcriptState: state,
       data: serializeTranscriptData(data),
+      ...(resume && {
+        acc: resume.acc,
+        firstLineHash: resume.firstLineHash,
+        resumeSkip: resume.resumeSkip,
+      }),
     };
-    fs.writeFileSync(cachePath, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 });
-    try {
-      fs.chmodSync(cachePath, 0o600);
-    } catch {
-      // Best-effort: cache permissions should not break rendering.
-    }
+    // Atomic (split panes can share a transcript path; the payload now carries
+    // the resume accumulator, so a torn read is costlier). writeJsonCacheAtomic
+    // creates the 0700 dir itself.
+    writeJsonCacheAtomic(cachePath, payload, (err) =>
+      debug('Failed to write transcript cache:', err instanceof Error ? err.message : err),
+    );
     // One file per session ever seen, never previously pruned (observed 4k+
     // entries in the wild). Sampled sweep bounds growth off the hot path.
     if (Math.random() < CACHE_SWEEP_SAMPLE_RATE) {
@@ -358,9 +454,14 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     return result;
   }
 
-  const cached = readTranscriptCache(canonicalTranscriptPath, transcriptState);
-  if (cached) {
-    return cached;
+  const cacheRaw = readTranscriptCacheRaw(canonicalTranscriptPath);
+  // Exact hit (unchanged file, e.g. idle): return the cached finalized data.
+  if (
+    cacheRaw
+    && cacheRaw.transcriptState.mtimeMs === transcriptState.mtimeMs
+    && cacheRaw.transcriptState.size === transcriptState.size
+  ) {
+    return deserializeTranscriptData(cacheRaw.data);
   }
 
   const toolMap = new Map<string, ToolEntry>();
@@ -388,16 +489,127 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
 
   let parsedCleanly = false;
 
+  // Incremental resume (issue #1): when the file only GREW since the cached
+  // parse, restore the committed accumulator and skip the already-parsed lines
+  // rather than re-parsing the whole transcript. The first line's hash is
+  // re-validated inside the loop; a mismatch (rotated/rewritten, not appended)
+  // resets to a full parse.
+  let resuming = false;
+  let skipCount = 0;
+  let lastLineParsedOk = false;
+
+  const resetAccumulators = (): void => {
+    toolMap.clear();
+    skillSet.clear();
+    mcpServerSet.clear();
+    agentMap.clear();
+    latestTodos.length = 0;
+    taskIdToIndex.clear();
+    queueCompletionMap.clear();
+    seenMessageIds.clear();
+    latestSlug = undefined;
+    customTitle = undefined;
+    latestAdvisorModel = undefined;
+    latestUltracodeActive = undefined;
+    lastCompactBoundaryAt = undefined;
+    lastCompactPostTokens = undefined;
+    compactionCount = 0;
+    lastUsageKey = undefined;
+    sessionTokens.inputTokens = 0;
+    sessionTokens.outputTokens = 0;
+    sessionTokens.cacheCreationTokens = 0;
+    sessionTokens.cacheReadTokens = 0;
+    result.sessionStart = undefined;
+    result.lastAssistantResponseAt = undefined;
+    result.lastAssistantModel = undefined;
+  };
+
+  if (
+    cacheRaw?.acc != null
+    && typeof cacheRaw.resumeSkip === 'number'
+    && cacheRaw.transcriptState.size > 0
+    // STRICTLY greater: a real append always grows the file. Size EQUAL is
+    // either an unchanged file (handled by the exact-hit path above) or a
+    // same-size in-place rewrite — which must NOT resume (it would trust stale
+    // committed lines). Transcripts are append-only in Claude Code; the
+    // first-line hash (validated at index 0 in the loop) additionally catches
+    // a rotated/rewritten file whose bytes merely grew.
+    && transcriptState.size > cacheRaw.transcriptState.size
+  ) {
+    // Restoring an untrusted (possibly corrupt/hand-edited) cache: a malformed
+    // `acc` that passed the shallow shape check must fall back to a full parse,
+    // not crash the render. On any restore error, reset and parse from scratch.
+    try {
+      const a = cacheRaw.acc;
+      for (const t of a.tools) toolMap.set(t.id, reviveToolEntry(t));
+      for (const ag of a.agents) agentMap.set(ag.id, reviveAgentEntry(ag));
+      for (const s of a.skills) skillSet.add(s);
+      for (const m of a.mcpServers) mcpServerSet.add(m);
+      latestTodos = a.todos.map((td) => ({ ...td }));
+      for (const [k, v] of a.taskIdToIndex) taskIdToIndex.set(k, v);
+      for (const [k, iso] of a.queueCompletion) queueCompletionMap.set(k, new Date(iso));
+      for (const id of a.seenMessageIds) seenMessageIds.add(id);
+      latestSlug = a.latestSlug;
+      customTitle = a.customTitle;
+      latestAdvisorModel = a.latestAdvisorModel;
+      latestUltracodeActive = a.latestUltracodeActive;
+      lastCompactBoundaryAt = a.lastCompactBoundaryAt ? new Date(a.lastCompactBoundaryAt) : undefined;
+      lastCompactPostTokens = a.lastCompactPostTokens;
+      compactionCount = a.compactionCount;
+      lastUsageKey = a.lastUsageKey;
+      sessionTokens.inputTokens = a.sessionTokens.inputTokens;
+      sessionTokens.outputTokens = a.sessionTokens.outputTokens;
+      sessionTokens.cacheCreationTokens = a.sessionTokens.cacheCreationTokens;
+      sessionTokens.cacheReadTokens = a.sessionTokens.cacheReadTokens;
+      result.sessionStart = a.sessionStart ? new Date(a.sessionStart) : undefined;
+      result.lastAssistantResponseAt = a.lastAssistantResponseAt ? new Date(a.lastAssistantResponseAt) : undefined;
+      result.lastAssistantModel = a.lastAssistantModel;
+      resuming = true;
+      skipCount = Math.max(0, cacheRaw.resumeSkip);
+    } catch (err) {
+      debug('Malformed resume accumulator, full re-parse:', err instanceof Error ? err.message : err);
+      resetAccumulators();
+      resuming = false;
+      skipCount = 0;
+    }
+  }
+
+  let lineIndex = -1;
+  let firstLine = '';
+
   try {
-    const fileStream = createReadStreamImpl(canonicalTranscriptPath);
+    // Pin the read to exactly the stat'd byte range so the parse is a
+    // consistent snapshot: if the writer appends WHILE we stream, we still
+    // stop at transcriptState.size, so `fileEndsWithNewline(path, size)` (which
+    // checks byte[size-1]) always matches the last byte we actually read. An
+    // unpinned stream could read past `size`, desyncing that newline check and
+    // (worst case) marking a still-being-written line as committed → the next
+    // resume would skip it forever. `end` is inclusive; guard the empty file.
+    const fileStream = createReadStreamImpl(
+      canonicalTranscriptPath,
+      transcriptState.size > 0 ? { end: transcriptState.size - 1 } : undefined,
+    );
     const rl = readline.createInterface({
       input: fileStream,
       crlfDelay: Infinity,
     });
 
     for await (const line of rl) {
+      lineIndex += 1;
+      if (lineIndex === 0) {
+        firstLine = line;
+        if (resuming && cacheRaw?.firstLineHash !== undefined && hashLine(line) !== cacheRaw.firstLineHash) {
+          resetAccumulators();
+          resuming = false;
+          skipCount = 0;
+        }
+      }
+      if (lineIndex < skipCount) {
+        continue; // already committed in a previous parse
+      }
       if (!line.trim()) {
         lastUsageKey = undefined;
+        lastLineParsedOk = false;
         continue;
       }
 
@@ -519,8 +731,10 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
           }
         }
         processEntry(entry, toolMap, skillSet, mcpServerSet, agentMap, taskIdToIndex, latestTodos, result);
+        lastLineParsedOk = true;
       } catch (err) {
         lastUsageKey = undefined;
+        lastLineParsedOk = false;
         debug('Skipping malformed transcript line:', err instanceof Error ? err.message : err);
       }
     }
@@ -558,7 +772,57 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   result.advisorModel = latestAdvisorModel;
   result.ultracodeActive = latestUltracodeActive;
   if (parsedCleanly) {
-    writeTranscriptCache(canonicalTranscriptPath, transcriptState, result);
+    // Build the resume accumulator. Tools/agents are capped to the most recent
+    // RESUME_ENTRY_CAP — far beyond the 20/10 display window — so a late
+    // tool_result for a long-scrolled-off tool is a no-op (it wouldn't be
+    // displayed anyway), while the cache file stays bounded.
+    const linesProcessed = lineIndex + 1;
+    const lastByteNewline = fileEndsWithNewline(canonicalTranscriptPath, transcriptState.size);
+    // If the final line committed (valid JSON) even without a trailing newline,
+    // it's already in the accumulator → skip it next time; otherwise it was a
+    // partial/invalid line (no effect) → re-read it next time to catch its
+    // completion.
+    const resumeSkip = (lastByteNewline || lastLineParsedOk)
+      ? linesProcessed
+      : Math.max(0, linesProcessed - 1);
+    const acc: SerializedAcc = {
+      tools: Array.from(toolMap.values()).slice(-RESUME_ENTRY_CAP).map((t) => ({
+        ...t, startTime: t.startTime.toISOString(), endTime: t.endTime?.toISOString(),
+      })),
+      agents: Array.from(agentMap.values()).slice(-RESUME_ENTRY_CAP).map((ag) => ({
+        ...ag, startTime: ag.startTime.toISOString(), endTime: ag.endTime?.toISOString(),
+      })),
+      skills: Array.from(skillSet.values()),
+      mcpServers: Array.from(mcpServerSet.values()),
+      todos: latestTodos.map((td) => ({ ...td })),
+      // NOT capped, unlike tools/agents: this is a lookup index into the
+      // uncapped, fully-displayed latestTodos — evicting an open todo's taskId
+      // would freeze its status on a later TaskUpdate. Bounded in practice by
+      // the distinct-taskId count (tracks todo count; TodoWrite rebuilds it),
+      // and each entry is tiny.
+      taskIdToIndex: Array.from(taskIdToIndex.entries()),
+      // Capped like tools/agents — the only otherwise-unbounded field; a
+      // completion for a long-scrolled-off agent can't affect the display.
+      queueCompletion: Array.from(queueCompletionMap.entries()).slice(-RESUME_ENTRY_CAP).map(([k, d]) => [k, d.toISOString()]),
+      seenMessageIds: Array.from(seenMessageIds.values()),
+      latestSlug,
+      customTitle,
+      latestAdvisorModel,
+      latestUltracodeActive,
+      lastCompactBoundaryAt: lastCompactBoundaryAt?.toISOString(),
+      lastCompactPostTokens,
+      compactionCount,
+      lastUsageKey,
+      sessionTokens: { ...sessionTokens },
+      sessionStart: result.sessionStart?.toISOString(),
+      lastAssistantResponseAt: result.lastAssistantResponseAt?.toISOString(),
+      lastAssistantModel: result.lastAssistantModel,
+    };
+    writeTranscriptCache(canonicalTranscriptPath, transcriptState, result, {
+      acc,
+      firstLineHash: hashLine(firstLine),
+      resumeSkip,
+    });
   }
 
   return result;
@@ -769,7 +1033,10 @@ function extractTarget(toolName: string, input?: Record<string, unknown>): strin
  */
 function sanitizeTarget(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const cleaned = sanitizeDisplayText(value).trim();
+  // Length-capped: a model-generated path/pattern/description is truncated far
+  // below this by the renderer, and this bounds the resume-cache payload for
+  // the up-to-256 entries it now persists.
+  const cleaned = sanitizeDisplayText(value).trim().slice(0, RESUME_TEXT_MAX_LEN);
   return cleaned.length > 0 ? cleaned : undefined;
 }
 
