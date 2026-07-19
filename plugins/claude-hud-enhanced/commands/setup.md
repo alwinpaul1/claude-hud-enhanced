@@ -670,10 +670,19 @@ If a write fails with `File has been unexpectedly modified`, re-read the file an
 {
   "statusLine": {
     "type": "command",
-    "command": "{GENERATED_COMMAND}"
+    "command": "{GENERATED_COMMAND}",
+    "refreshInterval": 5
   }
 }
 ```
+
+**`refreshInterval` is required for idle updates.** Claude Code only re-runs the
+statusline on conversation events (new assistant message, `/compact`, permission
+mode change, vim mode toggle) — those triggers go quiet while the session is
+idle. The 5-second timer keeps the HUD live when nothing is happening in the
+terminal: the session-duration clock ticks, cross-terminal usage sync
+(`oauthUsagePoll`) actually appears in idle terminals, idle usage reset fires at
+window rollover, and the all-idle OAuth refresher can trigger at all.
 
 **JSON safety**: Write `settings.json` with a real JSON serializer or editor API, not manual string concatenation.
 If you must inspect the saved JSON manually, the embedded bash command must preserve escaped backslashes inside the awk fragment.

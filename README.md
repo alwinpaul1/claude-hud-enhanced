@@ -116,7 +116,7 @@ Claude Code → stdin JSON → claude-hud → stdout → displayed in your termi
 **Key features:**
 - Native token data from Claude Code (not estimated)
 - Parses the transcript for tool/agent activity
-- Updates every ~300ms
+- Updates on conversation events (debounced 300ms) and every 5s while idle (`refreshInterval`, written by setup)
 
 ---
 

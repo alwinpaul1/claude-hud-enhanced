@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.9] - 2026-07-19
+
+### Fixed
+- **Setup now writes `statusLine.refreshInterval: 5` — required for any idle-time updates.** Root cause of "idle terminals never pick up usage from active ones": Claude Code only re-runs the statusline on conversation events (new assistant message, `/compact`, permission-mode/vim-mode change; debounced 300ms) and those triggers **go quiet while a session is idle** — so an idle terminal's HUD froze at its last render no matter what the plugin computed. The hybrid usage sync (0.4.6), idle usage reset (0.4.5), and the all-idle OAuth refresher trigger (0.4.7) all depend on idle repaints; the 5s refresh timer makes them actually visible/fire. Existing installs: add `"refreshInterval": 5` to the `statusLine` block in `settings.json` (or re-run `/claude-hud-enhanced:setup`). Docs corrected — the HUD is *not* invoked every ~300ms unconditionally.
+
 ## [0.4.8] - 2026-07-19
 
 ### Fixed
