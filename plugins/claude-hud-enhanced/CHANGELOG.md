@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0] - 2026-07-19
+
+### Added
+- **Incremental transcript parsing (issue #1) — the statusline no longer re-parses the entire transcript on every repaint.** Previously each paint read and JSON-parsed the whole session transcript from line 1; on a long session (tens–hundreds of MB) that was an O(session-size) cost paid every ~300ms while actively working, and it could briefly stall other terminals sharing a daemon. Now the parser persists its full accumulator (tools, agents, todos, token totals, dedup set, …) and, when the file has only grown, restores it and processes just the appended lines. **Measured 8.7× faster** on an 11.5MB / 40k-line transcript (173ms → 20ms), with output verified byte-identical to a full parse.
+
+  Correctness and safety (reviewed by four independent adversarial agents, all findings fixed):
+  - **Equivalence + proof tests**: incremental output is byte-identical to a full parse across every split point (skills, MCP, dual-log dedup, background-agent queue completion, compaction, TaskCreate/TaskUpdate); a dedicated test proves the resume path is genuinely engaged (a corrupted-but-skipped prefix line doesn't affect output).
+  - **Consistent snapshot**: the read stream is pinned to the stat'd byte range (`{ end: size-1 }`), so a writer appending mid-read can never desync the parse or drop a still-being-written line — appended lines are simply picked up on the next parse.
+  - **Rewrite/rotation defense**: resume only on a strict size increase (`size >`), with a first-line hash guarding against a rotated file; a same-size in-place rewrite forces a full re-parse (tested). A malformed cache falls back to a full parse instead of crashing.
+  - **Bounded cache**: tools/agents/queueCompletion capped at 256 (far above the 20/10 display window), message-ids at 4096, target/description length at 256; `taskIdToIndex` deliberately uncapped (it indexes the live, uncapped todo list).
+  - **Throttled write** (3s TTL): during a streaming burst the larger resume cache is persisted at most once per 3s — the rendered output is always computed fresh, so only persistence is throttled, keeping the feature a clean net win.
+- Transcript cache is now written atomically (tmp+rename), matching the other caches.
+
 ## [0.5.2] - 2026-07-19
 
 Whole-plugin max-effort review (4 fresh reviewer agents across the full 10k-line source, all-platforms mandate). Confirmed findings fixed:
