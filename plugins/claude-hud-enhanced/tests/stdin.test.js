@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
-import { readStdin, getProviderLabel, getContextPercent, getBufferedPercent, shouldHideUsage } from '../dist/stdin.js';
+import { readStdin, getProviderLabel, getContextPercent, getBufferedPercent, shouldHideUsage, getUsageFromStdin } from '../dist/stdin.js';
 import { mergeConfig } from '../dist/config.js';
 
 test('readStdin returns null for TTY input', async () => {
@@ -152,6 +152,24 @@ test('autoCompactWindow overrides native used_percentage', () => {
   };
 
   assert.equal(getContextPercent(stdin, 200000), 35);
+});
+
+// parseRateLimitPercent boundary: a near-100 value must not falsely display
+// as 100 (which drives the "Limit reached" branch via isLimitReached === 100).
+
+test('usage: 99.6% displays as 99, not a false 100/limit-reached', () => {
+  const u = getUsageFromStdin({ rate_limits: { five_hour: { used_percentage: 99.6 } } });
+  assert.equal(u.fiveHour, 99, 'rounds down below a true cap, not up to 100');
+});
+
+test('usage: a genuine 100% still reports 100', () => {
+  const u = getUsageFromStdin({ rate_limits: { five_hour: { used_percentage: 100 } } });
+  assert.equal(u.fiveHour, 100);
+});
+
+test('usage: normal values round as before', () => {
+  assert.equal(getUsageFromStdin({ rate_limits: { five_hour: { used_percentage: 50.4 } } }).fiveHour, 50);
+  assert.equal(getUsageFromStdin({ rate_limits: { five_hour: { used_percentage: 0 } } }).fiveHour, 0);
 });
 
 // shouldHideUsage tests — subscription usage windows only exist for OAuth

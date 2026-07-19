@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
+import { stripBom } from './utils/sanitize.js';
 const debug = createDebug('config');
 export const DEFAULT_ELEMENT_ORDER = [
     'project',
@@ -595,7 +596,7 @@ export async function loadConfig() {
         if (!fs.existsSync(configPath)) {
             return mergeConfig({});
         }
-        const content = fs.readFileSync(configPath, 'utf-8');
+        const content = stripBom(fs.readFileSync(configPath, 'utf-8'));
         const userConfig = JSON.parse(content);
         return mergeConfig(userConfig);
     }

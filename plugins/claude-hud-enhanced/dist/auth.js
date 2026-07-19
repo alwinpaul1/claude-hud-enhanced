@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { getClaudeConfigJsonPath } from './claude-config-dir.js';
-import { sanitizeDisplayText } from './utils/sanitize.js';
+import { sanitizeDisplayText, stripBom } from './utils/sanitize.js';
 const EMPTY_AUTH_INFO = { method: null, user: null };
 const API_KEY_AUTH_INFO = { method: 'API Key', user: null };
 function hasApiKey(env) {
@@ -80,7 +80,7 @@ export function readAuthInfo() {
     }
     try {
         const configJsonPath = getClaudeConfigJsonPath(os.homedir());
-        const content = fs.readFileSync(configJsonPath, 'utf-8');
+        const content = stripBom(fs.readFileSync(configJsonPath, 'utf-8'));
         return deriveAuthInfo(JSON.parse(content));
     }
     catch {

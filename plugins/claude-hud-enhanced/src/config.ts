@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
+import { stripBom } from './utils/sanitize.js';
 import type { Language } from './i18n/types.js';
 
 const debug = createDebug('config');
@@ -877,7 +878,7 @@ export async function loadConfig(): Promise<HudConfig> {
       return mergeConfig({});
     }
 
-    const content = fs.readFileSync(configPath, 'utf-8');
+    const content = stripBom(fs.readFileSync(configPath, 'utf-8'));
     const userConfig = JSON.parse(content) as Partial<HudConfig>;
     return mergeConfig(userConfig);
   } catch (err) {

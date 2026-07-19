@@ -357,7 +357,13 @@ function parseRateLimitPercent(value: number | null | undefined): number | null 
     return null;
   }
 
-  return Math.round(Math.min(100, Math.max(0, value)));
+  const clamped = Math.min(100, Math.max(0, value));
+  // Only report exactly 100 when the account is genuinely at/over the cap.
+  // Rounding (e.g. 99.6 → 100) otherwise drives the "Limit reached" branch
+  // (isLimitReached uses === 100) for a user who still has headroom, so cap
+  // the rounded display at 99 below a true 100.
+  if (clamped >= 100) return 100;
+  return Math.min(99, Math.round(clamped));
 }
 
 function parseRateLimitResetAt(value: number | null | undefined): Date | null {
@@ -413,10 +419,15 @@ function parseScopedWindows(modelScoped: unknown): ScopedUsageWindow[] {
       continue;
     }
     const utilization = entry?.utilization;
-    const percent = utilization === null
+    // Treat an ABSENT utilization key the same as an explicit null: keep the
+    // window with percent=null (renders "--"). Only drop it when a value is
+    // genuinely PRESENT but unparseable (garbage), so a partially-rolled-out
+    // window type that omits the key doesn't silently vanish from the HUD.
+    const utilizationMissing = utilization === null || utilization === undefined;
+    const percent = utilizationMissing
       ? null
-      : parseRateLimitPercent(utilization as number | undefined);
-    if (utilization !== null && percent === null) {
+      : parseRateLimitPercent(utilization as number);
+    if (!utilizationMissing && percent === null) {
       continue;
     }
     const resetAtRaw = entry?.resets_at;

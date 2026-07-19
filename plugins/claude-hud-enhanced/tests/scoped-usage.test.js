@@ -132,6 +132,17 @@ test('getUsageFromStdin drops malformed model_scoped entries', () => {
   assert.equal(usage.scopedWindows[1].resetAt, null);
 });
 
+test('getUsageFromStdin keeps a scoped window when the utilization KEY is absent (not just explicit null)', () => {
+  const usage = getUsageFromStdin(stdinWith({
+    model_scoped: [
+      { display_name: 'NewWindow', resets_at: null }, // utilization key omitted entirely
+    ],
+  }));
+  assert.equal(usage.scopedWindows.length, 1, 'absent-key window must not vanish');
+  assert.equal(usage.scopedWindows[0].label, 'NewWindow');
+  assert.equal(usage.scopedWindows[0].percent, null, 'renders as "--", same as explicit null');
+});
+
 test('getUsageFromStdin clamps utilization into 0-100 percent', () => {
   const usage = getUsageFromStdin(stdinWith({
     model_scoped: [

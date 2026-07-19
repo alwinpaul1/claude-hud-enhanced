@@ -3,13 +3,15 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { createHash } from 'node:crypto';
 import { createDebug } from './debug.js';
+import { stripBom } from './utils/sanitize.js';
+import { CACHE_SWEEP_SAMPLE_RATE as CFG_SWEEP_RATE, sweepCacheDir as sweepCfgCacheDir, writeJsonCacheAtomic, } from './utils/cache-file.js';
 import { getClaudeConfigDir, getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
 const debug = createDebug('config-reader');
 function getMcpServerNames(filePath) {
     if (!fs.existsSync(filePath))
         return new Set();
     try {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = stripBom(fs.readFileSync(filePath, 'utf8'));
         const config = JSON.parse(content);
         if (config.mcpServers && typeof config.mcpServers === 'object') {
             return new Set(Object.keys(config.mcpServers));
@@ -24,7 +26,7 @@ function getDisabledMcpServers(filePath, key) {
     if (!fs.existsSync(filePath))
         return new Set();
     try {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = stripBom(fs.readFileSync(filePath, 'utf8'));
         const config = JSON.parse(content);
         if (Array.isArray(config[key])) {
             const validNames = config[key].filter((s) => typeof s === 'string');
@@ -53,7 +55,7 @@ function countHooksInFile(filePath) {
     if (!fs.existsSync(filePath))
         return 0;
     try {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = stripBom(fs.readFileSync(filePath, 'utf8'));
         const config = JSON.parse(content);
         if (config.hooks && typeof config.hooks === 'object') {
             return Object.keys(config.hooks).length;
@@ -68,7 +70,7 @@ function readStringSetting(filePath, key) {
     if (!fs.existsSync(filePath))
         return undefined;
     try {
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = stripBom(fs.readFileSync(filePath, 'utf8'));
         const config = JSON.parse(content);
         if (typeof config[key] === 'string') {
             const value = config[key].trim();
@@ -297,14 +299,15 @@ function readConfigCache(cacheKey, homeDir) {
 function writeConfigCache(key, data, homeDir) {
     try {
         const cachePath = getConfigCachePath(key.cwd, key.claudeConfigDir, homeDir);
-        ensurePrivateDir(path.dirname(cachePath));
+        const dir = path.dirname(cachePath);
+        ensurePrivateDir(dir);
         const payload = { key, data };
-        fs.writeFileSync(cachePath, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 });
-        try {
-            fs.chmodSync(cachePath, 0o600);
-        }
-        catch {
-            // Best-effort: some filesystems do not support POSIX modes.
+        // Atomic write (shared across every terminal on a profile — torn reads
+        // are a real spurious-cache-miss source under many-terminal load).
+        writeJsonCacheAtomic(cachePath, payload, (err) => debug('Failed to write config cache:', err instanceof Error ? err.message : err));
+        // Bound growth: one file per (cwd, configDir) pair, previously never pruned.
+        if (Math.random() < CFG_SWEEP_RATE) {
+            sweepCfgCacheDir(dir, Date.now(), (err) => debug('Config cache sweep failed:', err instanceof Error ? err.message : err));
         }
     }
     catch (err) {
