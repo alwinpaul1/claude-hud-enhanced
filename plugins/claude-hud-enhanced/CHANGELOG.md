@@ -1,6 +1,24 @@
 # Changelog
 
-## [0.5.0] - 2026-07-19
+## [0.5.1] - 2026-07-19
+
+Three-round iterative max-effort review of the 0.5.0 daemon (7 fresh reviewer agents across rounds; each round fixed, then re-reviewed, until a round found zero functional defects). 16 confirmed findings fixed in total.
+
+### Changed
+- **The flagship two-row compact layout is now the out-of-the-box DEFAULT on every platform** (`compactSingleRow: true`). All other visual pieces of the look were already default; behavior flags (`oauthUsagePoll`, `idleUsageReset`, `daemon.enabled`) remain opt-in, and a test now pins both facts.
+
+### Fixed (daemon hardening, from the review loop)
+- **Per-request 2s timeout** — one slow repo (network mount) can no longer stall every other terminal's queued render; orphaned handlers are barred from mutating process globals so a timed-out request can't corrupt a later request's terminal width (regression-tested; this bug was itself introduced by the first round's fix and caught by the second round).
+- **`vm_stat` made async** — a slow memory probe can no longer freeze the daemon's event loop (was `execFileSync`).
+- **Client timer hygiene + deliberate failure taxonomy** — both timeouts cleared on every exit path (no ~450ms zombie clients); pre-connect vs post-connect errors now explicitly decide "unlink stale socket + respawn" vs "leave the live daemon alone".
+- **Socket-path robustness**: byte-length (not UTF-16) check against `sun_path` limits; fallback socket in a hashed 0700 subdir of `XDG_RUNTIME_DIR`/tmpdir (uniform access guard on every platform — never relies on socket-file permission folklore); WSL DrvFS profile dirs (`/mnt/c/…`) routed to native locations instead of endless doomed respawns; loud debug + clean exit when the runtime dir is unwritable.
+- **Windows**: `--daemon` now exits(0) immediately (phase 1 is unix-only; a half-working pipe daemon would be worse than the clean inline fallback the Windows client already takes).
+- **Abuse resistance**: `maxConnections=16`, 1s per-socket idle destroy, `COLUMNS` validated at the trust boundary (1–2000), profile echo check so a daemon can never serve another profile's request.
+- **Empty renders round-trip as empty** — no stray blank line; daemon output stays byte-identical to inline (integration-tested along with the fallback, skip-inline, and disabled paths of the `main()` seam, which previously had zero coverage).
+- Process signal/exception listeners are removed on shutdown; the queue/env/orphan discipline, EADDRINUSE loser behavior, and spawn single-flight were re-verified clean by fresh eyes in the final round.
+
+### Tests
+- 1006 pass / 0 fail — 10 new tests this release (multi-terminal concurrency, two-profile isolation, orphan-env regression, COLUMNS boundary, sun_path fallback shape, daemon seam integration ×4).
 
 ### Added
 - **Warm daemon mode (`daemon.enabled`, opt-in, default off; macOS/Linux — phase 1 of issue #6).** A long-lived per-profile process serves renders over a local unix socket (`daemon/hud.sock` in the HUD data dir, 0600/0700; long paths fall back to a hashed name under the OS temp dir to stay inside the `sun_path` limit). The statusline invocation becomes a thin client: connect (50ms budget) → send the parsed stdin → print the daemon's render (500ms budget). **Any** failure — daemon absent, slow, crashed, mid-upgrade — falls through to the unmodified inline path, so the flag can only make repaints faster, never break them. Honest scope: phase 1 eliminates the per-repaint *work* (transcript parse, config load, git status all run in the warm process); the client still pays its own runtime startup, so the measured win here is ~35% with node — it grows with transcript size and multiplies once issue #1's incremental parsing lands in the daemon's warm memory. Design + verified deviations in `docs/daemon-mode-design.md`:

@@ -46,9 +46,17 @@ function requestOnce(
 ): Promise<RequestOutcome> {
   return new Promise((resolve) => {
     let settled = false;
+    let connected = false; // distinguishes conn-error (never connected) from failed
+    let connectTimer: NodeJS.Timeout | undefined;
+    let overallTimer: NodeJS.Timeout | undefined;
     const finish = (outcome: RequestOutcome, socket?: net.Socket): void => {
       if (settled) return;
       settled = true;
+      // Always clear BOTH timers on every exit path, or a dangling timer keeps
+      // this short-lived statusline process alive up to responseTimeoutMs past
+      // the point it already resolved.
+      clearTimeout(connectTimer);
+      clearTimeout(overallTimer);
       socket?.destroy();
       resolve(outcome);
     };
@@ -61,16 +69,17 @@ function requestOnce(
       return;
     }
 
-    const connectTimer = setTimeout(() => finish({ kind: 'conn-error' }, socket), connectTimeoutMs);
-    const overallTimer = setTimeout(() => finish({ kind: 'failed' }, socket), responseTimeoutMs);
+    connectTimer = setTimeout(() => finish({ kind: 'conn-error' }, socket), connectTimeoutMs);
+    overallTimer = setTimeout(() => finish({ kind: 'failed' }, socket), responseTimeoutMs);
 
-    socket.on('error', () => {
-      clearTimeout(connectTimer);
-      clearTimeout(overallTimer);
-      finish({ kind: 'conn-error' }, socket);
-    });
+    // An error BEFORE 'connect' means nothing is listening (ENOENT/ECONNREFUSED)
+    // → conn-error (unlink stale socket + respawn). An error AFTER connect means
+    // a live daemon reset mid-exchange → failed (leave its socket alone). This
+    // is the discrimination the outcome contract promises, made deliberate.
+    socket.on('error', () => finish({ kind: connected ? 'failed' : 'conn-error' }, socket));
 
     socket.on('connect', () => {
+      connected = true;
       clearTimeout(connectTimer);
       socket.write(encodeMessage(request));
     });
@@ -78,7 +87,6 @@ function requestOnce(
     socket.on(
       'data',
       createLineDecoder((message) => {
-        clearTimeout(overallTimer);
         const res = message as DaemonResponse | null;
         if (
           res != null &&
@@ -92,11 +100,7 @@ function requestOnce(
       }),
     );
 
-    socket.on('close', () => {
-      clearTimeout(connectTimer);
-      clearTimeout(overallTimer);
-      finish({ kind: 'failed' }, socket);
-    });
+    socket.on('close', () => finish({ kind: connected ? 'failed' : 'conn-error' }, socket));
   });
 }
 

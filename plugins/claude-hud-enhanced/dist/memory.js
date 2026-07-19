@@ -1,8 +1,10 @@
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { promisify } from 'node:util';
 import { createDebug } from './debug.js';
 const debug = createDebug('memory');
+const execFileAsync = promisify(execFile);
 export function parseVmStat(output) {
     const pageSizeMatch = output.match(/page size of (\d+) bytes/);
     if (!pageSizeMatch)
@@ -43,13 +45,13 @@ const readLinuxMemory = () => {
         return readDefaultMemory();
     }
 };
-const readMacOSMemory = () => {
+const readMacOSMemory = async () => {
     try {
-        const output = execFileSync('/usr/bin/vm_stat', {
+        const { stdout } = await execFileAsync('/usr/bin/vm_stat', {
             encoding: 'utf8',
             timeout: 5000,
         });
-        const parsed = parseVmStat(output);
+        const parsed = parseVmStat(stdout);
         if (!parsed)
             return readDefaultMemory();
         const totalBytes = os.totalmem();
@@ -66,7 +68,7 @@ let readMemory = process.platform === 'darwin' ? readMacOSMemory :
         readDefaultMemory;
 export async function getMemoryUsage() {
     try {
-        const { totalBytes, freeBytes } = readMemory();
+        const { totalBytes, freeBytes } = await readMemory();
         if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
             return null;
         }

@@ -13,10 +13,18 @@ export const RESPONSE_TIMEOUT_MS = 500;
 function requestOnce(socketPath, request, connectTimeoutMs, responseTimeoutMs) {
     return new Promise((resolve) => {
         let settled = false;
+        let connected = false; // distinguishes conn-error (never connected) from failed
+        let connectTimer;
+        let overallTimer;
         const finish = (outcome, socket) => {
             if (settled)
                 return;
             settled = true;
+            // Always clear BOTH timers on every exit path, or a dangling timer keeps
+            // this short-lived statusline process alive up to responseTimeoutMs past
+            // the point it already resolved.
+            clearTimeout(connectTimer);
+            clearTimeout(overallTimer);
             socket?.destroy();
             resolve(outcome);
         };
@@ -28,19 +36,19 @@ function requestOnce(socketPath, request, connectTimeoutMs, responseTimeoutMs) {
             resolve({ kind: 'conn-error' });
             return;
         }
-        const connectTimer = setTimeout(() => finish({ kind: 'conn-error' }, socket), connectTimeoutMs);
-        const overallTimer = setTimeout(() => finish({ kind: 'failed' }, socket), responseTimeoutMs);
-        socket.on('error', () => {
-            clearTimeout(connectTimer);
-            clearTimeout(overallTimer);
-            finish({ kind: 'conn-error' }, socket);
-        });
+        connectTimer = setTimeout(() => finish({ kind: 'conn-error' }, socket), connectTimeoutMs);
+        overallTimer = setTimeout(() => finish({ kind: 'failed' }, socket), responseTimeoutMs);
+        // An error BEFORE 'connect' means nothing is listening (ENOENT/ECONNREFUSED)
+        // → conn-error (unlink stale socket + respawn). An error AFTER connect means
+        // a live daemon reset mid-exchange → failed (leave its socket alone). This
+        // is the discrimination the outcome contract promises, made deliberate.
+        socket.on('error', () => finish({ kind: connected ? 'failed' : 'conn-error' }, socket));
         socket.on('connect', () => {
+            connected = true;
             clearTimeout(connectTimer);
             socket.write(encodeMessage(request));
         });
         socket.on('data', createLineDecoder((message) => {
-            clearTimeout(overallTimer);
             const res = message;
             if (res != null &&
                 res.v === IPC_PROTOCOL_VERSION &&
@@ -51,11 +59,7 @@ function requestOnce(socketPath, request, connectTimeoutMs, responseTimeoutMs) {
                 finish({ kind: 'failed' }, socket);
             }
         }));
-        socket.on('close', () => {
-            clearTimeout(connectTimer);
-            clearTimeout(overallTimer);
-            finish({ kind: 'failed' }, socket);
-        });
+        socket.on('close', () => finish({ kind: connected ? 'failed' : 'conn-error' }, socket));
     });
 }
 function defaultSpawnDaemon(entryPath, _homeDir) {

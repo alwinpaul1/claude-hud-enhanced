@@ -130,7 +130,11 @@ export async function main(overrides = {}) {
         if (config.daemon.enabled && deps.tryDaemonRender) {
             const output = await deps.tryDaemonRender(stdin, scriptPath);
             if (output !== null) {
-                deps.log(output);
+                // Empty render → print nothing, exactly as the inline path does (its
+                // render() makes zero writes for an empty line set). Printing "" would
+                // emit a stray blank line and break byte-for-byte parity.
+                if (output.length > 0)
+                    deps.log(output);
                 return;
             }
         }

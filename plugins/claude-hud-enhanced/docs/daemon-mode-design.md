@@ -212,8 +212,23 @@ hardware, sequenced second deliberately.
    the 60s staleness reclaim caps spawning at one attempt per stale window,
    which is the actual requirement; extra daemons are harmless
    (EADDRINUSE → exit) but wasteful.
-5. **Unix socket paths >100 chars fall back to a hashed name under the OS
-   temp dir** — `bind()` fails EINVAL past the ~104-byte `sun_path` limit
-   (deep `CLAUDE_CONFIG_DIR`s, long home paths; found by the client tests).
-   The fallback socket is 0600; a squatter on the predictable /tmp name only
-   degrades that profile to inline mode, never breaks the HUD.
+6. **Per-request handler timeout (2s) + orphan discipline.** One slow render
+   (network-mounted repo) can't stall other terminals' queued requests; the
+   timed-out handler continues orphaned but is FORBIDDEN from mutating
+   process globals (env staging lives in the serialized queue section), so
+   its discarded output is harmless. Accepted trade-off: under *sustained*
+   slow-filesystem conditions orphans can stack (bounded per-orphan by git's
+   own 1-2s subprocess timeouts; degrades to elevated CPU, never corruption).
+7. **The fallback socket path's own byte length is not separately checked**
+   (a pathological XDG_RUNTIME_DIR could exceed sun_path). Accepted: bind()
+   fails → generic error handler → daemon disables itself for that profile,
+   clients render inline; respawns throttled to 1/60s by the spawn lock.
+5. **Unix socket paths >100 chars fall back to a hashed 0700 SUBDIR under
+   the OS temp dir** — `bind()` fails EINVAL past the ~104-byte `sun_path`
+   limit (deep `CLAUDE_CONFIG_DIR`s, long home paths; found by the client
+   tests). The subdir is the access guard on every platform: socket FILE
+   permissions gate connect() on Linux but NOT on BSD/macOS, so relying on
+   the 0600 socket alone would be platform folklore (macOS is saved today
+   only because os.tmpdir() there is already a per-user 0700 dir — verified
+   on hardware). A squatter on the predictable name only degrades that
+   profile to inline mode, never breaks the HUD.

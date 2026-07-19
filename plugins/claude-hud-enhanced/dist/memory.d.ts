@@ -1,8 +1,9 @@
 import type { MemoryInfo } from './types.js';
-type MemoryReader = () => {
+type MemResult = {
     totalBytes: number;
     freeBytes: number;
 };
+type MemoryReader = () => MemResult | Promise<MemResult>;
 export declare function parseVmStat(output: string): {
     pageSize: number;
     active: number;

@@ -18,37 +18,55 @@ const debug = createDebug('daemon');
  * against 1-5s ticks.
  */
 export const DAEMON_IDLE_EXIT_MS = 10 * 60_000;
+/** Cap one render so a slow repo/subprocess can't stall other terminals'
+ * queued requests. Comfortably above a warm render (~5-15ms) and above the
+ * client's RESPONSE_TIMEOUT_MS (500ms) — the client always gives up first,
+ * so by the time this fires the requester has already fallen back inline;
+ * this timeout exists to unblock the QUEUE, not to answer the client. */
+export const HANDLER_TIMEOUT_MS = 2_000;
+/** Accept COLUMNS only as a sane numeric terminal width (validate at the trust
+ * boundary, not just in downstream consumers). */
+export function safeColumns(raw) {
+    if (raw == null)
+        return undefined;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 1 && n <= 2000 ? String(n) : undefined;
+}
+/**
+ * IMPORTANT: this function must NOT mutate any process-global state
+ * (process.env etc.). When a request times out, its handler keeps running
+ * ORPHANED past the queue's serialization — its return value is discarded,
+ * but any global mutation (or deferred restore) would corrupt later requests.
+ * All env staging lives in serveOne, strictly inside the serialized section.
+ */
 async function defaultHandleRequest(request) {
     const lines = [];
-    const prevColumns = process.env.COLUMNS;
-    if (request.env?.COLUMNS != null) {
-        process.env.COLUMNS = request.env.COLUMNS;
-    }
-    try {
-        await main({
-            readStdin: async () => request.stdin,
-            render: (ctx) => render(ctx, (line) => lines.push(line)),
-            log: (...args) => lines.push(args.map(String).join(' ')),
-            tryDaemonRender: null, // never recurse into ourselves
-        });
-    }
-    finally {
-        if (prevColumns === undefined)
-            delete process.env.COLUMNS;
-        else
-            process.env.COLUMNS = prevColumns;
-    }
+    await main({
+        readStdin: async () => request.stdin,
+        render: (ctx) => render(ctx, (line) => lines.push(line)),
+        log: (...args) => lines.push(args.map(String).join(' ')),
+        tryDaemonRender: null, // never recurse into ourselves
+    });
     return lines.join('\n');
 }
 export function runDaemon(options = {}) {
+    if (process.platform === 'win32' && !options.socketPath) {
+        // Phase 1 is unix-only; a named-pipe daemon that half-works would be
+        // worse than the clean inline fallback Windows clients already take.
+        debug('daemon mode is not supported on win32 yet (phase 2)');
+        (options.exit ?? ((code) => process.exit(code)))(0);
+        return;
+    }
     const homeDir = os.homedir();
     const socketPath = options.socketPath ?? getIpcPath(homeDir);
     const idleTimeoutMs = options.idleTimeoutMs ?? DAEMON_IDLE_EXIT_MS;
+    const handlerTimeoutMs = options.handlerTimeoutMs ?? HANDLER_TIMEOUT_MS;
     const pluginVersion = options.pluginVersion ?? getPluginVersion();
     const handleRequest = options.handleRequest ?? defaultHandleRequest;
     const exit = options.exit ?? ((code) => process.exit(code));
     const pidPath = options.socketPath ? null : getPidPath(homeDir); // advisory only
     let shuttingDown = false;
+    let removeProcessListeners = () => { };
     const cleanup = () => {
         try {
             fs.rmSync(socketPath, { force: true });
@@ -70,6 +88,7 @@ export function runDaemon(options = {}) {
             return;
         shuttingDown = true;
         debug('daemon exiting with code', code);
+        removeProcessListeners();
         clearTimeout(idleTimer);
         try {
             server.close();
@@ -90,16 +109,52 @@ export function runDaemon(options = {}) {
     const serveOne = async (socket, message) => {
         touchIdle();
         const request = message;
-        const valid = request != null && request.v === IPC_PROTOCOL_VERSION && request.stdin != null;
+        // Profile echo check (design §2): should be unreachable — socket paths are
+        // derived from CLAUDE_CONFIG_DIR on both sides — but serving another
+        // profile's request would mix accounts, so verify anyway.
+        const sameProfile = request?.env?.CLAUDE_CONFIG_DIR === (process.env.CLAUDE_CONFIG_DIR ?? undefined);
+        const valid = request != null &&
+            request.v === IPC_PROTOCOL_VERSION &&
+            request.stdin != null &&
+            sameProfile;
         const mismatch = valid && request.pluginVersion !== pluginVersion;
         let output = null;
         if (valid) {
+            // Env staging happens HERE, inside the serialized queue section — never
+            // in the handler, whose orphaned continuation after a timeout must not
+            // touch shared state (see defaultHandleRequest's contract). The orphan
+            // may then render with a later request's width, but its output is
+            // discarded, so that is harmless by construction.
+            const prevColumns = process.env.COLUMNS;
+            const columns = safeColumns(request.env?.COLUMNS);
+            if (columns != null)
+                process.env.COLUMNS = columns;
+            let timeoutTimer;
             try {
-                output = await handleRequest(request);
+                // Per-request timeout: one slow render (e.g. git status on a flaky
+                // network mount can take several seconds through git's own timeouts)
+                // must not stall every OTHER terminal's queued request behind it.
+                // On timeout we return null → that client falls back inline, and the
+                // queue moves on. The orphaned handleRequest promise resolves later
+                // and is discarded (Promise.race consumes its rejection, so it can
+                // never surface as an unhandledRejection).
+                output = await Promise.race([
+                    handleRequest(request),
+                    new Promise((r) => {
+                        timeoutTimer = setTimeout(() => r(null), handlerTimeoutMs);
+                    }),
+                ]);
             }
             catch (err) {
                 debug('request handler failed:', err instanceof Error ? err.message : err);
                 output = null; // client falls back inline
+            }
+            finally {
+                clearTimeout(timeoutTimer); // don't leave a ~2s timer dangling per request
+                if (prevColumns === undefined)
+                    delete process.env.COLUMNS;
+                else
+                    process.env.COLUMNS = prevColumns;
             }
         }
         const response = {
@@ -122,6 +177,11 @@ export function runDaemon(options = {}) {
         }
     };
     const server = net.createServer((socket) => {
+        // A misbehaving same-user process could open sockets or send frames
+        // without bound; cap both. maxConnections is generous for realistic
+        // per-profile terminal counts, and a 1s per-socket idle timeout reaps
+        // connections that connect but never send a complete request.
+        socket.setTimeout(1_000, () => socket.destroy());
         socket.on('error', () => {
             /* per-connection errors never take the daemon down */
         });
@@ -129,6 +189,7 @@ export function runDaemon(options = {}) {
             queue = queue.then(() => serveOne(socket, message)).catch(() => { });
         }));
     });
+    server.maxConnections = 16;
     server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
             // Another daemon is (probably) alive on this socket — it wins; exit
@@ -136,28 +197,52 @@ export function runDaemon(options = {}) {
             // connect failure unlinks it and respawns us.
             debug('socket in use — another daemon holds this profile');
             shuttingDown = true;
+            removeProcessListeners();
             clearTimeout(idleTimer);
-            exit(0); // deliberately NO cleanup: the socket belongs to the winner
+            exit(0); // deliberately NO socket/pid cleanup: they belong to the winner
             return;
         }
         debug('server error:', err.message);
         shutdown(1);
     });
-    process.on('uncaughtException', (err) => {
+    // Named handlers so shutdown can remove them — otherwise a second
+    // runDaemon() in the same process (only the tests do this) leaves the
+    // loser's handlers registered and a later signal fires every instance's
+    // shutdown. In production the entry guard runs runDaemon exactly once.
+    const onUncaught = (err) => {
         debug('uncaughtException:', err instanceof Error ? err.message : err);
         shutdown(1);
-    });
-    process.on('unhandledRejection', (err) => {
+    };
+    const onRejection = (err) => {
         debug('unhandledRejection:', err instanceof Error ? err.message : err);
         shutdown(1);
-    });
-    process.on('SIGTERM', () => shutdown(0));
+    };
+    const onSigterm = () => shutdown(0);
+    process.on('uncaughtException', onUncaught);
+    process.on('unhandledRejection', onRejection);
+    process.on('SIGTERM', onSigterm);
+    removeProcessListeners = () => {
+        process.removeListener('uncaughtException', onUncaught);
+        process.removeListener('unhandledRejection', onRejection);
+        process.removeListener('SIGTERM', onSigterm);
+    };
     if (process.platform !== 'win32') {
-        const socketDir = path.dirname(socketPath);
-        // Never chmod the shared OS temp dir (the long-path fallback lives
-        // there); the socket file itself still gets 0600 after listen.
-        if (socketDir !== os.tmpdir()) {
-            ensurePrivateDir(socketDir);
+        // The 0700 socket dir is the trust boundary: the daemon fully trusts any
+        // peer that can connect (it renders whatever stdin/cwd/transcript_path
+        // the request names), so directory traversal permission — which both
+        // Linux and macOS honor — is what must gate access. getIpcPath nests the
+        // long-path/DrvFS fallback inside its own per-profile subdir, so this
+        // holds for both the primary and fallback paths.
+        try {
+            ensurePrivateDir(path.dirname(socketPath));
+        }
+        catch (err) {
+            // e.g. XDG_RUNTIME_DIR set but unwritable: exit loudly (debug) instead
+            // of letting the entry guard's .catch swallow a silent crash — clients
+            // keep rendering inline either way.
+            debug('cannot create socket dir:', err instanceof Error ? err.message : err);
+            shutdown(1);
+            return;
         }
     }
     server.listen(socketPath, () => {

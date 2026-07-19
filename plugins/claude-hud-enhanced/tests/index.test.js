@@ -205,6 +205,86 @@ test("main executes the happy path", async () => {
   assert.equal(renderedContext?.outputStyle, "tech-leader");
 });
 
+test("daemon seam: enabled + daemon output → logs it and SKIPS inline render", async () => {
+  const logs = [];
+  let transcriptParsed = false;
+  let daemonArgs;
+  await main({
+    readStdin: async () => makeStdin(),
+    loadConfig: async () => makeConfig({ daemon: { enabled: true } }),
+    tryDaemonRender: async (stdin, entry) => {
+      daemonArgs = { stdin, entry };
+      return "DAEMON-LINE-1\nDAEMON-LINE-2";
+    },
+    parseTranscript: async () => {
+      transcriptParsed = true;
+      return makeTranscript();
+    },
+    countConfigs: async () => makeCounts(),
+    getGitStatus: async () => null,
+    render: () => assert.fail("inline render must be skipped when daemon serves"),
+    log: (...args) => logs.push(args.join(" ")),
+  });
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0], "DAEMON-LINE-1\nDAEMON-LINE-2");
+  assert.equal(transcriptParsed, false, "no per-process work when daemon served");
+  assert.ok(daemonArgs?.stdin, "stdin forwarded to the daemon client");
+});
+
+test("daemon seam: enabled but daemon returns null → falls back to inline render", async () => {
+  let rendered = false;
+  await main({
+    readStdin: async () => makeStdin(),
+    loadConfig: async () => makeConfig({ daemon: { enabled: true } }),
+    tryDaemonRender: async () => null, // daemon down / slow / mismatch
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    getGitStatus: async () => null,
+    render: () => {
+      rendered = true;
+    },
+    log: () => {},
+  });
+  assert.equal(rendered, true, "inline render runs on daemon failure");
+});
+
+test("daemon seam: empty daemon output prints nothing (byte-identical to inline)", async () => {
+  const logs = [];
+  await main({
+    readStdin: async () => makeStdin(),
+    loadConfig: async () => makeConfig({ daemon: { enabled: true } }),
+    tryDaemonRender: async () => "", // legitimately empty render
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    getGitStatus: async () => null,
+    render: () => {},
+    log: (...args) => logs.push(args.join(" ")),
+  });
+  assert.deepEqual(logs, [], "empty output must not emit a stray blank line");
+});
+
+test("daemon seam: disabled → never calls the daemon client", async () => {
+  let daemonCalled = false;
+  let rendered = false;
+  await main({
+    readStdin: async () => makeStdin(),
+    loadConfig: async () => makeConfig({ daemon: { enabled: false } }),
+    tryDaemonRender: async () => {
+      daemonCalled = true;
+      return "should-not-happen";
+    },
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    getGitStatus: async () => null,
+    render: () => {
+      rendered = true;
+    },
+    log: () => {},
+  });
+  assert.equal(daemonCalled, false, "daemon client untouched when flag off");
+  assert.equal(rendered, true);
+});
+
 test("main passes compact transcript metadata to context fallback", async () => {
   const stdin = makeStdin({ transcript_path: "/tmp/session.jsonl" });
   const boundary = new Date("2026-04-24T03:00:00.000Z");

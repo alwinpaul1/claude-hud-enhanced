@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -56,6 +57,14 @@ test('getIpcPath / getSpawnLockPath live under the per-profile HUD daemon dir', 
   const base = path.join(home, '.claude', 'plugins', 'claude-hud-enhanced', 'daemon');
   assert.equal(getIpcPath(home), path.join(base, 'hud.sock'));
   assert.equal(getSpawnLockPath(home), path.join(base, 'hud.spawn.lock'));
+});
+
+test('getIpcPath: sun_path-length overflow falls back to a hashed 0700-able SUBDIR of tmpdir', () => {
+  const longHome = '/tmp/' + 'x'.repeat(120);
+  const p = getIpcPath(longHome);
+  assert.ok(p.startsWith(os.tmpdir()), 'fallback lives under os.tmpdir()');
+  assert.match(p, /claude-hud-[0-9a-f]{16}[/\\]hud\.sock$/, 'socket sits INSIDE a per-profile subdir (the access guard), not tmpdir root');
+  assert.ok(p.length <= 104, 'fallback path stays inside sun_path limits');
 });
 
 test('getPluginVersion reads this package\'s own version', () => {

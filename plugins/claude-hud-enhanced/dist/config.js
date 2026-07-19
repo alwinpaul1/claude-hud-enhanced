@@ -100,7 +100,10 @@ export const DEFAULT_CONFIG = {
         showAuthInModel: true,
         authShortLabel: true,
         usageOnNewLine: true,
-        compactSingleRow: false,
+        // Default ON since 0.5.1: the flagship two-tight-rows layout is the
+        // out-of-the-box look on every platform (overflow drops at a segment
+        // boundary instead of wrapping to a third row).
+        compactSingleRow: true,
         idleUsageReset: false,
         oauthUsagePoll: false,
         customLine: '',
