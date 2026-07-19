@@ -88,6 +88,9 @@ src/
 ├── effort.ts             # Effort level (when Claude Code exposes it)
 ├── git.ts                # Git status (branch, dirty, ahead/behind)
 ├── git-cache.ts          # TTL+mtime persistent cache around git.ts (spawn-storm fix)
+├── daemon.ts             # Warm daemon server (opt-in; serves renders over a local socket)
+├── daemon-client.ts      # Daemon client: connect-with-timeout, inline fallback, spawn lock
+├── daemon-ipc.ts         # Shared IPC: per-profile socket path, NDJSON framing, version
 ├── types.ts              # TypeScript interfaces
 └── render/
     ├── index.ts          # Main render coordinator

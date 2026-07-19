@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-07-19
+
+### Added
+- **Warm daemon mode (`daemon.enabled`, opt-in, default off; macOS/Linux — phase 1 of issue #6).** A long-lived per-profile process serves renders over a local unix socket (`daemon/hud.sock` in the HUD data dir, 0600/0700; long paths fall back to a hashed name under the OS temp dir to stay inside the `sun_path` limit). The statusline invocation becomes a thin client: connect (50ms budget) → send the parsed stdin → print the daemon's render (500ms budget). **Any** failure — daemon absent, slow, crashed, mid-upgrade — falls through to the unmodified inline path, so the flag can only make repaints faster, never break them. Honest scope: phase 1 eliminates the per-repaint *work* (transcript parse, config load, git status all run in the warm process); the client still pays its own runtime startup, so the measured win here is ~35% with node — it grows with transcript size and multiplies once issue #1's incremental parsing lands in the daemon's warm memory. Design + verified deviations in `docs/daemon-mode-design.md`:
+  - Daemon reuses `main()` via `MainDeps` injection (no duplicated render logic); `render()` gained an optional output-writer parameter.
+  - Requests serialized (terminal-width env is process-global); version handshake — a mismatched daemon serves the request, then exits so the next tick spawns the new version; 10-min idle self-exit; EADDRINUSE loser exits without touching the winner's socket; SIGTERM/uncaughtException clean up socket+pid.
+  - Spawn single-flight via a dedicated lock using the 0.4.12 rename-steal discipline; the lock deliberately expires by staleness (60s) instead of immediate release — sequential racers otherwise each spawn (caught by the client race test).
+  - OAuth single-flight preserved EXACTLY: the daemon calls the same file-lock/snapshot code, so the ~1-request/3-min ceiling holds across daemon, inline-fallback, and other-profile processes alike.
+  - 15 new tests (real sockets, injected clocks/exits): framing, path fallback, serve/idle-exit/version-mismatch/handler-crash/EADDRINUSE lifecycle, client timeout matrix, spawn single-flight under racing clients. End-to-end verified: daemon-served output is byte-identical to inline.
+
 ## [0.4.13] - 2026-07-19
 
 Follow-up round of the 0.4.12 review (final verifier verdicts).

@@ -545,7 +545,12 @@ function renderExpanded(ctx: RenderContext, terminalWidth: number | null = null)
   return lines;
 }
 
-export function render(ctx: RenderContext): void {
+export function render(
+  ctx: RenderContext,
+  // Output seam for the warm daemon (captures lines instead of printing);
+  // every existing caller keeps the console default.
+  write: (line: string) => void = (line) => console.log(line),
+): void {
   const lineLayout = ctx.config?.lineLayout ?? 'expanded';
   const showSeparators = ctx.config?.showSeparators ?? false;
   const detectedWidth = getTerminalWidth({ preferEnv: true, fallback: UNKNOWN_TERMINAL_WIDTH });
@@ -624,6 +629,6 @@ export function render(ctx: RenderContext): void {
 
   for (const line of visibleLines) {
     const outputLine = `${RESET}${line}`;
-    console.log(outputLine);
+    write(outputLine);
   }
 }

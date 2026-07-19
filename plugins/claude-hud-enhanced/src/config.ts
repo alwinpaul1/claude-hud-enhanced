@@ -108,6 +108,11 @@ export interface HudConfig {
     pushWarningThreshold: number;
     pushCriticalThreshold: number;
   };
+  // Warm daemon mode (opt-in, experimental; unix-only in phase 1).
+  // See docs/daemon-mode-design.md.
+  daemon: {
+    enabled: boolean;
+  };
   display: {
     showModel: boolean;
     showProject: boolean;
@@ -239,6 +244,9 @@ export const DEFAULT_CONFIG: HudConfig = {
     branchOverflow: 'truncate',
     pushWarningThreshold: 0,
     pushCriticalThreshold: 0,
+  },
+  daemon: {
+    enabled: false,
   },
   display: {
     showModel: true,
@@ -608,6 +616,12 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     pushCriticalThreshold: validateCountThreshold(migrated.gitStatus?.pushCriticalThreshold),
   };
 
+  const daemon = {
+    enabled: typeof migrated.daemon?.enabled === 'boolean'
+      ? migrated.daemon.enabled
+      : DEFAULT_CONFIG.daemon.enabled,
+  };
+
   const display = {
     showModel: typeof migrated.display?.showModel === 'boolean'
       ? migrated.display.showModel
@@ -849,7 +863,7 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       : DEFAULT_CONFIG.colors.barEmpty,
   };
 
-  return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, gitStatus, display, colors };
+  return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, gitStatus, daemon, display, colors };
 }
 
 export async function loadConfig(): Promise<HudConfig> {
