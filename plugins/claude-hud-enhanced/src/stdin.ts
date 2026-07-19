@@ -333,17 +333,20 @@ export function getProviderLabel(stdin: StdinData): string | null {
   return null;
 }
 
+// Providers with no subscription usage windows (API-billed, not OAuth).
+// Adding a label to getProviderLabel means deciding its membership here too.
+const API_BILLED_PROVIDERS = new Set(['Bedrock', 'Vertex']);
+
 export function shouldHideUsage(stdin: StdinData): boolean {
   // Subscription usage windows only exist for OAuth sessions; hide them for
-  // API-billed providers (Bedrock, Vertex), detected by env label OR model-id
-  // shape — the env var may not reach the statusline child, so the model-id
-  // fallbacks mirror the isBedrockModelId || isVertexModelId pairing in
-  // cost.ts. Enterprise model aliases (opusplan etc.) are subscription
-  // plan-mode aliases — usage stays visible.
+  // API-billed providers, detected by env label OR model-id shape — the env
+  // var may not reach the statusline child, so the model-id fallbacks mirror
+  // the isBedrockModelId || isVertexModelId pairing in cost.ts. Enterprise
+  // model aliases (opusplan etc.) are subscription plan-mode aliases — usage
+  // stays visible.
   const provider = getProviderLabel(stdin);
   return (
-    provider === 'Bedrock' ||
-    provider === 'Vertex' ||
+    (provider !== null && API_BILLED_PROVIDERS.has(provider)) ||
     isBedrockModelId(stdin.model?.id) ||
     isVertexModelId(stdin.model?.id)
   );
