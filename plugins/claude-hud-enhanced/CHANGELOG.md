@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.11] - 2026-07-19
+
+### Added
+- **Persistent git-status cache (`src/git-cache.ts`)** — ports ccstatusline's shipped fix for its per-refresh subprocess storm (their issues #22/#384: 14k+ process spawns in 17 min across 9 sessions). The HUD previously spawned up to ~7 `git` subprocesses on **every** repaint; at a 1–2s `refreshInterval` across several terminals that's thousands of spawns per hour. Now: a per-repo cache file (`git-cache/git-<sha256(gitDir)>.json` in the HUD data dir) serves for 5s, but is invalidated **instantly** when `.git/HEAD` or `.git/index` changes mtime (branch switch, commit, staging) — only worktree-only edits can lag by up to the TTL. Worktree/submodule `.git` pointer files are resolved so mtime tracking hits the real git dir; non-repo directories now return immediately with **zero** git spawns. Measured warm render: **90ms → 50ms**.
+- Research note (source-verified): ccstatusline has **no daemon mode** — that's an open suggestion in their tracker, not shipped code. Their real perf fixes are these TTL+mtime caches plus avoiding npx-style cold starts (which this plugin's pinned-path launcher already avoids).
+
 ## [0.4.10] - 2026-07-19
 
 ### Changed

@@ -3,7 +3,7 @@ import { applyIdleUsageReset } from "./idle-usage-reset.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
-import { getGitStatus } from "./git.js";
+import { getGitStatusCached } from "./git-cache.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
 import { getClaudeCodeVersion } from "./version.js";
@@ -74,7 +74,9 @@ export async function main(overrides = {}) {
         writeExternalUsageSnapshot,
         parseTranscript,
         countConfigs,
-        getGitStatus,
+        // TTL+mtime cached: avoids ~7 git spawns per repaint (critical at 1-2s
+        // refreshInterval across many terminals; see git-cache.ts).
+        getGitStatus: (cwd) => getGitStatusCached(cwd),
         loadConfig,
         parseExtraCmdArg,
         runExtraCmd,
