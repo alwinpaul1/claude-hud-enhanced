@@ -81,8 +81,13 @@ src/
 ├── claude-config-dir.ts  # Config-dir + HUD data-dir resolution / migrate
 ├── auth.ts               # Plan/auth segment from Claude Code oauth account
 ├── external-usage.ts     # Optional external usage snapshot
+├── usage-snapshot.ts     # Shared per-profile usage snapshot + refresher lock (atomic writes)
+├── usage-hybrid.ts       # resolveUsage: stdin while active, snapshot while idle, spawns refresher
+├── refresh-usage.ts      # Detached OAuth usage refresher (token read-only → oauth/usage; TTL/backoff)
+├── idle-usage-reset.ts   # Local window-rollover reset while idle (no network)
 ├── effort.ts             # Effort level (when Claude Code exposes it)
 ├── git.ts                # Git status (branch, dirty, ahead/behind)
+├── git-cache.ts          # TTL+mtime persistent cache around git.ts (spawn-storm fix)
 ├── types.ts              # TypeScript interfaces
 └── render/
     ├── index.ts          # Main render coordinator

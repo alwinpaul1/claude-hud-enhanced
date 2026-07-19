@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   parseAccessToken,
   parseUsageResponse,
   parseRetryAfterMs,
   successSnapshot,
   failureSnapshot,
+  keychainServiceForConfigDir,
 } from '../dist/refresh-usage.js';
 import { USAGE_TTL_MS } from '../dist/usage-hybrid.js';
 
@@ -25,6 +27,24 @@ test('parseAccessToken returns null for missing/empty token and bad JSON', () =>
   assert.equal(parseAccessToken(JSON.stringify({ claudeAiOauth: { accessToken: 42 } })), null);
   assert.equal(parseAccessToken(JSON.stringify({})), null);
   assert.equal(parseAccessToken('not json'), null);
+});
+
+// --- keychainServiceForConfigDir ---
+
+test('keychainServiceForConfigDir: default profile uses the bare service name', () => {
+  assert.equal(
+    keychainServiceForConfigDir('/Users/u/.claude', '/Users/u'),
+    'Claude Code-credentials',
+  );
+});
+
+test('keychainServiceForConfigDir: custom profile gets sha256-suffixed service', () => {
+  // Claude Code's per-profile Keychain naming, verified against a live
+  // multi-profile Keychain: bare name + "-" + sha256(configDir) first 8 hex.
+  const dir = '/Users/u/.claude-work';
+  const expected = `Claude Code-credentials-${createHash('sha256').update(dir).digest('hex').slice(0, 8)}`;
+  assert.equal(keychainServiceForConfigDir(dir, '/Users/u'), expected);
+  assert.notEqual(keychainServiceForConfigDir(dir, '/Users/u'), 'Claude Code-credentials');
 });
 
 // --- parseUsageResponse ---

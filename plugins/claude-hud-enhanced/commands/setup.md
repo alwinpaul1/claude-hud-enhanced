@@ -163,7 +163,7 @@ path (`claude-hud-enhanced`), never the legacy `claude-hud` one.
 
 ## Step 1: Detect Platform, Shell, and Runtime
 
-**IMPORTANT**: Use the environment context values (`Platform:` and `Shell:`) as your starting point. On `win32`, also check `$OSTYPE` via the Bash tool. Some Windows sessions report `Shell: powershell` while the command path exposed to Claude Code is Git Bash/MSYS2. When `$OSTYPE` is `msys` or `cygwin`, the PowerShell command format can fail before PowerShell runs because bash expands `$env:VAR`, `$p`, and `$(...)` expressions first (see [#531](https://github.com/alwinpaul1/claude-hud-enhanced/issues/531)).
+**IMPORTANT**: Use the environment context values (`Platform:` and `Shell:`) as your starting point. On `win32`, also check `$OSTYPE` via the Bash tool. Some Windows sessions report `Shell: powershell` while the command path exposed to Claude Code is Git Bash/MSYS2. When `$OSTYPE` is `msys` or `cygwin`, the PowerShell command format can fail before PowerShell runs because bash expands `$env:VAR`, `$p`, and `$(...)` expressions first.
 
 **On `win32`, run this check first:**
 ```bash
@@ -256,7 +256,7 @@ Do not use PowerShell commands when the shell is bash. Claude Code invokes statu
 
 On Windows require `node` and always use `dist/index.js`.
 
-**Important**: Do **not** reuse the macOS/Linux awk-based command on Windows + Git Bash. The `awk` fragment requires `'"'"'` quoting to nest single quotes inside `bash -c '...'`. After JSON encoding and decoding, this quoting breaks on Windows Git Bash, causing a silent syntax error that prevents the HUD process from starting (see [#326](https://github.com/alwinpaul1/claude-hud-enhanced/issues/326)).
+**Important**: Do **not** reuse the macOS/Linux awk-based command on Windows + Git Bash. The `awk` fragment requires `'"'"'` quoting to nest single quotes inside `bash -c '...'`. After JSON encoding and decoding, this quoting breaks on Windows Git Bash, causing a silent syntax error that prevents the HUD process from starting.
 
 Instead, use `sort -V` (GNU version sort, included with Git for Windows) which avoids nested single quotes entirely. Also avoid wrapping the generated command in a second `bash -c ...` layer. Claude Code is already invoking the statusline through bash, so the direct shell command lets `exec` replace that shell instead of spawning an extra bash wrapper first. The command still exports `COLUMNS` so the HUD receives the real terminal width, and it uses the marketplace-aware cache glob:
 
@@ -457,14 +457,18 @@ Run the generated command. It should produce output (the HUD lines) within a few
 The idle repaint timer should be as fast as this machine can afford. Run the
 generated command **3 times**, timing each run's wall clock (feed it the same
 empty-stdin input as the test above). The first run is a cold start — take the
-**fastest** of the three as the machine's render time. Timing recipe (macOS
-lacks `date +%N`; use the runtime you already validated):
+**fastest** of the three as the machine's render time. Timing: write the
+generated command into a temp script file and time that (this sidesteps the
+nested-quoting hazards of inlining the command; `time` works in any shell —
+read the `real` value):
 
 ```bash
-node -e 'const{execSync}=require("child_process");const t=Date.now();execSync(process.argv[1],{stdio:"ignore",shell:true});console.log(Date.now()-t+"ms")' '{GENERATED_COMMAND} < /dev/null'
+printf '%s\n' '{GENERATED_COMMAND}' > "$TMPDIR/hud-bench.sh"
+time sh "$TMPDIR/hud-bench.sh" < /dev/null > /dev/null
 ```
 
-Pick the tier:
+(When writing the temp script, use the Write tool rather than shell quoting if
+the command contains single quotes.) Pick the tier:
 
 | Fastest render | `refreshInterval` |
 |---|---|
@@ -481,7 +485,7 @@ render time everywhere.
 
 ## Step 2.5: Detect Existing Statusline and Create Backup
 
-Before writing to `settings.json`, check whether a `statusLine` key already exists and protect the user's current configuration. This covers the existing-statusLine overwrite issue tracked in [#547](https://github.com/alwinpaul1/claude-hud-enhanced/issues/547).
+Before writing to `settings.json`, check whether a `statusLine` key already exists and protect the user's current configuration. This prevents silently overwriting a user's existing custom statusline.
 
 ### 2.5.1: Read the existing statusLine
 
@@ -709,7 +713,7 @@ if the benchmark could not run).
 **`refreshInterval` is required for idle updates.** Claude Code only re-runs the
 statusline on conversation events (new assistant message, `/compact`, permission
 mode change, vim mode toggle) — those triggers go quiet while the session is
-idle. The 5-second timer keeps the HUD live when nothing is happening in the
+idle. The refresh timer keeps the HUD live when nothing is happening in the
 terminal: the session-duration clock ticks, cross-terminal usage sync
 (`oauthUsagePoll`) actually appears in idle terminals, idle usage reset fires at
 window rollover, and the all-idle OAuth refresher can trigger at all.

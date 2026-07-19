@@ -176,6 +176,13 @@ test('shouldHideUsage hides usage for Bedrock model ids without env var', () => 
   assert.equal(shouldHideUsage({ model: { id: 'anthropic.claude-sonnet-4-6' } }), true);
 });
 
+test('shouldHideUsage hides usage for Vertex model ids without env var', () => {
+  // Vertex model ids carry an @version suffix; the env var may not be visible
+  // to the statusline child. Mirrors the Bedrock model-id fallback and the
+  // isBedrockModelId || isVertexModelId pairing cost.ts already uses.
+  assert.equal(shouldHideUsage({ model: { id: 'claude-sonnet-4-6@20250514' } }), true);
+});
+
 test('shouldHideUsage shows usage for plain subscription sessions', () => {
   assert.equal(shouldHideUsage({ model: { id: 'claude-opus-4-8' } }), false);
 });

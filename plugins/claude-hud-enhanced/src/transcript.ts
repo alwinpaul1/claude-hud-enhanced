@@ -7,6 +7,7 @@ import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
 import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage } from './types.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
+import { CACHE_SWEEP_SAMPLE_RATE, sweepCacheDir } from './utils/cache-file.js';
 import { sanitizeTranscriptModel } from './model-source.js';
 
 const debug = createDebug('transcript');
@@ -321,6 +322,13 @@ function writeTranscriptCache(transcriptPath: string, state: TranscriptFileState
       fs.chmodSync(cachePath, 0o600);
     } catch {
       // Best-effort: cache permissions should not break rendering.
+    }
+    // One file per session ever seen, never previously pruned (observed 4k+
+    // entries in the wild). Sampled sweep bounds growth off the hot path.
+    if (Math.random() < CACHE_SWEEP_SAMPLE_RATE) {
+      sweepCacheDir(cacheDir, Date.now(), (err) =>
+        debug('Transcript cache sweep failed:', err instanceof Error ? err.message : err),
+      );
     }
   } catch (err) {
     debug('Failed to write transcript cache:', err instanceof Error ? err.message : err);

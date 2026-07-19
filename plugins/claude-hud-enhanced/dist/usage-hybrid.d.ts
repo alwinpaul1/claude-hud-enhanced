@@ -21,6 +21,8 @@ import { type SnapshotFsDeps, type UsageSnapshot, defaultSnapshotFs } from './us
  */
 export declare const USAGE_TTL_MS = 180000;
 export declare const LOCK_STALE_MS = 60000;
+export declare const BACKOFF_AUTH_MS: number;
+export declare const BACKOFF_ERROR_MS: number;
 /** +1 if stdin is newer than the snapshot, -1 if the snapshot is newer, 0 if equal. */
 export declare function compareStdinSnapshot(stdin: UsageData, snap: UsageSnapshot): number;
 /** True when stdin is strictly newer than the snapshot (write-back decision). */

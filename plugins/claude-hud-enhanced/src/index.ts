@@ -3,7 +3,7 @@ import { applyIdleUsageReset } from "./idle-usage-reset.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
-import { getGitStatus } from "./git.js";
+import type { getGitStatus } from "./git.js";
 import { getGitStatusCached } from "./git-cache.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
@@ -14,12 +14,13 @@ import { resolveEffortLevel } from "./effort.js";
 import { applyContextWindowFallback } from "./context-cache.js";
 import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { resolveUsage, defaultSnapshotFs } from "./usage-hybrid.js";
+import { getLockPath } from "./usage-snapshot.js";
 import { setLanguage, t } from "./i18n/index.js";
 import type { RenderContext } from "./types.js";
 
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
 import * as os from "node:os";
 import * as nodePath from "node:path";
@@ -74,7 +75,17 @@ function spawnUsageRefresher(_homeDir: string): void {
       windowsHide: true,
       env: process.env, // inherit CLAUDE_CONFIG_DIR so the profile matches
     });
-    child.on("error", () => {}); // never let a spawn failure surface
+    child.on("error", () => {
+      // The parent took the single-flight lock before spawning; if the child
+      // never starts, its `finally` can never release it. Release here so a
+      // persistent spawn failure (EMFILE etc.) doesn't silently block every
+      // refresh for LOCK_STALE_MS per attempt.
+      try {
+        rmSync(getLockPath(os.homedir()), { force: true });
+      } catch {
+        /* stale-lock reclaim will recover */
+      }
+    });
     child.unref();
   } catch {
     /* never break the HUD over a failed spawn */
@@ -92,7 +103,9 @@ export function isHudDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
 export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
   if (isHudDisabled()) {
     // Print nothing so Claude Code renders an empty statusline, and skip all
-    // work (stdin parse, transcript scan, git) for the ~300ms polling loop.
+    // work (stdin parse, transcript scan, git) — this runs on every repaint
+    // (conversation events debounced at 300ms, plus the refreshInterval timer
+    // while idle), so even the disabled path must stay cheap.
     return;
   }
 
@@ -105,7 +118,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     countConfigs,
     // TTL+mtime cached: avoids ~7 git spawns per repaint (critical at 1-2s
     // refreshInterval across many terminals; see git-cache.ts).
-    getGitStatus: (cwd) => getGitStatusCached(cwd),
+    getGitStatus: getGitStatusCached,
     loadConfig,
     parseExtraCmdArg,
     runExtraCmd,
