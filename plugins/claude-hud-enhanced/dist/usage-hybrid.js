@@ -20,6 +20,12 @@ import { defaultSnapshotFs, getLockPath, getSnapshotPath, readSnapshot, writeSna
  */
 export const USAGE_TTL_MS = 180_000; // 3 min, matching ccstatusline's cache gate
 export const LOCK_STALE_MS = 60_000; // a refresher lock older than this is abandoned
+// Refresher backoff policy lives HERE, next to the TTL it must comfortably
+// exceed: if a backoff dropped below USAGE_TTL_MS, a failing refresher would
+// be respawned on nearly every stale render — the retry-storm shape this
+// feature exists to prevent (ccstatusline #204).
+export const BACKOFF_AUTH_MS = 30 * 60_000;
+export const BACKOFF_ERROR_MS = 5 * 60_000;
 function toMs(d) {
     return d instanceof Date && Number.isFinite(d.getTime()) ? d.getTime() : null;
 }
@@ -120,11 +126,23 @@ export function tryTakeLock(lockPath, now, deps) {
             catch {
                 /* stat failed — fall through and try to re-take */
             }
+            // Atomic stale reclaim via rename: of N racers, exactly ONE rename can
+            // succeed (the rest get ENOENT), so a racer can never delete a lock
+            // another racer just created. The previous rm-based reclaim had a TOCTOU
+            // where every post-sleep terminal could "win" and spawn its own OAuth
+            // refresher — an N-way burst violating the single-flight guarantee.
+            const stalePath = `${lockPath}.stale.${process.pid}.${now}`;
             try {
-                deps.rmSync(lockPath, { force: true });
+                deps.renameSync(lockPath, stalePath);
             }
             catch {
-                return false;
+                return false; // another racer reclaimed it first
+            }
+            try {
+                deps.rmSync(stalePath, { force: true });
+            }
+            catch {
+                /* best effort */
             }
         }
         deps.writeFileSync(lockPath, String(process.pid), {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { getGitStatusCached, GIT_CACHE_TTL_MS } from '../dist/git-cache.js';
+import { getGitStatusCached, GIT_CACHE_TTL_MS, NULL_CACHE_TTL_MS } from '../dist/git-cache.js';
 
 const STATUS = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
 const NOW = Date.UTC(2026, 6, 19, 12, 0, 0);
@@ -112,10 +112,23 @@ test('corrupt cache file → refetches gracefully', async () => {
   assert.equal(fetcher.calls, 2);
 });
 
-test('null fetch result is cached too (repo where git fails)', async () => {
+test('null fetch result cached with the SHORT ttl (throttles failing repos, recovers fast)', async () => {
   const { home, repo } = makeSandbox();
   const fetcher = makeFetcher(null);
   assert.equal(await getGitStatusCached(repo, { homeDir: home, now: () => NOW, fetch: fetcher }), null);
-  assert.equal(await getGitStatusCached(repo, { homeDir: home, now: () => NOW + 1000, fetch: fetcher }), null);
-  assert.equal(fetcher.calls, 1, 'negative result served from cache');
+  // Within NULL_CACHE_TTL_MS: served from cache (a broken repo can't spawn git per repaint)
+  assert.equal(await getGitStatusCached(repo, { homeDir: home, now: () => NOW + 500, fetch: fetcher }), null);
+  assert.equal(fetcher.calls, 1, 'negative result served within its short TTL');
+  // Past NULL_CACHE_TTL_MS but well inside GIT_CACHE_TTL_MS: refetches (transient
+  // failures self-heal in ~1s instead of blanking the git segment for 5s)
+  await getGitStatusCached(repo, { homeDir: home, now: () => NOW + NULL_CACHE_TTL_MS + 500, fetch: fetcher });
+  assert.equal(fetcher.calls, 2, 'null result expires on the short TTL');
+});
+
+test('cache directory is created private (0700)', async () => {
+  const { home, repo } = makeSandbox();
+  const fetcher = makeFetcher();
+  await getGitStatusCached(repo, { homeDir: home, now: () => NOW, fetch: fetcher });
+  const cacheDir = path.join(home, '.claude', 'plugins', 'claude-hud-enhanced', 'git-cache');
+  assert.equal(fs.statSync(cacheDir).mode & 0o777, 0o700, 'git-cache dir must be owner-only');
 });

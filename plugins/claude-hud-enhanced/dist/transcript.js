@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
+import { CACHE_SWEEP_SAMPLE_RATE, sweepCacheDir } from './utils/cache-file.js';
 import { sanitizeTranscriptModel } from './model-source.js';
 const debug = createDebug('transcript');
 const TRANSCRIPT_CACHE_VERSION = 12;
@@ -211,6 +212,11 @@ function writeTranscriptCache(transcriptPath, state, data) {
         }
         catch {
             // Best-effort: cache permissions should not break rendering.
+        }
+        // One file per session ever seen, never previously pruned (observed 4k+
+        // entries in the wild). Sampled sweep bounds growth off the hot path.
+        if (Math.random() < CACHE_SWEEP_SAMPLE_RATE) {
+            sweepCacheDir(cacheDir, Date.now(), (err) => debug('Transcript cache sweep failed:', err instanceof Error ? err.message : err));
         }
     }
     catch (err) {

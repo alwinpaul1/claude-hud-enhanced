@@ -146,6 +146,46 @@ test('tryTakeLock: reclaims a stale lock', () => {
   assert.equal(tryTakeLock(LOCK_PATH, NOW, fs), true, 'stale lock reclaimed');
 });
 
+test('tryTakeLock: stale-reclaim race — the rename loser backs off and cannot steal the winner\'s lock', () => {
+  // Simulate two racers hitting the stale branch together. Racer A completes
+  // the rename-steal and holds a fresh lock. Racer B saw the stale lock too,
+  // but by the time B renames, the source is gone → real fs throws ENOENT.
+  const fs = makeFs();
+  fs.writeFileSync(LOCK_PATH, '999', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  fs._mtimes.set(LOCK_PATH, NOW - 120_000); // stale
+
+  // Racer B's view: interpose a renameSync that throws like the real fs when
+  // the source no longer exists (makeFs's default silently "succeeds").
+  const strictFs = {
+    ...fs,
+    renameSync: (a, b) => {
+      if (!fs.existsSync(a)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      fs.renameSync(a, b);
+    },
+  };
+
+  assert.equal(tryTakeLock(LOCK_PATH, NOW, strictFs), true, 'racer A reclaims');
+  // B is still executing its stale branch (it stat'ed the OLD lock before A's
+  // rename). B's rename now finds no source and must lose WITHOUT touching
+  // A's fresh lock. Model B's staleness view by re-running against a stale
+  // stat: force the mtime check to pass by backdating, then restore.
+  const freshLockMtime = fs._mtimes.get(LOCK_PATH);
+  fs._mtimes.set(LOCK_PATH, NOW - 120_000); // B's stale view of the lock it stat'ed
+  const bFs = {
+    ...strictFs,
+    // B's rename targets the CURRENT lock path; in the buggy rm-based code B
+    // would force-remove A's lock here and "win". With rename-steal, exactly
+    // one rename of the original source can succeed — emulate B racing on a
+    // source that A already renamed away by making B's rename throw.
+    renameSync: () => {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    },
+  };
+  assert.equal(tryTakeLock(LOCK_PATH, NOW, bFs), false, 'racer B backs off');
+  fs._mtimes.set(LOCK_PATH, freshLockMtime);
+  assert.equal(fs.existsSync(LOCK_PATH), true, "racer A's lock survives B's attempt");
+});
+
 test('resolveUsage: disabled returns stdin untouched', () => {
   let spawned = 0;
   const out = resolveUsage(stdin(), false, { now: () => NOW, homeDir: HOME, fs: makeFs(), spawnRefresher: () => spawned++ });

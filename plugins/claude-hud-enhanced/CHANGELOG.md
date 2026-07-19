@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.12] - 2026-07-19
+
+Fix batch from a 10-agent adversarial review of the 0.4.6–0.4.11 changes (8 finder angles + resource-safety audit + independent reviewer, each finding cross-verified).
+
+### Fixed
+- **Cross-profile Keychain token mix-up (macOS).** The OAuth refresher read one global Keychain service, so a custom `CLAUDE_CONFIG_DIR` profile (e.g. a work/Team profile) fetched usage with the DEFAULT profile's token and wrote the wrong account's numbers into its snapshot. Claude Code actually stores per-profile tokens as `Claude Code-credentials-<sha256(configDir)[:8]>` (verified against a live multi-profile Keychain); the refresher now derives the profile's own service and deliberately has NO bare-service fallback for custom profiles — the wrong account's data is worse than none.
+- **Vertex usage hidden by model id too.** `shouldHideUsage` had two detection paths for Bedrock (env + model id) but only env for Vertex; a Vertex session whose `@version` model id reached the HUD without the env var showed meaningless subscription bars. Now symmetric (`isVertexModelId`), matching the pairing `cost.ts` already used.
+- **Single-flight lock: stale-reclaim TOCTOU.** After wake-from-sleep, N terminals racing the stale-lock branch could each force-remove another racer's freshly created lock and ALL "win", spawning N concurrent OAuth refreshers — one burst per wake violating the ~1-request/3-min guarantee. Reclaim now steals via atomic `rename` (exactly one racer can succeed).
+- **Spawn-failure lock release.** If the detached refresher failed to start (EMFILE etc.), the silently-swallowed error left the parent-taken lock to age out (60s) per attempt; the spawn error handler now releases it.
+- **Failed git lookups cached only 1s** (`NULL_CACHE_TTL_MS`): transient git failures (lock contention from a concurrent commit) no longer blank the git segment for the full 5s TTL, while persistently-failing repos (fresh `git init` with no commits, git missing) stay throttled to ~1 spawn/sec instead of one per repaint.
+
+### Added
+- **`src/utils/cache-file.ts`** — shared cache scaffolding: private dirs (0700), atomic tmp+`wx`+rename writes (readers can never observe a torn file), debug-visible corrupt reads, and a sampled sweep (7d age / 100-entry cap, reaps orphaned `.tmp` files). Adopted by `git-cache.ts` (whose dir was world-readable and writes non-atomic — the highest-concurrency cache writer) and wired as a sampled sweep into `transcript-cache/` (previously unbounded; 4k+ files observed in the wild).
+
+### Changed
+- Backoff constants moved next to `USAGE_TTL_MS` in `usage-hybrid.ts` (coupled policy now colocated); `index.ts` type-only import + direct `getGitStatusCached` assignment; stale "~300ms polling" comment corrected; git-cache doc comment now states honestly that worktree-only edits (the most common event) and ref-only moves ride the TTL; setup.md "5-second timer" → benchmark-agnostic wording.
+- Six deferred findings filed as tracked issues (#1–#6): incremental transcript parsing, getHudPluginDir memoization, sibling-cache migration, `--benchmark` CLI mode, provider capability map, optional daemon mode.
+
 ## [0.4.11] - 2026-07-19
 
 ### Added

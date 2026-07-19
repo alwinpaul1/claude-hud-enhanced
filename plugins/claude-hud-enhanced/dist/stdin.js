@@ -269,10 +269,16 @@ export function getProviderLabel(stdin) {
 }
 export function shouldHideUsage(stdin) {
     // Subscription usage windows only exist for OAuth sessions; hide them for
-    // API-billed providers (Bedrock, Vertex). Enterprise model aliases
-    // (opusplan etc.) are subscription plan-mode aliases — usage stays visible.
+    // API-billed providers (Bedrock, Vertex), detected by env label OR model-id
+    // shape — the env var may not reach the statusline child, so the model-id
+    // fallbacks mirror the isBedrockModelId || isVertexModelId pairing in
+    // cost.ts. Enterprise model aliases (opusplan etc.) are subscription
+    // plan-mode aliases — usage stays visible.
     const provider = getProviderLabel(stdin);
-    return provider === 'Bedrock' || provider === 'Vertex' || isBedrockModelId(stdin.model?.id);
+    return (provider === 'Bedrock' ||
+        provider === 'Vertex' ||
+        isBedrockModelId(stdin.model?.id) ||
+        isVertexModelId(stdin.model?.id));
 }
 function parseRateLimitPercent(value) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {

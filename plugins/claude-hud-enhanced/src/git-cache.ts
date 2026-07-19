@@ -5,6 +5,12 @@ import * as path from 'node:path';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
 import { type GitStatus, getGitStatus } from './git.js';
+import {
+  CACHE_SWEEP_SAMPLE_RATE,
+  readJsonCache,
+  sweepCacheDir,
+  writeJsonCacheAtomic,
+} from './utils/cache-file.js';
 
 const debug = createDebug('git-cache');
 
@@ -14,12 +20,23 @@ const debug = createDebug('git-cache');
  * spawns up to ~7 `git` subprocesses on EVERY repaint — at a 1-2s
  * refreshInterval across several terminals that's thousands of spawns/hour.
  *
- * Validity: an entry serves for GIT_CACHE_TTL_MS, but is invalidated the
- * instant `.git/HEAD` or `.git/index` changes mtime (branch switch, commit,
- * staging) — the TTL only covers worktree-only edits that touch neither file,
- * so those can lag the display by at most the TTL.
+ * Staleness model: an entry serves for GIT_CACHE_TTL_MS, and is additionally
+ * invalidated the instant `.git/HEAD` or `.git/index` changes mtime (branch
+ * switch, commit, staging). Everything that touches neither file rides the
+ * TTL — and that includes the MOST COMMON event while a statusline is live
+ * (editing a tracked file, which only changes the worktree) as well as
+ * ref-only moves like `git reset --soft`. So dirty-state, line diffs, and
+ * ahead/behind can lag the truth by up to GIT_CACHE_TTL_MS; that is the
+ * deliberate trade for killing the spawn storm.
+ *
+ * Failed lookups (`status: null` — e.g. a freshly `git init`ed repo with no
+ * commits, git missing from PATH, transient lock contention) are cached for
+ * only NULL_CACHE_TTL_MS: long enough to throttle the persistent-failure
+ * cases to ~1 spawn/sec, short enough that a transient hiccup never blanks
+ * the git segment for more than a second.
  */
 export const GIT_CACHE_TTL_MS = 5_000;
+export const NULL_CACHE_TTL_MS = 1_000;
 
 interface GitCacheEntry {
   version: 1;
@@ -33,6 +50,7 @@ export interface GitCacheDeps {
   homeDir?: string;
   now?: () => number;
   fetch?: (cwd: string) => Promise<GitStatus | null>;
+  random?: () => number;
 }
 
 function mtimeOrNull(p: string): number | null {
@@ -70,28 +88,30 @@ export function findGitDir(cwd: string): string | null {
   }
 }
 
+function cacheDirFor(homeDir: string): string {
+  return path.join(getHudPluginDir(homeDir), 'git-cache');
+}
+
 function cachePathFor(gitDir: string, homeDir: string): string {
   const key = createHash('sha256').update(gitDir).digest('hex').slice(0, 16);
-  return path.join(getHudPluginDir(homeDir), 'git-cache', `git-${key}.json`);
+  return path.join(cacheDirFor(homeDir), `git-${key}.json`);
+}
+
+function isGitCacheEntry(v: unknown): v is GitCacheEntry {
+  const e = v as Partial<GitCacheEntry> | null;
+  return e != null && e.version === 1 && typeof e.createdAt === 'number';
 }
 
 function readEntry(cachePath: string): GitCacheEntry | null {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as GitCacheEntry;
-    if (parsed?.version !== 1 || typeof parsed.createdAt !== 'number') return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return readJsonCache(cachePath, isGitCacheEntry, (err) =>
+    debug('cache read failed:', err instanceof Error ? err.message : err),
+  );
 }
 
 function writeEntry(cachePath: string, entry: GitCacheEntry): void {
-  try {
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(entry), { encoding: 'utf8', mode: 0o600 });
-  } catch (err) {
-    debug('cache write failed:', err instanceof Error ? err.message : err);
-  }
+  writeJsonCacheAtomic(cachePath, entry, (err) =>
+    debug('cache write failed:', err instanceof Error ? err.message : err),
+  );
 }
 
 /** Drop-in cached variant of `getGitStatus` (same signature for MainDeps). */
@@ -103,6 +123,7 @@ export async function getGitStatusCached(
   const homeDir = deps.homeDir ?? os.homedir();
   const now = deps.now ?? Date.now;
   const fetch = deps.fetch ?? getGitStatus;
+  const random = deps.random ?? Math.random;
 
   const gitDir = findGitDir(cwd);
   if (!gitDir) return null; // not a repo: no cache AND no git spawns at all
@@ -114,7 +135,8 @@ export async function getGitStatusCached(
   const cached = readEntry(cachePath);
   if (
     cached &&
-    now() - cached.createdAt < GIT_CACHE_TTL_MS &&
+    now() - cached.createdAt <
+      (cached.status === null ? NULL_CACHE_TTL_MS : GIT_CACHE_TTL_MS) &&
     cached.headMtimeMs === headMtimeMs &&
     cached.indexMtimeMs === indexMtimeMs
   ) {
@@ -123,5 +145,10 @@ export async function getGitStatusCached(
 
   const status = await fetch(cwd);
   writeEntry(cachePath, { version: 1, createdAt: now(), headMtimeMs, indexMtimeMs, status });
+  if (random() < CACHE_SWEEP_SAMPLE_RATE) {
+    sweepCacheDir(cacheDirFor(homeDir), now(), (err) =>
+      debug('cache sweep failed:', err instanceof Error ? err.message : err),
+    );
+  }
   return status;
 }

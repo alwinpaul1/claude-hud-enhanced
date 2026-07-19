@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getClaudeConfigDir } from './claude-config-dir.js';
-import { USAGE_TTL_MS } from './usage-hybrid.js';
+import { BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, USAGE_TTL_MS } from './usage-hybrid.js';
 import {
   type UsageSnapshot,
   getLockPath,
@@ -28,8 +29,6 @@ const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const KEYCHAIN_SERVICE = 'Claude Code-credentials';
 const FETCH_TIMEOUT_MS = 5_000;
 const WATCHDOG_MS = 15_000;
-const BACKOFF_AUTH_MS = 30 * 60_000;
-const BACKOFF_ERROR_MS = 5 * 60_000;
 
 type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day'>;
 
@@ -50,11 +49,28 @@ export function parseAccessToken(rawJson: string): string | null {
   }
 }
 
-function readKeychainToken(): string | null {
+/**
+ * Claude Code stores the default profile's token under the bare service name
+ * and each custom CLAUDE_CONFIG_DIR profile under a suffixed service:
+ * `Claude Code-credentials-<sha256(configDir)[:8]>` (verified against a live
+ * multi-profile Keychain). Selecting the profile's own service — and NEVER
+ * falling back to the bare (default-account) entry for a custom profile — is
+ * what keeps profiles from silently mixing accounts in the usage snapshot.
+ */
+export function keychainServiceForConfigDir(configDir: string, homeDir: string): string {
+  const defaultDir = path.join(homeDir, '.claude');
+  if (path.resolve(configDir) === path.resolve(defaultDir)) {
+    return KEYCHAIN_SERVICE;
+  }
+  const suffix = createHash('sha256').update(configDir).digest('hex').slice(0, 8);
+  return `${KEYCHAIN_SERVICE}-${suffix}`;
+}
+
+function readKeychainToken(service: string): string | null {
   try {
     const secret = execFileSync(
       'security',
-      ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'],
+      ['find-generic-password', '-s', service, '-w'],
       { encoding: 'utf8', timeout: FETCH_TIMEOUT_MS, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true },
     ).trim();
     return secret ? parseAccessToken(secret) : null;
@@ -71,10 +87,16 @@ function readCredentialsFileToken(configDir: string): string | null {
   }
 }
 
-/** Read the Claude Code OAuth token: macOS Keychain first, credentials file otherwise. */
-export function readOauthToken(configDir: string): string | null {
+/**
+ * Read the OAuth token for THIS profile: macOS Keychain (profile-specific
+ * service) first, credentials file otherwise. A custom profile intentionally
+ * has no bare-service fallback — serving the default account's token to a
+ * work profile would be worse than serving nothing.
+ */
+export function readOauthToken(configDir: string, homeDir: string = os.homedir()): string | null {
   if (process.platform === 'darwin') {
-    return readKeychainToken() ?? readCredentialsFileToken(configDir);
+    const service = keychainServiceForConfigDir(configDir, homeDir);
+    return readKeychainToken(service) ?? readCredentialsFileToken(configDir);
   }
   return readCredentialsFileToken(configDir);
 }
