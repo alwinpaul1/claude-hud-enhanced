@@ -15,6 +15,7 @@ import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./exte
 import { resolveUsage, defaultSnapshotFs } from "./usage-hybrid.js";
 import { getLockPath } from "./usage-snapshot.js";
 import { setLanguage, t } from "./i18n/index.js";
+import { tryDaemonRender } from "./daemon-client.js";
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
 import { realpathSync, existsSync, rmSync } from "node:fs";
@@ -101,6 +102,7 @@ export async function main(overrides = {}) {
         render,
         now: () => Date.now(),
         log: console.log,
+        tryDaemonRender,
         ...overrides,
     };
     try {
@@ -116,23 +118,36 @@ export async function main(overrides = {}) {
             }
             return;
         }
+        // Config loads first: the daemon-or-not decision needs it (a mechanical
+        // reordering of 0.4.13's parallelization — transcript + counts stay
+        // concurrent below; config was never a dependency of either).
+        const config = await deps.loadConfig();
+        setLanguage(config.language);
+        // Warm daemon (opt-in): hand the parsed stdin to the per-profile daemon
+        // and print its render, skipping all per-process work below. ANY failure
+        // returns null and falls through to the unmodified inline path — the
+        // daemon can make a repaint faster, never break it.
+        if (config.daemon.enabled && deps.tryDaemonRender) {
+            const output = await deps.tryDaemonRender(stdin, scriptPath);
+            if (output !== null) {
+                deps.log(output);
+                return;
+            }
+        }
         const transcriptPath = stdin.transcript_path ?? "";
-        // Transcript parse, config counts, and config load are independent I/O
-        // (verified: none reads another's output) — run them concurrently instead
-        // of serializing three awaits on the repaint hot path. Git status stays
-        // sequential after config: its enabled-gate is config data, and running
-        // git work for users who disabled it would violate their intent.
-        const [transcript, configCounts, config] = await Promise.all([
+        // Transcript parse and config counts are independent I/O — run them
+        // concurrently. Git status stays sequential after config: its
+        // enabled-gate is config data, and running git work for users who
+        // disabled it would violate their intent.
+        const [transcript, configCounts] = await Promise.all([
             deps.parseTranscript(transcriptPath),
             deps.countConfigs(stdin.cwd),
-            deps.loadConfig(),
         ]);
         deps.applyContextWindowFallback(stdin, {}, transcript.sessionName, {
             lastCompactBoundaryAt: transcript.lastCompactBoundaryAt,
             lastCompactPostTokens: transcript.lastCompactPostTokens,
         });
         const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } = configCounts;
-        setLanguage(config.language);
         const gitStatus = config.gitStatus.enabled
             ? await deps.getGitStatus(stdin.cwd)
             : null;
@@ -251,6 +266,15 @@ const isSamePath = (a, b) => {
     }
 };
 if (argvPath && isSamePath(argvPath, scriptPath)) {
-    void main();
+    if (process.argv.includes("--daemon")) {
+        // Warm daemon mode (spawned by daemon-client, never user-invoked).
+        // Dynamic import keeps the normal render path from loading `net`.
+        void import("./daemon.js")
+            .then((m) => m.runDaemon())
+            .catch(() => process.exit(1));
+    }
+    else {
+        void main();
+    }
 }
 //# sourceMappingURL=index.js.map

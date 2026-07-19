@@ -53,6 +53,9 @@ export interface HudConfig {
         pushWarningThreshold: number;
         pushCriticalThreshold: number;
     };
+    daemon: {
+        enabled: boolean;
+    };
     display: {
         showModel: boolean;
         showProject: boolean;

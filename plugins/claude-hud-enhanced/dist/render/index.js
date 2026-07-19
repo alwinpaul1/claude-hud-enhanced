@@ -443,7 +443,10 @@ function renderExpanded(ctx, terminalWidth = null) {
     }
     return lines;
 }
-export function render(ctx) {
+export function render(ctx, 
+// Output seam for the warm daemon (captures lines instead of printing);
+// every existing caller keeps the console default.
+write = (line) => console.log(line)) {
     const lineLayout = ctx.config?.lineLayout ?? 'expanded';
     const showSeparators = ctx.config?.showSeparators ?? false;
     const detectedWidth = getTerminalWidth({ preferEnv: true, fallback: UNKNOWN_TERMINAL_WIDTH });
@@ -510,7 +513,7 @@ export function render(ctx) {
     const visibleLines = physicalLines.flatMap(line => wrapLineToWidth(line, wrapWidth));
     for (const line of visibleLines) {
         const outputLine = `${RESET}${line}`;
-        console.log(outputLine);
+        write(outputLine);
     }
 }
 //# sourceMappingURL=index.js.map

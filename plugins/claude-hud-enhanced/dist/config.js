@@ -40,6 +40,9 @@ export const DEFAULT_CONFIG = {
         pushWarningThreshold: 0,
         pushCriticalThreshold: 0,
     },
+    daemon: {
+        enabled: false,
+    },
     display: {
         showModel: true,
         showProject: true,
@@ -364,6 +367,11 @@ export function mergeConfig(userConfig) {
         pushWarningThreshold: validateCountThreshold(migrated.gitStatus?.pushWarningThreshold),
         pushCriticalThreshold: validateCountThreshold(migrated.gitStatus?.pushCriticalThreshold),
     };
+    const daemon = {
+        enabled: typeof migrated.daemon?.enabled === 'boolean'
+            ? migrated.daemon.enabled
+            : DEFAULT_CONFIG.daemon.enabled,
+    };
     const display = {
         showModel: typeof migrated.display?.showModel === 'boolean'
             ? migrated.display.showModel
@@ -576,7 +584,7 @@ export function mergeConfig(userConfig) {
             ? migrated.colors.barEmpty
             : DEFAULT_CONFIG.colors.barEmpty,
     };
-    return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, gitStatus, display, colors };
+    return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, gitStatus, daemon, display, colors };
 }
 export async function loadConfig() {
     const configPath = getConfigPath();

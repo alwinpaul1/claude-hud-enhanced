@@ -166,6 +166,7 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 | `display.showUsage` | boolean | true | Show 5h/7d usage from stdin `rate_limits` |
 | `display.idleUsageReset` | boolean | false | While idle, show a window as reset (~0%) once its reset time passes (local-only) |
 | `display.oauthUsagePoll` | boolean | false | Hybrid usage sync: idle terminals pick up usage from active ones via a shared per-profile snapshot (local), and while fully idle a detached OAuth refresher keeps usage live across devices (reads your Claude Code OAuth token read-only, calls Anthropic's `oauth/usage` endpoint; 180s TTL, single-flight, backoff) |
+| `daemon.enabled` | boolean | false | **Experimental, macOS/Linux only.** Warm daemon: a long-lived per-profile process serves renders over a local socket so each repaint skips the per-process work (transcript parse, config load, git). Any daemon failure falls back to the normal inline render — it can only make repaints faster, never break them. See `docs/daemon-mode-design.md` |
 | `display.sevenDayThreshold` | number | 0 | Min 7d % before weekly shows (0 = always) |
 | `display.showTools` | boolean | true | Show tools activity line |
 | `display.showAgents` | boolean | true | Show agents activity line |
