@@ -5,6 +5,11 @@ import { createHash } from 'node:crypto';
 import type { StdinData } from './types.js';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
+import {
+  CACHE_SWEEP_SAMPLE_RATE,
+  sweepCacheDir,
+  writeJsonCacheAtomic,
+} from './utils/cache-file.js';
 
 const debug = createDebug('speed-tracker');
 
@@ -82,11 +87,15 @@ function writeCache(homeDir: string, transcriptPath: string, cache: SpeedCache):
     const cachePath = getCachePath(homeDir, transcriptPath);
     const cacheDir = path.dirname(cachePath);
     ensurePrivateDir(cacheDir);
-    fs.writeFileSync(cachePath, JSON.stringify(cache), { encoding: 'utf8', mode: 0o600 });
-    try {
-      fs.chmodSync(cachePath, 0o600);
-    } catch {
-      // Best-effort: cache permissions should not break speed tracking.
+    // Atomic (split panes can share a transcript path) + bounded (one file
+    // per transcript ever seen, previously never pruned).
+    writeJsonCacheAtomic(cachePath, cache, (err) =>
+      debug('Failed to write speed cache:', err instanceof Error ? err.message : err),
+    );
+    if (Math.random() < CACHE_SWEEP_SAMPLE_RATE) {
+      sweepCacheDir(cacheDir, Date.now(), (err) =>
+        debug('Speed cache sweep failed:', err instanceof Error ? err.message : err),
+      );
     }
   } catch (err) {
     debug('Failed to write speed cache:', err instanceof Error ? err.message : err);
@@ -116,12 +125,9 @@ function writeFileSizeCache(cachePath: string, cache: FileSizeCache): void {
   try {
     const cacheDir = path.dirname(cachePath);
     ensurePrivateDir(cacheDir);
-    fs.writeFileSync(cachePath, JSON.stringify(cache), { encoding: 'utf8', mode: 0o600 });
-    try {
-      fs.chmodSync(cachePath, 0o600);
-    } catch {
-      // Best-effort: cache permissions should not break speed tracking.
-    }
+    writeJsonCacheAtomic(cachePath, cache, (err) =>
+      debug('Failed to write file size cache:', err instanceof Error ? err.message : err),
+    );
   } catch (err) {
     debug('Failed to write file size cache:', err instanceof Error ? err.message : err);
   }

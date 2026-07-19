@@ -481,6 +481,28 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
   }
 });
 
+test('loadConfig reads a config.json saved with a UTF-8 BOM (Windows editors)', async () => {
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const customConfigDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-config-bom-'));
+  try {
+    process.env.CLAUDE_CONFIG_DIR = customConfigDir;
+    const pluginDir = path.join(customConfigDir, 'plugins', 'claude-hud-enhanced');
+    await mkdir(pluginDir, { recursive: true });
+    // Prepend U+FEFF, as PowerShell 5.1 Set-Content -Encoding UTF8 does.
+    await writeFile(
+      path.join(pluginDir, 'config.json'),
+      '﻿' + JSON.stringify({ pathLevels: 3, display: { showSpeed: true } }),
+      'utf8',
+    );
+    const config = await loadConfig();
+    assert.equal(config.pathLevels, 3, 'BOM-prefixed config must not be silently discarded');
+    assert.equal(config.display.showSpeed, true);
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
+    await rm(customConfigDir, { recursive: true, force: true });
+  }
+});
+
 // --- migrateConfig tests (via mergeConfig) ---
 
 test('migrate legacy layout: "default" -> compact, no separators', () => {

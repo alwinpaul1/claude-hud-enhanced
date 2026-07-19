@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.2] - 2026-07-19
+
+Whole-plugin max-effort review (4 fresh reviewer agents across the full 10k-line source, all-platforms mandate). Confirmed findings fixed:
+
+### Security / correctness
+- **Terminal escape-sequence injection closed.** Task/agent descriptions, todo content, and tool targets (Bash commands, grep patterns, file paths) are model-generated and were rendered without sanitization — a poisoned field could emit raw OSC/CSI escapes (title-set, clipboard-write, spoofed hyperlinks) into the terminal every repaint. Now routed through `sanitizeDisplayText` at the extraction choke points, matching every other untrusted-text path.
+- **Windows: BOM-prefixed config silently discarded.** `config.json` / `settings.json` / `.mcp.json` / the auth JSON saved by Notepad or PowerShell 5.1 (`Set-Content -Encoding UTF8` emits `EF BB BF`) threw in `JSON.parse` and fell back to defaults — the user's whole customization ignored. A leading UTF-8 BOM is now stripped before every user-editable JSON read.
+- **Duplicate `tool_use` no longer flips a completed tool back to "running".** Claude Code dual-logs the same assistant record 2-3×; the replay overwrote the map entry, showing a permanent ◐. First-occurrence-wins guard added (mirrors the existing token-usage dedup).
+- **`99.6%` no longer shows a false "Limit reached"** (`isLimitReached` uses `=== 100`; near-100 values now cap the display at 99 below a true 100).
+- **Scoped windows no longer vanish when the `utilization` key is absent** (was dropped; now kept as "--" like an explicit null).
+- **Surrogate-pair truncation** no longer leaves a stray `�` in emoji/CJK todo/agent text.
+
+### Resource safety
+- **`speed-cache` and `config-cache` now get the sampled sweep** the other caches already had (were growing one file per session/cwd forever).
+- **Atomic writes** (tmp+rename) for the `version`, `config`, and `speed` caches — shared across every terminal on a profile, so a concurrent write could produce torn reads and spurious cache misses.
+
+### Known / deferred (verified, tracked)
+- Full transcript re-parse during active streaming is O(session-size) per tick — this is the already-tracked incremental-parsing work (issue #1), independently re-confirmed by review; a write-TTL would not fix the reparse cost.
+- The reviewers re-verified the daemon's OAuth single-flight, error containment, Windows isolation, and resource bounds as clean.
+
+Tests: 1016 pass / 0 fail (9 new: escape-injection, BOM config load, tool_use dedup, scoped absent-key, percent boundary, surrogate truncation).
+
 ## [0.5.1] - 2026-07-19
 
 Three-round iterative max-effort review of the 0.5.0 daemon (7 fresh reviewer agents across rounds; each round fixed, then re-reviewed, until a round found zero functional defects). 16 confirmed findings fixed in total.

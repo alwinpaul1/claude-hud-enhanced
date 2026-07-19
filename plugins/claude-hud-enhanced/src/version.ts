@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
+import { writeJsonCacheAtomic } from './utils/cache-file.js';
 
 const debug = createDebug('version');
 
@@ -126,12 +127,12 @@ function writeVersionCache(homeDir: string, cache: VersionCacheFile): void {
       // Best-effort: some filesystems do not support POSIX modes.
     }
 
-    fs.writeFileSync(cachePath, JSON.stringify(cache), { encoding: 'utf8', mode: 0o600 });
-    try {
-      fs.chmodSync(cachePath, 0o600);
-    } catch {
-      // Best-effort: version cache permissions should not affect rendering.
-    }
+    // Atomic: this cache file is shared by every terminal on a profile, so
+    // N cold-starting terminals can race a write; tmp+rename means a reader
+    // never sees a torn file (worst case is harmless last-write-wins).
+    writeJsonCacheAtomic(cachePath, cache, (err) =>
+      debug('Failed to write version cache:', err instanceof Error ? err.message : err),
+    );
   } catch (err) {
     debug('Failed to write version cache:', err instanceof Error ? err.message : err);
   }

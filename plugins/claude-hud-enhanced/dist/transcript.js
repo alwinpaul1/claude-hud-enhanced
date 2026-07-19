@@ -479,12 +479,18 @@ function processEntry(entry, toolMap, skillSet, mcpServerSet, agentMap, taskIdTo
                     id: block.id,
                     type: input?.subagent_type ?? 'agent',
                     model: input?.model ?? undefined,
-                    description: input?.description ?? undefined,
+                    description: sanitizeTarget(input?.description),
                     status: 'running',
                     startTime: timestamp,
                     background: input?.run_in_background === true,
                 };
-                agentMap.set(block.id, agentEntry);
+                // First occurrence wins: Claude Code dual-logs the same assistant
+                // record 2-3×, so a replayed tool_use id must not overwrite an entry
+                // a later tool_result already completed (would flip it back to
+                // "running" and show a permanent ◐). Same guard as the token-usage
+                // seenMessageIds dedup, extended to tool/agent blocks.
+                if (!agentMap.has(block.id))
+                    agentMap.set(block.id, agentEntry);
             }
             else if (block.name === 'TodoWrite') {
                 const input = block.input;
@@ -509,7 +515,13 @@ function processEntry(entry, toolMap, skillSet, mcpServerSet, agentMap, taskIdTo
                     }
                     latestTodos.length = 0;
                     taskIdToIndex.clear();
-                    latestTodos.push(...input.todos);
+                    // Sanitize each todo's model-generated content on ingest so the
+                    // escape-stripped text is what's used for BOTH content-matching
+                    // above and rendering (todos-line.ts) — no raw ESC bytes reach the
+                    // terminal.
+                    for (const todo of input.todos) {
+                        latestTodos.push({ ...todo, content: sanitizeDisplayText(String(todo.content ?? '')) });
+                    }
                     // Consume one queued taskId per new todo that matches by content,
                     // so duplicate-content items still each get their own taskId.
                     for (let i = 0; i < latestTodos.length; i++) {
@@ -555,7 +567,9 @@ function processEntry(entry, toolMap, skillSet, mcpServerSet, agentMap, taskIdTo
                     }
                 }
             }
-            else {
+            else if (!toolMap.has(block.id)) {
+                // First occurrence wins (see agentMap note above) — a dual-logged
+                // duplicate tool_use must not reset a completed tool to "running".
                 toolMap.set(block.id, toolEntry);
             }
         }
@@ -579,18 +593,22 @@ function extractTarget(toolName, input) {
         case 'Read':
         case 'Write':
         case 'Edit':
-            return input.file_path ?? input.path;
+            return sanitizeTarget(input.file_path ?? input.path);
         case 'Glob':
-            return input.pattern;
+            return sanitizeTarget(input.pattern);
         case 'Grep':
-            return input.pattern;
+            return sanitizeTarget(input.pattern);
         case 'Skill':
             return normalizeSkillName(input.skill);
         case 'Bash':
             if (typeof input.command !== 'string') {
                 return undefined;
             }
-            const cmd = input.command.replace(/\s+/g, ' ').trim();
+            // Collapse whitespace FIRST (turn newlines/tabs into spaces, preserving
+            // word boundaries), THEN sanitize (strips ESC/ANSI but keeps the spaces)
+            // — both before truncating, so no control byte consumes the 30-char
+            // budget or survives into the rendered line.
+            const cmd = sanitizeDisplayText(input.command.replace(/\s+/g, ' ')).trim();
             return cmd
                 ? cmd.length > 30
                     ? `${cmd.slice(0, 30).trimEnd()}...`
@@ -598,6 +616,18 @@ function extractTarget(toolName, input) {
                 : undefined;
     }
     return undefined;
+}
+/**
+ * Strip terminal control/ANSI/bidi bytes from an untrusted tool target
+ * (file path, glob/grep pattern) before it reaches the statusline — these
+ * fields are model-generated and could carry OSC/CSI escapes. Mirrors what
+ * normalizeActivityName already does for tool/skill names.
+ */
+function sanitizeTarget(value) {
+    if (typeof value !== 'string')
+        return undefined;
+    const cleaned = sanitizeDisplayText(value).trim();
+    return cleaned.length > 0 ? cleaned : undefined;
 }
 function normalizeSkillName(value) {
     return normalizeActivityName(value);

@@ -601,6 +601,50 @@ test('parseTranscript aggregates tools, agents, and todos', async () => {
   assert.equal(result.sessionStart?.toISOString(), '2024-01-01T00:00:00.000Z');
 });
 
+test('parseTranscript strips terminal escapes from tool target, agent description, and todo content', async () => {
+  const ESC = '';
+  const now = '2024-01-01T00:00:00.000Z';
+  const result = await parseTempTranscript('inject.jsonl', [
+    { type: 'assistant', timestamp: now, message: { content: [
+      { type: 'tool_use', id: 't1', name: 'Bash', input: { command: `echo hi${ESC}]0;pwned` } },
+      { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: `/tmp/a${ESC}[31mX.txt` } },
+      { type: 'tool_use', id: 'a1', name: 'Task', input: { subagent_type: 'x', description: `do${ESC}]52;c;evil it` } },
+      { type: 'tool_use', id: 'td', name: 'TodoWrite', input: { todos: [
+        { content: `ship${ESC}[2J it`, status: 'in_progress', activeForm: 'shipping' },
+      ] } },
+    ] } },
+  ]);
+  const allText = [
+    ...result.tools.map(t => t.target ?? ''),
+    ...result.agents.map(a => a.description ?? ''),
+    ...result.todos.map(t => t.content ?? ''),
+  ].join('|');
+  assert.ok(!allText.includes(ESC), 'no raw ESC byte survives into rendered fields');
+  assert.ok(!allText.includes(''), 'no BEL byte survives');
+  // The human-readable text is preserved, only control bytes stripped.
+  assert.ok(result.todos.some(t => t.content.includes('ship') && t.content.includes('it')));
+});
+
+test('parseTranscript: a dual-logged duplicate tool_use does not reset a completed tool to running', async () => {
+  const t0 = '2024-01-01T00:00:00.000Z';
+  const t1 = '2024-01-01T00:00:01.000Z';
+  const result = await parseTempTranscript('dual-log.jsonl', [
+    { type: 'assistant', timestamp: t0, message: { content: [
+      { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: '/a.txt' } },
+    ] } },
+    { type: 'user', timestamp: t1, message: { content: [
+      { type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' },
+    ] } },
+    // Claude Code re-logs the SAME assistant record (dual-logging) AFTER the result:
+    { type: 'assistant', timestamp: t0, message: { content: [
+      { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: '/a.txt' } },
+    ] } },
+  ]);
+  const tool = result.tools.find(t => t.id === 'toolu_1');
+  assert.ok(tool, 'tool present');
+  assert.equal(tool.status, 'completed', 'duplicate tool_use must NOT flip it back to running');
+});
+
 test('parseTranscript accumulates session token usage from assistant messages', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-'));
   const filePath = path.join(dir, 'session-tokens.jsonl');
