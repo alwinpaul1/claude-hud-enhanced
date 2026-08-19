@@ -86,7 +86,7 @@ function graphemeWidth(grapheme: string, ambiguousWide: boolean): number {
   let hasVisibleBase = false;
   let width = 0;
   for (const char of Array.from(grapheme)) {
-    if (/^\p{Mark}$/u.test(char) || char === '\u200D' || char === '\uFE0F') {
+    if (/^\p{Mark}$/u.test(char) || char === '\u200D' || char === '\uFE0E' || char === '\uFE0F') {
       continue;
     }
     hasVisibleBase = true;

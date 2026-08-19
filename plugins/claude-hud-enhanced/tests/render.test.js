@@ -81,6 +81,16 @@ function baseContext() {
   };
 }
 
+function withNow(now, fn) {
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    return fn();
+  } finally {
+    Date.now = originalNow;
+  }
+}
+
 function captureRenderLines(ctx) {
   const logs = [];
   const originalLog = console.log;
@@ -1836,9 +1846,111 @@ test('renderAgentsLine renders completed agents', () => {
     },
   ];
 
-  const line = renderAgentsLine(ctx);
+  const line = withNow(30_000, () => renderAgentsLine(ctx));
   assert.ok(line?.includes('explore'));
   assert.ok(line?.includes('haiku'));
+});
+
+test('renderAgentsLine expires completed agents on the next render after one minute', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'agent-recent',
+      type: 'recent',
+      status: 'completed',
+      startTime: new Date(50_000),
+      endTime: new Date(60_000),
+    },
+  ];
+
+  assert.ok(withNow(120_000, () => renderAgentsLine(ctx))?.includes('recent'));
+  assert.equal(withNow(120_001, () => renderAgentsLine(ctx)), null);
+});
+
+test('renderAgentsLine hides completed agents without a trustworthy completion time', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'agent-missing-end',
+      type: 'missing-end',
+      status: 'completed',
+      startTime: new Date(0),
+    },
+    {
+      id: 'agent-invalid-end',
+      type: 'invalid-end',
+      status: 'completed',
+      startTime: new Date(0),
+      endTime: new Date(Number.NaN),
+    },
+    {
+      id: 'agent-future-end',
+      type: 'future-end',
+      status: 'completed',
+      startTime: new Date(0),
+      endTime: new Date(120_001),
+    },
+  ];
+
+  assert.equal(withNow(120_000, () => renderAgentsLine(ctx)), null);
+});
+
+test('renderAgentsLine gives all visible slots to running agents before completed history', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'completed-1',
+      type: 'completed-one',
+      status: 'completed',
+      startTime: new Date(0),
+      endTime: new Date(119_000),
+    },
+    {
+      id: 'completed-2',
+      type: 'completed-two',
+      status: 'completed',
+      startTime: new Date(0),
+      endTime: new Date(119_000),
+    },
+    ...['running-one', 'running-two', 'running-three', 'running-four'].map((type, index) => ({
+      id: `running-${index + 1}`,
+      type,
+      status: 'running',
+      startTime: new Date(119_000),
+    })),
+  ];
+
+  const line = withNow(120_000, () => renderAgentsLine(ctx));
+  assert.doesNotMatch(line ?? '', /completed-/);
+  assert.doesNotMatch(line ?? '', /running-one/);
+  assert.match(line ?? '', /running-two/);
+  assert.match(line ?? '', /running-three/);
+  assert.match(line ?? '', /running-four/);
+});
+
+test('renderAgentsLine fills remaining slots with the latest completed agents', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    ...['completed-one', 'completed-two', 'completed-three'].map((type, index) => ({
+      id: `completed-${index + 1}`,
+      type,
+      status: 'completed',
+      startTime: new Date(100_000),
+      endTime: new Date(119_000 + index),
+    })),
+    {
+      id: 'running-1',
+      type: 'running-one',
+      status: 'running',
+      startTime: new Date(119_000),
+    },
+  ];
+
+  const line = withNow(120_000, () => renderAgentsLine(ctx));
+  assert.doesNotMatch(line ?? '', /completed-one/);
+  assert.match(line ?? '', /completed-two/);
+  assert.match(line ?? '', /completed-three/);
+  assert.match(line ?? '', /running-one/);
 });
 
 test('renderAgentsLine truncates long descriptions and formats elapsed time', () => {
@@ -1850,8 +1962,8 @@ test('renderAgentsLine truncates long descriptions and formats elapsed time', ()
       model: 'haiku',
       description: 'A very long description that should be truncated in the HUD output',
       status: 'completed',
-      startTime: new Date(0),
-      endTime: new Date(1500),
+      startTime: new Date(63_500),
+      endTime: new Date(65_000),
     },
     {
       id: 'agent-2',
@@ -1862,7 +1974,7 @@ test('renderAgentsLine truncates long descriptions and formats elapsed time', ()
     },
   ];
 
-  const line = renderAgentsLine(ctx);
+  const line = withNow(65_000, () => renderAgentsLine(ctx));
   assert.ok(line?.includes('...'));
   assert.ok(line?.includes('2s'));
   assert.ok(line?.includes('1m'));
@@ -1903,7 +2015,10 @@ test('renderAgentsLine formats elapsed time in hours for long-running agents', (
     },
   ];
 
-  const line = renderAgentsLine(ctx);
+  const line = withNow(
+    (2 * 60 * 60 + 5 * 60) * 1000,
+    () => renderAgentsLine(ctx),
+  );
   assert.ok(line?.includes('2h 5m'));
 });
 
@@ -1919,8 +2034,59 @@ test('renderAgentsLine clamps negative elapsed time to under one second', () => 
     },
   ];
 
-  const line = renderAgentsLine(ctx);
+  const line = withNow(1000, () => renderAgentsLine(ctx));
   assert.ok(line?.includes('<1s'));
+});
+
+test('renderAgentsLine sanitizes untrusted agent labels before terminal output', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'agent-hostile',
+      type: '\x1b]8;;https://evil.example\x07explore\x1b]8;;\x07\n\u202e',
+      description: 'safe\x1b[2J\n\u202evisible',
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = withNow(1_000, () => renderAgentsLine(ctx));
+  assert.match(line ?? '', /explore/);
+  assert.match(line ?? '', /safevisible/);
+  assert.doesNotMatch(line ?? '', /evil\.example|\x1b\]8|\x1b\[2J|\n|\u202e/);
+});
+
+test('renderAgentsLine safely handles non-string cached agent labels', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'agent-invalid-labels',
+      type: { unexpected: true },
+      description: { unexpected: true },
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = withNow(1_000, () => renderAgentsLine(ctx));
+  assert.match(line ?? '', /agent/);
+  assert.doesNotMatch(line ?? '', /unexpected|\[object Object\]/);
+});
+
+test('renderAgentsLine bounds untrusted agent types', () => {
+  const ctx = baseContext();
+  ctx.transcript.agents = [
+    {
+      id: 'agent-long-type',
+      type: 'x'.repeat(100),
+      status: 'running',
+      startTime: new Date(0),
+    },
+  ];
+
+  const line = withNow(1_000, () => renderAgentsLine(ctx));
+  assert.match(line ?? '', new RegExp(`${'x'.repeat(21)}\\.\\.\\.`));
+  assert.doesNotMatch(line ?? '', new RegExp('x'.repeat(22)));
 });
 
 test('renderTodosLine handles in-progress and completed-only cases', () => {

@@ -949,6 +949,37 @@ test("main prefers stdin scoped windows over the external snapshot", async () =>
   ]);
 });
 
+test("main preserves an explicit empty stdin scoped snapshot", async () => {
+  let renderedContext;
+
+  await main({
+    readStdin: async () => makeStdin({
+      rate_limits: {
+        five_hour: { used_percentage: 49.6, resets_at: 1710000000 },
+        model_scoped: [],
+      },
+    }),
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    loadConfig: async () => makeConfig({
+      display: { externalUsagePath: "/tmp/usage.json" },
+    }),
+    getGitStatus: async () => null,
+    getUsageFromExternalSnapshot: () => ({
+      fiveHour: null,
+      sevenDay: null,
+      fiveHourResetAt: null,
+      sevenDayResetAt: null,
+      scopedWindows: [{ label: "Stale", percent: 99, resetAt: null }],
+    }),
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.deepEqual(renderedContext?.usageData?.scopedWindows, []);
+});
+
 test("main uses a scoped-only external snapshot when stdin has no rate limits", async () => {
   let renderedContext;
   const scopedOnly = {

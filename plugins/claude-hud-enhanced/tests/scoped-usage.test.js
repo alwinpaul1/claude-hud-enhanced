@@ -113,6 +113,15 @@ test('getUsageFromStdin returns usage when only model_scoped is present', () => 
   assert.equal(usage.scopedWindows[0].resetAt, null);
 });
 
+test('getUsageFromStdin preserves an explicit empty model_scoped snapshot', () => {
+  const usage = getUsageFromStdin(stdinWith({ model_scoped: [] }));
+
+  assert.notEqual(usage, null);
+  assert.equal(usage.fiveHour, null);
+  assert.equal(usage.sevenDay, null);
+  assert.deepEqual(usage.scopedWindows, []);
+});
+
 test('getUsageFromStdin drops malformed model_scoped entries', () => {
   const usage = getUsageFromStdin(stdinWith({
     five_hour: { used_percentage: 10, resets_at: null },

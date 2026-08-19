@@ -755,6 +755,55 @@ test('parseTranscript deduplicates non-consecutive duplicate assistant usage by 
   });
 });
 
+test('parseTranscript replaces a zero placeholder with later message usage', async () => {
+  const result = await parseTempTranscript('session-tokens-placeholder.jsonl', [
+    { type: 'assistant', message: { id: 'msg-placeholder', usage: {} } },
+    {
+      type: 'assistant',
+      message: {
+        id: 'msg-placeholder',
+        usage: {
+          input_tokens: 100,
+          output_tokens: 25,
+          cache_creation_input_tokens: 10,
+          cache_read_input_tokens: 5,
+        },
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.sessionTokens, {
+    inputTokens: 100,
+    outputTokens: 25,
+    cacheCreationTokens: 10,
+    cacheReadTokens: 5,
+  });
+});
+
+test('parseTranscript adds only positive per-field message usage deltas', async () => {
+  const result = await parseTempTranscript('session-tokens-progressive.jsonl', [
+    {
+      type: 'assistant',
+      message: { id: 'msg-progressive', usage: { input_tokens: 100, output_tokens: 10 } },
+    },
+    {
+      type: 'assistant',
+      message: { id: 'msg-progressive', usage: { input_tokens: 80, output_tokens: 25 } },
+    },
+    {
+      type: 'assistant',
+      message: { id: 'msg-progressive', usage: { input_tokens: 120, output_tokens: 25 } },
+    },
+  ]);
+
+  assert.deepEqual(result.sessionTokens, {
+    inputTokens: 120,
+    outputTokens: 25,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  });
+});
+
 test('parseTranscript counts different message IDs with identical usage', async () => {
   const usage = {
     input_tokens: 100,

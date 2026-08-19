@@ -405,8 +405,9 @@ export function getUsageFromStdin(stdin: StdinData): UsageData | null {
 
   const fiveHour = parseRateLimitPercent(rateLimits.five_hour?.used_percentage);
   const sevenDay = parseRateLimitPercent(rateLimits.seven_day?.used_percentage);
+  const hasScopedWindows = Array.isArray(rateLimits.model_scoped);
   const scopedWindows = parseScopedWindows(rateLimits.model_scoped);
-  if (fiveHour === null && sevenDay === null && scopedWindows.length === 0) {
+  if (fiveHour === null && sevenDay === null && !hasScopedWindows) {
     return null;
   }
 
@@ -415,7 +416,7 @@ export function getUsageFromStdin(stdin: StdinData): UsageData | null {
     sevenDay,
     fiveHourResetAt: parseRateLimitResetAt(rateLimits.five_hour?.resets_at),
     sevenDayResetAt: parseRateLimitResetAt(rateLimits.seven_day?.resets_at),
-    ...(scopedWindows.length > 0 && { scopedWindows }),
+    ...(hasScopedWindows && { scopedWindows }),
   };
 }
 

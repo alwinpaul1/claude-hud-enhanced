@@ -112,7 +112,10 @@ interface SerializedAcc {
   todos: TodoItem[];
   taskIdToIndex: [string, number][];
   queueCompletion: [string, string][]; // [toolUseId, ISO]
-  seenMessageIds: string[];
+  // Per-message usage, not just the ids: upstream's accounting adds the DELTA
+  // when a message id reappears with its completed record, so a resumed parse
+  // needs the previous per-message figures, not merely "seen before".
+  messageUsage: [string, SessionTokenUsage][];
   latestSlug?: string;
   customTitle?: string;
   latestAdvisorModel?: string;
@@ -138,13 +141,14 @@ interface TranscriptCacheFile {
   resumeSkip?: number; // lines to skip (already committed) on the next resume
 }
 
-// Bumped to 13: adds the incremental-resume accumulator; older caches lack it
-// and safely fall back to a full parse.
-const TRANSCRIPT_CACHE_VERSION = 13;
+// Bumped to 14: upstream's completed-record token accounting
+// (accumulateMessageUsage) on top of our incremental-resume accumulator. Older
+// caches lack one or both and safely fall back to a full parse.
+const TRANSCRIPT_CACHE_VERSION = 14;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
-const SEEN_MESSAGE_IDS_MAX = 4096;
+const MESSAGE_USAGE_MAX = 4096;
 // Cap on tool/agent entries persisted in the resume accumulator — well beyond
 // the 20/10 display window, so bounding it never changes the rendered result.
 const RESUME_ENTRY_CAP = 256;
@@ -181,14 +185,38 @@ function normalizeMessageId(value: unknown): string | null {
     : null;
 }
 
-function rememberMessageId(seenMessageIds: Set<string>, messageId: string): void {
-  if (seenMessageIds.size >= SEEN_MESSAGE_IDS_MAX) {
-    const oldest = seenMessageIds.values().next().value;
+function accumulateMessageUsage(
+  usageByMessageId: Map<string, SessionTokenUsage>,
+  messageId: string,
+  current: SessionTokenUsage,
+  total: SessionTokenUsage,
+): void {
+  const previous = usageByMessageId.get(messageId);
+  if (!previous && usageByMessageId.size >= MESSAGE_USAGE_MAX) {
+    const oldest = usageByMessageId.keys().next().value;
     if (oldest !== undefined) {
-      seenMessageIds.delete(oldest);
+      usageByMessageId.delete(oldest);
     }
   }
-  seenMessageIds.add(messageId);
+
+  const prior = previous ?? {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  };
+
+  total.inputTokens += Math.max(0, current.inputTokens - prior.inputTokens);
+  total.outputTokens += Math.max(0, current.outputTokens - prior.outputTokens);
+  total.cacheCreationTokens += Math.max(0, current.cacheCreationTokens - prior.cacheCreationTokens);
+  total.cacheReadTokens += Math.max(0, current.cacheReadTokens - prior.cacheReadTokens);
+
+  usageByMessageId.set(messageId, {
+    inputTokens: Math.max(prior.inputTokens, current.inputTokens),
+    outputTokens: Math.max(prior.outputTokens, current.outputTokens),
+    cacheCreationTokens: Math.max(prior.cacheCreationTokens, current.cacheCreationTokens),
+    cacheReadTokens: Math.max(prior.cacheReadTokens, current.cacheReadTokens),
+  });
 }
 
 function normalizeSessionTokens(tokens: unknown): SessionTokenUsage | undefined {
@@ -492,7 +520,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
   };
-  const seenMessageIds = new Set<string>();
+  const usageByMessageId = new Map<string, SessionTokenUsage>();
   let lastUsageKey: string | undefined;
 
   let parsedCleanly = false;
@@ -514,7 +542,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     latestTodos.length = 0;
     taskIdToIndex.clear();
     queueCompletionMap.clear();
-    seenMessageIds.clear();
+    usageByMessageId.clear();
     latestSlug = undefined;
     customTitle = undefined;
     latestAdvisorModel = undefined;
@@ -556,7 +584,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
       latestTodos = a.todos.map((td) => ({ ...td }));
       for (const [k, v] of a.taskIdToIndex) taskIdToIndex.set(k, v);
       for (const [k, iso] of a.queueCompletion) queueCompletionMap.set(k, new Date(iso));
-      for (const id of a.seenMessageIds) seenMessageIds.add(id);
+      for (const [id, u] of a.messageUsage) usageByMessageId.set(id, { ...u });
       latestSlug = a.latestSlug;
       customTitle = a.customTitle;
       latestAdvisorModel = a.latestAdvisorModel;
@@ -685,25 +713,26 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
         if (entry.type === 'assistant' && entry.message?.usage) {
           const usage = entry.message.usage;
           const msgId = normalizeMessageId(entry.message.id);
-          let shouldCount = false;
+          const normalizedUsage: SessionTokenUsage = {
+            inputTokens: normalizeTokenCount(usage.input_tokens),
+            outputTokens: normalizeTokenCount(usage.output_tokens),
+            cacheCreationTokens: normalizeTokenCount(usage.cache_creation_input_tokens),
+            cacheReadTokens: normalizeTokenCount(usage.cache_read_input_tokens),
+          };
 
           if (msgId !== null) {
             lastUsageKey = undefined;
-            if (!seenMessageIds.has(msgId)) {
-              rememberMessageId(seenMessageIds, msgId);
-              shouldCount = true;
-            }
+            accumulateMessageUsage(usageByMessageId, msgId, normalizedUsage, sessionTokens);
           } else {
             const usageKey = `${usage.input_tokens}|${usage.output_tokens}|${usage.cache_creation_input_tokens}|${usage.cache_read_input_tokens}`;
-            shouldCount = usageKey !== lastUsageKey;
+            const shouldCount = usageKey !== lastUsageKey;
             lastUsageKey = usageKey;
-          }
-
-          if (shouldCount) {
-            sessionTokens.inputTokens += normalizeTokenCount(usage.input_tokens);
-            sessionTokens.outputTokens += normalizeTokenCount(usage.output_tokens);
-            sessionTokens.cacheCreationTokens += normalizeTokenCount(usage.cache_creation_input_tokens);
-            sessionTokens.cacheReadTokens += normalizeTokenCount(usage.cache_read_input_tokens);
+            if (shouldCount) {
+              sessionTokens.inputTokens += normalizedUsage.inputTokens;
+              sessionTokens.outputTokens += normalizedUsage.outputTokens;
+              sessionTokens.cacheCreationTokens += normalizedUsage.cacheCreationTokens;
+              sessionTokens.cacheReadTokens += normalizedUsage.cacheReadTokens;
+            }
           }
         } else {
           lastUsageKey = undefined;
@@ -812,7 +841,11 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
       // Capped like tools/agents — the only otherwise-unbounded field; a
       // completion for a long-scrolled-off agent can't affect the display.
       queueCompletion: Array.from(queueCompletionMap.entries()).slice(-RESUME_ENTRY_CAP).map(([k, d]) => [k, d.toISOString()]),
-      seenMessageIds: Array.from(seenMessageIds.values()),
+      // Bounded by the same cap the live map uses, so the persisted size cannot
+      // outgrow it across resumes.
+      messageUsage: Array.from(usageByMessageId.entries())
+        .slice(-MESSAGE_USAGE_MAX)
+        .map(([id, u]) => [id, { ...u }] as [string, SessionTokenUsage]),
       latestSlug,
       customTitle,
       latestAdvisorModel,
@@ -901,7 +934,7 @@ function processEntry(
         // record 2-3×, so a replayed tool_use id must not overwrite an entry
         // a later tool_result already completed (would flip it back to
         // "running" and show a permanent ◐). Same guard as the token-usage
-        // seenMessageIds dedup, extended to tool/agent blocks.
+        // per-message usage dedup, extended to tool/agent blocks.
         if (!agentMap.has(block.id)) agentMap.set(block.id, agentEntry);
       } else if (block.name === 'TodoWrite') {
         const input = block.input as { todos?: TodoItem[] };
