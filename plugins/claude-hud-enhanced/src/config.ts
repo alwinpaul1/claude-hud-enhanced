@@ -216,6 +216,8 @@ export interface HudConfig {
     showEffortLevel: boolean;
     showMemoryUsage: boolean;
     showPromptCache: boolean;
+    // Compatibility fallback used only until transcript tier detection has a
+    // real 5-minute or 1-hour cache write to follow.
     promptCacheTtlSeconds: number;
     showSessionTokens: boolean;
     showOutputStyle: boolean;

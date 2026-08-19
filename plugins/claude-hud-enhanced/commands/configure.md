@@ -31,7 +31,7 @@ Advanced settings such as `colors.*`, `pathLevels`, `maxWidth`, `forceMaxWidth`,
 `elementOrder`, `display.mergeGroups`, `display.timeFormat`, `display.contextValue`,
 `display.modelFormat`, `display.modelOverride`, `display.modelSource`, `display.showProvider`,
 `display.providerName`, `display.autocompactBuffer`,
-`display.autoCompactWindow`, `display.promptCacheTtlSeconds`,
+`display.autoCompactWindow`,
 `display.usageThreshold`, `display.sevenDayThreshold`,
 `display.environmentThreshold`, `display.contextWarningThreshold`,
 `display.contextCriticalThreshold`, `display.advisorOverride`,
@@ -334,7 +334,7 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 | Reasoning level | `display.showEffortLevel` |
 | Output style | `display.showOutputStyle` |
 | Memory usage | `display.showMemoryUsage` |
-| Prompt cache | `display.showPromptCache` (TTL via `display.promptCacheTtlSeconds`) |
+| Prompt cache | `display.showPromptCache` (transcript tier wins; `display.promptCacheTtlSeconds` is the fallback) |
 | Claude Code version | `display.showClaudeCodeVersion` |
 | Advisor model | `display.showAdvisor` (override via `display.advisorOverride`) |
 | Custom line | `display.customLine` |

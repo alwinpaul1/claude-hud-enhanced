@@ -143,18 +143,19 @@ test('estimateSessionCost prices enterprise plan aliases', () => {
 
 test('estimateSessionCost prices the Claude 5 family', () => {
   const tokens = { inputTokens: 1000000, outputTokens: 1000000, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  const options = { now: new Date('2026-08-01T00:00:00.000Z') };
 
-  const opus5 = estimateSessionCost({ model: { display_name: 'Opus 5' } }, tokens);
+  const opus5 = estimateSessionCost({ model: { display_name: 'Opus 5' } }, tokens, options);
   assert.ok(opus5);
   assert.equal(opus5.inputUsd, 5);
   assert.equal(opus5.outputUsd, 25);
 
-  const sonnet5 = estimateSessionCost({ model: { display_name: 'Sonnet 5' } }, tokens);
+  const sonnet5 = estimateSessionCost({ model: { display_name: 'Sonnet 5' } }, tokens, options);
   assert.ok(sonnet5);
   assert.equal(sonnet5.inputUsd, 2);
   assert.equal(sonnet5.outputUsd, 10);
 
-  const fable5 = estimateSessionCost({ model: { display_name: 'Fable 5' } }, tokens);
+  const fable5 = estimateSessionCost({ model: { display_name: 'Fable 5' } }, tokens, options);
   assert.ok(fable5);
   assert.equal(fable5.inputUsd, 10);
   assert.equal(fable5.outputUsd, 50);

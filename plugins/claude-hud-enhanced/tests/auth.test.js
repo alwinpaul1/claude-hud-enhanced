@@ -226,7 +226,14 @@ test('readAuthInfo busts the cache when only the SIZE differs', async () => {
     const cacheFile = path.join(configDir, 'plugins', 'claude-hud-enhanced', 'auth-cache', 'auth.json');
     const stat = fsSync.statSync(jsonPath);
     fsSync.writeFileSync(cacheFile, JSON.stringify({
-      mtimeMs: stat.mtimeMs, size: stat.size + 1, method: 'STALE', user: 'stale-user',
+      version: 1,
+      mtimeMs: stat.mtimeMs,
+      ctimeMs: stat.ctimeMs,
+      size: stat.size + 1,
+      dev: stat.dev,
+      ino: stat.ino,
+      method: 'STALE',
+      user: 'stale-user',
     }), 'utf8');
 
     assert.equal(readAuthInfo().user, 'someone.long',

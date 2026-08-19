@@ -103,8 +103,8 @@ export function deriveAuthInfo(claudeJson: unknown, env: NodeJS.ProcessEnv = pro
 /**
  * Cache of the two DERIVED fields, keyed on the source file's identity.
  *
- * Both mtime and size are compared: two writes can land inside the same
- * millisecond, and mtime alone would then serve a stale entry.
+ * The identity combines mtime, ctime, size, device, and inode so a replacement
+ * or rapid rewrite cannot reuse a stale entry based on one timestamp alone.
  */
 interface AuthCacheEntry {
   version: number;
@@ -212,8 +212,8 @@ function writeAuthCache(homeDir: string, entry: AuthCacheEntry): void {
  * claude.json is the user's entire CLI config and grows with project history —
  * 73 KB on the host this was measured on. The status line runs on every
  * interaction, so parsing it per tick is not free. The two derived fields are
- * cached against the file's (mtimeMs, size) instead, making the steady-state
- * cost a stat plus a ~100-byte read.
+ * cached against the file's (mtimeMs, ctimeMs, size, dev, ino) identity instead,
+ * making the steady-state cost a stat plus a ~100-byte read.
  */
 export function readAuthInfo(): AuthInfo {
   // Avoid reading a stale OAuth profile when the active source is an API key.
