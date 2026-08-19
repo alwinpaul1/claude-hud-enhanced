@@ -17,7 +17,16 @@ fi
 
 Then use the Read tool to load `~/.claude/plugins/claude-hud-enhanced/config.json` (or `$CLAUDE_CONFIG_DIR/plugins/claude-hud-enhanced/config.json`) if it exists.
 
-Store current values and note whether config exists (determines which flow to use).
+**FIRST**: Resolve the active config directory (`$CLAUDE_CONFIG_DIR` when set, otherwise
+`~/.claude`). Use the Read tool to load both of these files when they exist:
+
+1. `plugins/claude-hud/config.json` inside the active config directory (the writable base).
+2. `claude-hud.json` directly inside the active config directory (the manual override).
+
+Store the base and override separately. The base file alone determines which flow to use.
+For current values and previews, compute the effective config by layering the override over
+the base with nested objects merged key by key and arrays/scalars replaced. Track every key
+defined by the override so the guided flow can identify settings that it cannot change.
 
 ## Core Features (on by default)
 
@@ -28,8 +37,8 @@ enabled — toggle them by editing `config.json` directly if needed:
 - Context bar `████░░░░░░ 45%`
 
 Advanced settings such as `colors.*`, `pathLevels`, `maxWidth`, `forceMaxWidth`,
-`elementOrder`, `display.mergeGroups`, `display.timeFormat`, `display.contextValue`,
-`display.modelFormat`, `display.modelOverride`, `display.modelSource`, `display.showProvider`,
+`elementOrder`, `projectLineOrder`, `display.mergeGroups`, `display.timeFormat`, `display.contextValue`,
+`display.modelFormat`, `display.modelOverride`, `display.modelSource`, `display.effortFormat`, `display.showProvider`,
 `display.providerName`, `display.autocompactBuffer`,
 `display.autoCompactWindow`,
 `display.usageThreshold`, `display.sevenDayThreshold`,
@@ -387,6 +396,10 @@ Set `display.usageValue: "remaining"` manually to show remaining quota percentag
 - User cancels (Esc) → say "Configuration cancelled."
 - No changes from current config → say "No changes needed - config unchanged."
 
+If the user edits a key also defined by the manual override, warn before confirmation that the
+saved base value will remain shadowed. Show both the value being written to the base and the
+effective value that will still come from the override. Never edit or delete the override.
+
 **Show preview before saving:**
 
 1. **Summary of changes:**
@@ -420,7 +433,7 @@ Context ████░░░░░ 45% │ Usage ██░░░░░░░░
 
 ## Write Configuration
 
-Write to `~/.claude/plugins/claude-hud-enhanced/config.json`.
+Write to `plugins/claude-hud-enhanced/config.json` inside the active config directory.
 
 Merge with existing config, preserving:
 - `pathLevels` (not in configure flow)
@@ -431,6 +444,26 @@ Merge with existing config, preserving:
 - `colors` (advanced manual palette overrides)
 
 **Migration note**: Old configs with `layout: "default"` or `layout: "separators"` are automatically migrated to the new `lineLayout` + `showSeparators` format on load.
+
+### Per-config-directory overrides
+
+`~/.claude/claude-hud.json` (more precisely `$CLAUDE_CONFIG_DIR/claude-hud.json`) is an
+optional overlay applied on top of `config.json` at load time. It uses the same shape,
+only needs the keys it changes, and nested sections merge key by key:
+
+For example, `~/.config/claude/work/claude-hud.json` can contain:
+
+```json
+{ "display": { "customLine": "Work Team" } }
+```
+
+This exists for users who run several `CLAUDE_CONFIG_DIR`s and symlink `plugins/` to one
+shared location - `plugins/claude-hud/config.json` is then the same physical file for every
+directory, while this overlay stays per-directory.
+
+Never write this file from the guided flow, and leave it untouched when it exists; it is a
+manual escape hatch. Values in it win over anything written to `config.json`, so if a saved
+setting appears not to take effect, check whether the overlay redefines it.
 
 ---
 
