@@ -313,6 +313,26 @@ export function isVertexModelId(modelId?: string): boolean {
 
 const ENTERPRISE_MODEL_IDS = new Set(['opusplan', 'sonnetplan', 'haikuplan']);
 
+const MINIMAX_ANTHROPIC_ENDPOINTS = new Set([
+  'https://api.minimax.io/anthropic',
+  'https://api.minimaxi.com/anthropic',
+]);
+
+function isMiniMaxAnthropicEndpoint(env: NodeJS.ProcessEnv = process.env): boolean {
+  const baseUrl = env.ANTHROPIC_BASE_URL?.trim() || env.ANTHROPIC_API_BASE_URL?.trim();
+  if (!baseUrl) {
+    return false;
+  }
+
+  try {
+    const url = new URL(baseUrl);
+    const normalized = `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+    return MINIMAX_ANTHROPIC_ENDPOINTS.has(normalized);
+  } catch {
+    return false;
+  }
+}
+
 export function isEnterpriseModelId(modelId?: string): boolean {
   if (!modelId) {
     return false;
@@ -326,6 +346,9 @@ export function getProviderLabel(stdin: StdinData): string | null {
   }
   if (process.env.CLAUDE_CODE_USE_VERTEX === '1') {
     return 'Vertex';
+  }
+  if (isMiniMaxAnthropicEndpoint()) {
+    return 'MiniMax';
   }
   if (isEnterpriseModelId(stdin.model?.id)) {
     return 'Enterprise';
