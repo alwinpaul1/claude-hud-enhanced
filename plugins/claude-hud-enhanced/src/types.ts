@@ -117,6 +117,16 @@ export interface ExternalUsageSnapshot {
   } | null;
   updated_at?: string | number | null;
   balance_label?: string | null;
+  /**
+   * Model-scoped weekly windows (e.g. Fable). Mirrors the stdin
+   * `rate_limits.model_scoped` schema so external feeders can pass through
+   * the same shape Claude Code emits (e.g. from a get_usage response).
+   */
+  model_scoped?: Array<{
+    display_name?: string | null;
+    utilization?: number | null;
+    resets_at?: string | null;
+  }> | null;
 }
 
 export interface MemoryInfo {

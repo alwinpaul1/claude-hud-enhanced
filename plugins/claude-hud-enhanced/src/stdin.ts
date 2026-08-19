@@ -402,7 +402,7 @@ export function getUsageFromStdin(stdin: StdinData): UsageData | null {
  * the generic rate-limit windows. Malformed entries are dropped, and both the
  * retained entry count and label size are bounded because stdin is untrusted.
  */
-function parseScopedWindows(modelScoped: unknown): ScopedUsageWindow[] {
+export function parseScopedWindows(modelScoped: unknown): ScopedUsageWindow[] {
   if (!Array.isArray(modelScoped)) {
     return [];
   }
