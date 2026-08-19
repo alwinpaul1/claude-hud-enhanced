@@ -48,6 +48,34 @@ export type HudElement =
   | 'todos'
   | 'sessionTime';
 
+/**
+ * Coarse, orderable segments of the first HUD line (the identity/project
+ * line). Shared by the expanded project line and the compact session line:
+ *
+ *   model:       provider + model badge + effort (compact mode also keeps the
+ *                context bar attached to this segment)
+ *   project:     project path + added dirs + git status (kept as one segment)
+ *   advisor:     advisor model label
+ *   sessionName: session title from /rename
+ *   version:     Claude Code version
+ *   extra:       extra-cmd custom label
+ *   duration:    session duration
+ *   cost:        session cost estimate
+ *   speed:       output speed
+ *   auth:        auth method / account
+ */
+export type FirstLineSegment =
+  | 'model'
+  | 'project'
+  | 'advisor'
+  | 'sessionName'
+  | 'version'
+  | 'extra'
+  | 'duration'
+  | 'cost'
+  | 'speed'
+  | 'auth';
+
 export type AddedDirsLayout = 'inline' | 'line';
 export type HudColorName =
   | 'dim'
@@ -98,7 +126,25 @@ export const DEFAULT_MERGE_GROUPS: HudElement[][] = [
   ['context', 'usage'],
 ];
 
+const PROJECT_LINE_SEGMENTS: FirstLineSegment[] = [
+  'model',
+  'project',
+  'advisor',
+  'sessionName',
+  'version',
+  'extra',
+  'duration',
+  'cost',
+  'speed',
+  'auth',
+];
+
+// An empty order is deliberate: renderers retain their byte-for-byte native
+// order until the user opts in to moving one or more segments.
+export const DEFAULT_PROJECT_LINE_ORDER: FirstLineSegment[] = [];
+
 const KNOWN_ELEMENTS = new Set<HudElement>(DEFAULT_ELEMENT_ORDER);
+const KNOWN_FIRST_LINE_SEGMENTS = new Set<FirstLineSegment>(PROJECT_LINE_SEGMENTS);
 
 export interface HudConfig {
   language: Language;
@@ -108,6 +154,7 @@ export interface HudConfig {
   maxWidth: number | null;
   forceMaxWidth: boolean;
   elementOrder: HudElement[];
+  projectLineOrder: FirstLineSegment[];
   gitStatus: {
     enabled: boolean;
     showDirty: boolean;
@@ -245,6 +292,7 @@ export const DEFAULT_CONFIG: HudConfig = {
   maxWidth: null,
   forceMaxWidth: false,
   elementOrder: [...DEFAULT_ELEMENT_ORDER],
+  projectLineOrder: [...DEFAULT_PROJECT_LINE_ORDER],
   gitStatus: {
     enabled: true,
     showDirty: true,
@@ -452,6 +500,34 @@ function validateElementOrder(value: unknown): HudElement[] {
   return elementOrder.length > 0 ? elementOrder : [...DEFAULT_ELEMENT_ORDER];
 }
 
+// Unlike `elementOrder`, `projectLineOrder` only reorders segments. A partial
+// list is preserved as a requested prefix; each renderer appends all remaining
+// visible parts in its own existing order.
+function validateProjectLineOrder(value: unknown): FirstLineSegment[] {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_PROJECT_LINE_ORDER];
+  }
+
+  const seen = new Set<FirstLineSegment>();
+  const order: FirstLineSegment[] = [];
+
+  for (const item of value) {
+    if (typeof item !== 'string' || !KNOWN_FIRST_LINE_SEGMENTS.has(item as FirstLineSegment)) {
+      continue;
+    }
+
+    const segment = item as FirstLineSegment;
+    if (seen.has(segment)) {
+      continue;
+    }
+
+    seen.add(segment);
+    order.push(segment);
+  }
+
+  return order;
+}
+
 function validateMergeGroups(value: unknown): HudElement[][] {
   if (!Array.isArray(value)) {
     return DEFAULT_MERGE_GROUPS.map(group => [...group]);
@@ -604,6 +680,7 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     : null;
 
   const elementOrder = validateElementOrder(migrated.elementOrder);
+  const projectLineOrder = validateProjectLineOrder(migrated.projectLineOrder);
   const forceMaxWidth = typeof (migrated as Record<string, unknown>).forceMaxWidth === 'boolean'
     ? (migrated as Record<string, unknown>).forceMaxWidth as boolean
     : DEFAULT_CONFIG.forceMaxWidth;
@@ -875,7 +952,7 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       : DEFAULT_CONFIG.colors.barEmpty,
   };
 
-  return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, gitStatus, daemon, display, colors };
+  return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, projectLineOrder, gitStatus, daemon, display, colors };
 }
 
 export async function loadConfig(): Promise<HudConfig> {

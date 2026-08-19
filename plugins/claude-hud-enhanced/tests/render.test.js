@@ -3823,3 +3823,156 @@ test('agents line renders the compacted model beside the agent type', () => {
 
   assert.match(output, /general-purpose \[sonnet-5\]: review the diff/);
 });
+
+test('renderProjectLine keeps the default first-line order when projectLineOrder is absent', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
+  const line = stripAnsi(renderProjectLine(ctx));
+  const segments = line.split(' │ ');
+  assert.ok(segments[0].startsWith('[Opus'), `model badge should come first, got: ${line}`);
+  assert.ok(segments[1].includes('my-project'), `project should come second, got: ${line}`);
+  assert.ok(segments[1].includes('git:(main)'), 'project and git stay one segment');
+});
+
+test('renderProjectLine honors projectLineOrder with project before model', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitStatus = { branch: 'main', isDirty: true, ahead: 0, behind: 0 };
+  ctx.config.projectLineOrder = mergeConfig({ projectLineOrder: ['project', 'model'] }).projectLineOrder;
+  const line = stripAnsi(renderProjectLine(ctx));
+  const segments = line.split(' │ ');
+  assert.ok(segments[0].includes('my-project'), `project should come first, got: ${line}`);
+  assert.ok(segments[0].includes('git:(main*)'), 'git stays attached to the project segment');
+  assert.ok(segments[1].startsWith('[Opus'), `model badge should come second, got: ${line}`);
+});
+
+test('renderProjectLine orders trailing segments like sessionName ahead of the line', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.transcript.sessionName = 'Renamed Session';
+  ctx.config.display.showSessionName = true;
+  ctx.config.projectLineOrder = mergeConfig({ projectLineOrder: ['sessionName'] }).projectLineOrder;
+  const line = stripAnsi(renderProjectLine(ctx));
+  const segments = line.split(' │ ');
+  assert.equal(segments[0], 'Renamed Session');
+  assert.ok(segments[1].startsWith('[Opus'), `remaining segments keep default order, got: ${line}`);
+  assert.ok(segments[2].includes('my-project'));
+});
+
+test('renderProjectLine keeps project and git adjacent in wrap mode when reordered', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.gitStatus = { branch: 'a-very-long-branch-name', isDirty: false, ahead: 0, behind: 0 };
+  ctx.config.gitStatus.branchOverflow = 'wrap';
+  ctx.config.projectLineOrder = mergeConfig({ projectLineOrder: ['project', 'model'] }).projectLineOrder;
+  const line = stripAnsi(renderProjectLine(ctx));
+  const segments = line.split(' │ ');
+  assert.ok(segments[0].includes('my-project'), `got: ${line}`);
+  assert.ok(segments[1].includes('git:(a-very-long-branch-name)'), 'git part follows project part');
+  assert.ok(segments[2].startsWith('[Opus'), 'model badge comes after both project parts');
+});
+
+test('renderProjectLine keeps the custom line pinned first regardless of projectLineOrder', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.display.customLine = 'MY LABEL';
+  ctx.config.display.customLinePosition = 'first';
+  ctx.config.projectLineOrder = mergeConfig({ projectLineOrder: ['project', 'model'] }).projectLineOrder;
+  const line = stripAnsi(renderProjectLine(ctx));
+  const segments = line.split(' │ ');
+  assert.equal(segments[0], 'MY LABEL');
+  assert.ok(segments[1].includes('my-project'));
+  assert.ok(segments[2].startsWith('[Opus'));
+});
+
+test('renderSessionLine honors projectLineOrder while compact-only parts keep their slots', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.claudeMdCount = 2;
+  ctx.config.projectLineOrder = mergeConfig({ projectLineOrder: ['project', 'model'] }).projectLineOrder;
+  const line = stripAnsi(renderSessionLine(ctx));
+  const segments = line.split(' | ');
+  assert.ok(segments[0].includes('my-project'), `project should lead, got: ${line}`);
+  assert.ok(segments[1].includes('[Opus'), 'model + context cluster moves as one segment');
+  assert.ok(segments[1].includes('%'), 'context value stays attached to the model cluster');
+  assert.ok(segments[2].includes('2 CLAUDE.md'), 'compact-only config counts keep their slot');
+});
+
+test('renderSessionLine keeps the default compact order when projectLineOrder is absent', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  const line = stripAnsi(renderSessionLine(ctx));
+  const segments = line.split(' | ');
+  assert.ok(segments[0].includes('[Opus'), `model cluster should lead by default, got: ${line}`);
+  assert.ok(segments[1].includes('my-project'));
+});
+
+test('renderSessionLine preserves the native compact order with all keyed segments enabled', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.transcript.sessionName = 'Renamed Session';
+  ctx.transcript.advisorModel = 'claude-opus-4-7';
+  ctx.claudeCodeVersion = '2.1.9';
+  ctx.sessionDuration = '12m 34s';
+  ctx.extraLabel = 'EXTRA';
+  ctx.authInfo = { method: 'Claude Max 20x', user: null };
+  ctx.config = mergeConfig({
+    lineLayout: 'compact',
+    display: {
+      showUsage: false,
+      showAdvisor: true,
+      showSessionName: true,
+      showClaudeCodeVersion: true,
+      showDuration: true,
+      showAuth: true,
+      // Fork adaptation: our defaults fold the plan label into the model
+      // bracket and shorten it. This test covers the ORDER of keyed segments,
+      // so it opts out to keep `auth` a standalone segment. The fold has its
+      // own coverage in the showAuthInModel tests.
+      showAuthInModel: false,
+      authShortLabel: false,
+      customLine: 'TAIL',
+    },
+  });
+
+  const segments = stripAnsi(renderSessionLine(ctx)).split(' | ');
+  assert.ok(segments[0].startsWith('[Opus'), `model should remain first: ${segments}`);
+  assert.equal(segments[1], 'my-project');
+  assert.equal(segments[2], 'Renamed Session');
+  assert.equal(segments[3], 'CC v2.1.9');
+  assert.equal(segments[4], 'Advisor: Opus 4.7');
+  assert.equal(segments[5], '⏱️  12m 34s');
+  assert.equal(segments[6], 'EXTRA');
+  assert.equal(segments[7], 'Claude Max 20x');
+  assert.equal(segments[8], 'TAIL');
+});
+
+test('full project paths stay sanitized when projectLineOrder moves them first', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/safe/\u001b]8;;https://evil.example\u0007project\u202E';
+  ctx.config = mergeConfig({
+    lineLayout: 'compact',
+    pathLevels: 'full',
+    projectLineOrder: ['project', 'model'],
+    display: { showUsage: false },
+  });
+
+  const rawCompact = renderSessionLine(ctx);
+  const rawExpanded = renderProjectLine(ctx);
+
+  assert.ok(!rawCompact.includes('\u001b]8;;https://evil.example'), 'attacker OSC target leaked into compact output');
+  assert.ok(!rawExpanded.includes('\u001b]8;;https://evil.example'), 'attacker OSC target leaked into expanded output');
+  assert.ok(!rawCompact.includes('\u202e'), 'bidi override leaked into compact output');
+  assert.ok(!rawExpanded.includes('\u202e'), 'bidi override leaked into expanded output');
+
+  const compact = stripAnsi(rawCompact);
+  const expanded = stripAnsi(rawExpanded);
+
+  assert.ok(compact.startsWith('/safe/project | [Opus'), `sanitized path should lead: ${compact}`);
+  assert.ok(expanded.startsWith('/safe/project │ [Opus'), `sanitized path should lead: ${expanded}`);
+  assert.ok(!compact.includes('evil.example'), `OSC payload leaked into compact output: ${compact}`);
+  assert.ok(!expanded.includes('evil.example'), `OSC payload leaked into expanded output: ${expanded}`);
+  assert.doesNotMatch(compact, /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/i);
+  assert.doesNotMatch(expanded, /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/i);
+});
