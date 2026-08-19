@@ -104,12 +104,71 @@ function requestOnce(
   });
 }
 
+/**
+ * Variables the daemon PROCESS itself operates on: where its profile lives, how
+ * it spawns git, where its socket and temp files go, and whether it debug-logs.
+ * This is a stable operational list, NOT a per-render allowlist — every value a
+ * render reads arrives per request instead (see snapshotClientEnv).
+ *
+ * Booting with only these means a module-scope `process.env.X` read — evaluated
+ * once at daemon start, which per-request staging cannot reach — sees UNSET
+ * rather than the spawning session's value. Wrong and visible beats wrong and
+ * silent: an unset provider flag renders no provider, while an inherited one
+ * renders another account's.
+ */
+const DAEMON_BOOT_ENV_KEYS = [
+  'CLAUDE_CONFIG_DIR',
+  'PATH',
+  'PATHEXT',
+  'HOME',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'XDG_RUNTIME_DIR',
+  'DEBUG',
+  'LANG',
+  'LC_ALL',
+  // Windows: spawn() and os.homedir() need these.
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'SystemRoot',
+  'windir',
+  'COMSPEC',
+] as const;
+
+function daemonBootEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of DAEMON_BOOT_ENV_KEYS) {
+    const value = process.env[key];
+    if (typeof value === 'string') env[key] = value;
+  }
+  return env;
+}
+
+/**
+ * The requesting session's full environment, as a JSON-safe record.
+ *
+ * Forwarding everything is deliberate. The daemon is long-lived and shared by
+ * every terminal on one profile, so any value it reads from its OWN env is the
+ * env of whichever session happened to start it. Naming the variables to
+ * forward would mean extending a list for each new one, and a forgotten entry
+ * silently renders another session's state.
+ */
+function snapshotClientEnv(): Record<string, string> {
+  const snapshot: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === 'string') snapshot[key] = value;
+  }
+  return snapshot;
+}
+
 function defaultSpawnDaemon(entryPath: string, _homeDir: string): void {
   try {
     const child = spawn(
       process.execPath,
       [...process.execArgv, entryPath, '--daemon'],
-      { detached: true, stdio: 'ignore', windowsHide: true, env: process.env },
+      { detached: true, stdio: 'ignore', windowsHide: true, env: daemonBootEnv() },
     );
     child.on('error', () => {
       /* daemon spawn is best-effort; inline mode already served this tick */
@@ -167,12 +226,7 @@ export async function tryDaemonRender(
     pluginVersion: getPluginVersion(),
     stdin,
     cwd: stdin.cwd ?? process.cwd(),
-    env: {
-      ...(process.env.COLUMNS != null && { COLUMNS: process.env.COLUMNS }),
-      ...(process.env.CLAUDE_CONFIG_DIR != null && {
-        CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
-      }),
-    },
+    env: snapshotClientEnv(),
     now: (deps.now ?? Date.now)(),
   };
 
