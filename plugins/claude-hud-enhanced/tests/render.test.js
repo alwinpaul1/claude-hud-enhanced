@@ -38,9 +38,20 @@ function stripAnsi(str) {
  * The prompt cache value for an anchor and TTL, derived rather than hardcoded so
  * the assertion holds in any timezone or locale.
  */
-function expectedCacheExpiry(anchorAt, ttlSeconds) {
+function expectedCacheExpiry(anchorAt, ttlSeconds, now = anchorAt) {
   const expiresAt = new Date(anchorAt.getTime() + ttlSeconds * 1000);
-  return `Cache ⏱ ${expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  // Mirrors formatAbsoluteTime in src/render/format-reset-time.ts: an unpadded
+  // hour unless an explicit hourCycle or seconds is configured, plus a date
+  // component when the expiry lands on a different calendar day than `now`.
+  const clock = expiresAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const sameDay =
+    expiresAt.getFullYear() === now.getFullYear() &&
+    expiresAt.getMonth() === now.getMonth() &&
+    expiresAt.getDate() === now.getDate();
+  const value = sameDay
+    ? clock
+    : `${expiresAt.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${clock}`;
+  return `Cache ⏱ ${value}`;
 }
 
 function baseContext() {
