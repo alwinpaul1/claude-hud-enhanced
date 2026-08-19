@@ -1105,3 +1105,28 @@ test('mergeConfig filters unknown entries and de-duplicates projectLineOrder', (
     'cost',
   ]);
 });
+
+test('mergeConfig defaults rightAlign to empty', () => {
+  const config = mergeConfig({});
+  assert.deepEqual(config.display.rightAlign, []);
+  assert.deepEqual(DEFAULT_CONFIG.display.rightAlign, []);
+});
+
+test('mergeConfig caps maxWidth to a safe terminal width', () => {
+  assert.equal(mergeConfig({ maxWidth: 600_000_000 }).maxWidth, 1000);
+});
+
+test('mergeConfig accepts valid rightAlign entries and filters invalid ones', () => {
+  const config = mergeConfig({
+    display: {
+      rightAlign: ['context', 'unknown', 42, null, 'usage', 'context'],
+    },
+  });
+
+  assert.deepEqual(config.display.rightAlign, ['context', 'usage']);
+});
+
+test('mergeConfig falls back to empty rightAlign when value is not an array', () => {
+  assert.deepEqual(mergeConfig({ display: { rightAlign: 'context' } }).display.rightAlign, []);
+  assert.deepEqual(mergeConfig({ display: { rightAlign: null } }).display.rightAlign, []);
+});

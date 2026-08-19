@@ -4078,3 +4078,82 @@ test('full project paths stay sanitized when projectLineOrder moves them first',
   assert.doesNotMatch(compact, /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/i);
   assert.doesNotMatch(expanded, /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/i);
 });
+
+function usageDataFixture() {
+  return {
+    planName: 'Team',
+    fiveHour: 25,
+    sevenDay: 10,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+}
+
+function rightAlignContext() {
+  const ctx = baseContext();
+  ctx.config.lineLayout = 'expanded';
+  ctx.config.elementOrder = ['project', 'context', 'usage'];
+  ctx.config.display.mergeGroups = [['project', 'context', 'usage']];
+  ctx.config.display.showResetLabel = false;
+  ctx.usageData = usageDataFixture();
+  return ctx;
+}
+
+test('render expanded layout right-aligns configured merge-group elements to the terminal edge', () => {
+  const ctx = rightAlignContext();
+  ctx.config.display.rightAlign = ['context', 'usage'];
+
+  const lines = withTerminal(120, () => captureRenderLines(ctx));
+  const row = lines.find(line => line.includes('Context') && line.includes('Usage'));
+
+  assert.ok(row, 'expected a combined project/context/usage row');
+  assert.equal([...row].length, 120, `row should fill the terminal width, got: ${row}`);
+  assert.match(row, / {2,}Context/, `right half should be padded away from the left half, got: ${row}`);
+});
+
+test('render expanded layout treats a middle right-align entry as an ordered suffix anchor', () => {
+  const ctx = rightAlignContext();
+  ctx.config.display.rightAlign = ['context'];
+
+  const lines = withTerminal(120, () => captureRenderLines(ctx));
+  const row = lines.find(line => line.includes('Context') && line.includes('Usage'));
+
+  assert.ok(row, 'expected a combined project/context/usage row');
+  assert.ok(row.indexOf('Context') < row.indexOf('Usage'), `element order must be preserved: ${row}`);
+  assert.equal([...row].length, 120, `row should fill the terminal width, got: ${row}`);
+});
+
+test('render expanded layout keeps the separator join when no element is right-aligned', () => {
+  const ctx = rightAlignContext();
+
+  const lines = withTerminal(120, () => captureRenderLines(ctx));
+  const row = lines.find(line => line.includes('Context') && line.includes('Usage'));
+
+  assert.ok(row, 'expected a combined project/context/usage row');
+  assert.ok([...row].length < 120, `row should not be padded, got: ${row}`);
+  assert.match(row, / │ Context/, `got: ${row}`);
+});
+
+test('render expanded layout falls back to the separator join when every element is right-aligned', () => {
+  const ctx = rightAlignContext();
+  ctx.config.display.rightAlign = ['project', 'context', 'usage'];
+
+  const lines = withTerminal(120, () => captureRenderLines(ctx));
+  const row = lines.find(line => line.includes('Context') && line.includes('Usage'));
+
+  assert.ok(row, 'expected a combined project/context/usage row');
+  assert.ok([...row].length < 120, `row should not be padded, got: ${row}`);
+  assert.match(row, / │ Context/, `got: ${row}`);
+});
+
+test('render expanded layout still stacks a right-aligned group that does not fit', () => {
+  const ctx = rightAlignContext();
+  ctx.config.display.rightAlign = ['context', 'usage'];
+
+  const lines = withTerminal(35, () => captureRenderLines(ctx));
+  const combined = lines.find(line => line.includes('Context') && line.includes('Usage'));
+  const contextLine = lines.find(line => line.includes('Context') && !line.includes('Usage'));
+
+  assert.equal(combined, undefined, 'narrow terminals should stack instead of combining');
+  assert.ok(contextLine, 'expected a standalone context line');
+});
