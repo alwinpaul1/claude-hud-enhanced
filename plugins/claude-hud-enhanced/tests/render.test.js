@@ -343,7 +343,7 @@ test('renderSessionLine displays project name from POSIX cwd', () => {
   assert.ok(!line.includes('/Users/jarrod'));
 });
 
-test('renderSessionLine displays project name from Windows cwd', { skip: process.platform !== 'win32' }, () => {
+test('renderSessionLine displays project name from Windows cwd on every host', () => {
   const ctx = baseContext();
   ctx.stdin.cwd = 'C:\\Users\\jarrod\\my-project';
   const line = renderSessionLine(ctx);
@@ -356,6 +356,39 @@ test('renderSessionLine handles root path gracefully', () => {
   ctx.stdin.cwd = '/';
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('[Opus]'));
+});
+
+test('renderSessionLine displays full absolute path when pathLevels is "full"', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 'full';
+  ctx.stdin.cwd = '/Users/jarrod/dev/my-project';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('/Users/jarrod/dev/my-project'));
+});
+
+test('renderSessionLine normalizes a full Windows path on every host', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 'full';
+  ctx.stdin.cwd = 'C:\\Users\\jarrod\\my-project';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('C:/Users/jarrod/my-project'));
+});
+
+test('renderSessionLine preserves numeric pathLevels behavior for shallow roots', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 1;
+  ctx.stdin.cwd = '/project';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('project'));
+  assert.ok(!line.includes('/project'));
+});
+
+test('renderSessionLine preserves UNC roots in full mode', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 'full';
+  ctx.stdin.cwd = '\\\\server\\share\\project';
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('//server/share/project'));
 });
 
 test('renderSessionLine supports token-based context display', () => {
@@ -545,6 +578,37 @@ test('renderSessionLine renders a sanitized opt-in transcript model', () => {
   assert.ok(line.includes('[proxy-redlink]'), `got: ${line}`);
   assert.ok(!line.includes('Claude Opus'));
   assert.doesNotMatch(line, /[\x1b\u202E]/u);
+});
+
+test('renderProjectLine displays full absolute path when pathLevels is "full"', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 'full';
+  ctx.stdin.cwd = '/Users/jarrod/dev/my-project';
+  const line = stripAnsi(renderProjectLine(ctx) ?? '');
+  assert.ok(line.includes('/Users/jarrod/dev/my-project'));
+});
+
+test('renderProjectLine normalizes Windows and UNC full paths on every host', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 'full';
+
+  ctx.stdin.cwd = 'C:\\Users\\jarrod\\my-project';
+  assert.ok(stripAnsi(renderProjectLine(ctx) ?? '').includes('C:/Users/jarrod/my-project'));
+
+  ctx.stdin.cwd = '\\\\server\\share\\project';
+  assert.ok(stripAnsi(renderProjectLine(ctx) ?? '').includes('//server/share/project'));
+});
+
+test('project paths strip terminal escapes and bidi overrides in both layouts', () => {
+  const ctx = baseContext();
+  ctx.config.pathLevels = 'full';
+  ctx.stdin.cwd = '/safe/\u001b]8;;https://evil.example\u0007project\u202E';
+
+  for (const line of [renderSessionLine(ctx), renderProjectLine(ctx) ?? '']) {
+    const plain = stripAnsi(line);
+    assert.ok(plain.includes('/safe/project'));
+    assert.doesNotMatch(plain, /[\u001b\u202E]/u);
+  }
 });
 
 test('renderProjectLine includes session name when showSessionName is true', () => {
