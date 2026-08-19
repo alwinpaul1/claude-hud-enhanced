@@ -11,6 +11,12 @@ import { normalizeAddedDirs, sanitize as sanitizeDisplayText, basenameOf, trunca
 import { hyperlink, getFileHref, safeHyperlink } from '../../utils/hyperlinks.js';
 import { formatModelDisplay } from '../model-display.js';
 import { formatAuthSegment } from '../../auth.js';
+import { formatProjectPath } from '../project-path.js';
+import { DEFAULT_CONFIG, DEFAULT_PROJECT_LINE_ORDER } from '../../config.js';
+import type { FirstLineSegment } from '../../config.js';
+import { orderFirstLineParts } from '../first-line-order.js';
+import type { FirstLinePart } from '../first-line-order.js';
+import { getVcsDisplayState } from '../vcs-status.js';
 
 function resolvePathWithinCwd(cwd: string, candidatePath: string): string | null {
   const resolvedCwd = path.resolve(cwd);
@@ -25,25 +31,25 @@ function resolvePathWithinCwd(cwd: string, candidatePath: string): string | null
 export function renderProjectLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
   const colors = ctx.config?.colors;
-  const parts: string[] = [];
+  const parts: FirstLinePart[] = [];
+  const push = (text: string, key: FirstLineSegment | null = null) => parts.push({ key, text });
 
   const customLine = display?.customLine;
   const customLinePosition = display?.customLinePosition ?? 'last';
   if (customLine && customLinePosition === 'first') {
-    parts.push(customColor(customLine, colors));
+    push(customColor(customLine, colors));
   }
 
   if (display?.showModel !== false) {
     const model = formatModelName(resolveModelName(ctx.stdin, ctx.transcript, ctx.config?.display?.modelSource), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
     const modelDisplay = formatModelDisplay(model, ctx);
-    parts.push(modelColor(`[${modelDisplay}]`, colors));
+    push(modelColor(`[${modelDisplay}]`, colors), 'model');
   }
 
   let projectPart: string | null = null;
   if (display?.showProject !== false && ctx.stdin.cwd) {
-    const segments = ctx.stdin.cwd.split(/[/\\]/).filter(Boolean);
     const pathLevels = ctx.config?.pathLevels ?? 1;
-    const projectPath = sanitizeDisplayText(segments.length > 0 ? segments.slice(-pathLevels).join('/') : '/');
+    const projectPath = formatProjectPath(ctx.stdin.cwd, pathLevels);
     const coloredProject = projectColor(projectPath, colors);
     projectPart = safeHyperlink(getFileHref(ctx.stdin.cwd), coloredProject);
   }
@@ -66,27 +72,23 @@ export function renderProjectLine(ctx: RenderContext): string | null {
   }
 
   let gitPart = '';
-  const gitConfig = ctx.config?.gitStatus;
-  const showGit = gitConfig?.enabled ?? true;
-  const branchOverflow = gitConfig?.branchOverflow ?? 'truncate';
+  const vcs = getVcsDisplayState(ctx.gitStatus, ctx.config);
+  const gitConfig = ctx.config.gitStatus ?? DEFAULT_CONFIG.gitStatus;
+  const branchOverflow = vcs?.branchOverflow ?? gitConfig.branchOverflow;
 
-  if (showGit && ctx.gitStatus) {
-    const branchText = sanitizeDisplayText(
-      ctx.gitStatus.branch + ((gitConfig?.showDirty ?? true) && ctx.gitStatus.isDirty ? '*' : '')
-    );
+  if (vcs) {
+    const branchText = vcs.branch + (vcs.dirty ? '*' : '');
     const coloredBranch = gitBranchColor(branchText, colors);
-    const linkedBranch = safeHyperlink(ctx.gitStatus.branchUrl, coloredBranch);
+    const linkedBranch = safeHyperlink(vcs.branchUrl, coloredBranch);
     const gitInner: string[] = [linkedBranch];
 
-    if (gitConfig?.showAheadBehind) {
-      if (ctx.gitStatus.ahead > 0) {
-        gitInner.push(formatAheadCount(ctx.gitStatus.ahead, gitConfig, colors));
-      }
-      if (ctx.gitStatus.behind > 0) gitInner.push(gitBranchColor(`↓${ctx.gitStatus.behind}`, colors));
+    if (vcs.ahead > 0) {
+      gitInner.push(formatAheadCount(vcs.ahead, gitConfig, colors));
     }
+    if (vcs.behind > 0) gitInner.push(gitBranchColor(`↓${vcs.behind}`, colors));
 
-    if (gitConfig?.showFileStats && ctx.gitStatus.lineDiff) {
-      const { added, deleted } = ctx.gitStatus.lineDiff;
+    if (vcs.lineDiff) {
+      const { added, deleted } = vcs.lineDiff;
       const diffParts: string[] = [];
       if (added > 0) diffParts.push(green(`+${added}`));
       if (deleted > 0) diffParts.push(red(`-${deleted}`));
@@ -95,7 +97,12 @@ export function renderProjectLine(ctx: RenderContext): string | null {
       }
     }
 
-    gitPart = `${gitColor('git:(', colors)}${gitInner.join(' ')}${gitColor(')', colors)}`;
+    if (vcs.conflict) {
+      gitInner.push(criticalColor('!conflict', colors));
+    }
+
+    const vcsLabel = vcs.kind === 'jj' ? 'jj:(' : 'git:(';
+    gitPart = `${gitColor(vcsLabel, colors)}${gitInner.join(' ')}${gitColor(')', colors)}`;
   }
 
   const projectWithDirs = projectPart && addedDirsPart
@@ -104,15 +111,15 @@ export function renderProjectLine(ctx: RenderContext): string | null {
 
   if (projectWithDirs && gitPart) {
     if (branchOverflow === 'wrap') {
-      parts.push(projectWithDirs);
-      parts.push(gitPart);
+      push(projectWithDirs, 'project');
+      push(gitPart, 'project');
     } else {
-      parts.push(`${projectWithDirs} ${gitPart}`);
+      push(`${projectWithDirs} ${gitPart}`, 'project');
     }
   } else if (projectWithDirs) {
-    parts.push(projectWithDirs);
+    push(projectWithDirs, 'project');
   } else if (gitPart) {
-    parts.push(gitPart);
+    push(gitPart, 'project');
   }
 
   // Advisor model sits inline with the model/project/git badge so the
@@ -120,52 +127,53 @@ export function renderProjectLine(ctx: RenderContext): string | null {
   if (display?.showAdvisor) {
     const advisorPart = renderAdvisorLine(ctx);
     if (advisorPart) {
-      parts.push(advisorPart);
+      push(advisorPart, 'advisor');
     }
   }
 
   if (display?.showSessionName && ctx.transcript.sessionName) {
-    parts.push(label(ctx.transcript.sessionName, colors));
+    push(label(ctx.transcript.sessionName, colors), 'sessionName');
   }
 
   if (display?.showClaudeCodeVersion && ctx.claudeCodeVersion) {
-    parts.push(label(`CC v${ctx.claudeCodeVersion}`, colors));
+    push(label(`CC v${ctx.claudeCodeVersion}`, colors), 'version');
   }
 
   if (ctx.extraLabel) {
-    parts.push(label(ctx.extraLabel, colors));
+    push(label(ctx.extraLabel, colors), 'extra');
   }
 
   if (display?.showDuration === true && ctx.sessionDuration) {
-    parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));
+    push(label(`⏱️  ${ctx.sessionDuration}`, colors), 'duration');
   }
 
   const costEstimate = renderCostEstimate(ctx);
   if (costEstimate) {
-    parts.push(costEstimate);
+    push(costEstimate, 'cost');
   }
 
   if (display?.showSpeed) {
     const speed = getOutputSpeed(ctx.stdin);
     if (speed !== null) {
-      parts.push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors));
+      push(label(`${t('format.out')}: ${speed.toFixed(1)} ${t('format.tokPerSec')}`, colors), 'speed');
     }
   }
 
   const authSegment = formatAuthSegment(ctx.authInfo, display);
   if (authSegment && !display?.showAuthInModel) {
-    parts.push(label(authSegment, colors));
+    push(label(authSegment, colors), 'auth');
   }
 
   if (customLine && customLinePosition === 'last') {
-    parts.push(customColor(customLine, colors));
+    push(customColor(customLine, colors));
   }
 
   if (parts.length === 0) {
     return null;
   }
 
-  return parts.join(' \u2502 ');
+  const order = ctx.config?.projectLineOrder ?? DEFAULT_PROJECT_LINE_ORDER;
+  return orderFirstLineParts(parts, order).join(' \u2502 ');
 }
 
 function formatAheadCount(

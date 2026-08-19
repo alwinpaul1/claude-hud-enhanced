@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.7.0] - 2026-08-19
+
+Synchronizes with upstream [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) **v0.8.0** and fixes a cross-session environment leak in this fork's daemon.
+
+### Fixed — the daemon rendered every session with ANOTHER session's environment
+
+The warm daemon forwarded only `COLUMNS` and `CLAUDE_CONFIG_DIR` from each request, so every render used the environment of whichever session happened to start it first. Observed, not theoretical: a Bedrock launcher sets both `CLAUDE_CODE_USE_BEDROCK=1` and `CLAUDE_CONFIG_DIR=$HOME/.claude-work`; subscription sessions share that profile, and the profile guard compares only the config dir. When the Bedrock session won the spawn race, `getProviderLabel()` read its flag and every subscription session rendered `[Opus 5 | Bedrock | Team]` — and since `shouldHideUsage()` treats Bedrock as API-billed, **the 5-hour and weekly usage windows disappeared entirely**. A correct plan label sat next to a wrong provider and no usage at all.
+
+`ANTHROPIC_API_KEY` (auth.ts) and `CLAUDE_HUD_DISABLE` (index.ts) are the same shape, so this is a class of bug, not one variable.
+
+- The **whole** requesting environment is now staged for the serialized render and restored in the same `finally`. A named allowlist was rejected deliberately: it must be extended by hand for every new variable, and one forgotten entry silently renders another session's state. With a full snapshot, reads written years from now are correct by default.
+- Staging is **in place** — never `process.env = obj`, which discards Node's exotic env object. `COLUMNS` keeps its `safeColumns()` validation as the one checked trust boundary.
+- The daemon now **boots with a scrubbed environment** (only the variables it operates on itself). A module-scope read, which per-request staging cannot reach, then sees *unset* rather than the spawning session's value: wrong and visible beats wrong and silent.
+- Tests include the leak itself as a differential assertion, plus a **maintenance-free canary** that discovers every env name read in `src/` and asserts each is served from the request — a variable added later is covered without editing the test.
+
+Trade-off, stated plainly: the snapshot puts `ANTHROPIC_API_KEY`-class values into IPC frames. The socket is `0600` inside a `0700` per-profile directory, already the declared trust boundary, and no debug path logs a raw request.
+
+### Added (from upstream)
+
+- **`projectLineOrder`** — reorder the first-line segments.
+- **`pathLevels: "full"`** — show the entire absolute cwd. This fork's `pathLevels` had been typed `1 | 2 | 3`.
+- **Jujutsu status indicators** — `jjStatus` (`enabled`, `showDirty`, `showConflicts`). jj never inherits Git-only ahead/behind or file-stat settings.
+- **`display.hourCycle` and `display.showClockSeconds`** — a 24-hour clock no longer depends on the locale default. The unpadded hour (`9:33 PM`) stays this fork's default look; an explicit hour cycle or seconds switches to zero-padded, because a fixed 24-hour clock only reads unambiguously as `09:33` / `00:05`.
+- **`display.rightAlign`** — pin chosen segments of a merged expanded line to the right edge, with order preserved and rows bounded.
+- **`display.effortFormat`** — configurable effort presentation.
+- **Per-directory `claude-hud.json`** — layered over the shared config, placed outside the symlink-prone `plugins/` directory and shape-checked before merging.
+- **Failing MCP servers on the environment line.**
+- **Prompt-cache expiry instead of a countdown**, with the TTL detected from the request's per-tier cache-write counters and subagent turns excluded. The statusline only repaints while Claude Code is active, so between turns — exactly when the cache is draining — a countdown freezes at its last value and keeps reporting it. A clock time stays true however stale the render is.
+- **Model-scoped usage windows from the external snapshot**, which previously survived only when usage came from stdin.
+
+### Fixed (from upstream)
+
+- **Claude 5 pricing.** `cost.ts` priced nothing newer than the 4 family, so an Opus 5 session matched no pattern and the cost estimate was simply absent. Adds Opus 5, Sonnet 5 (introductory 2/10 expiring to 3/15 on a date check rather than staying wrong forever), Fable 5, and MiniMax M2.7/M3 with per-model cache pricing.
+- **Agent model from `toolUseResult.resolvedModel`** — an Agent call inheriting the session model carries no `model` in its input, so the agent line showed none.
+- **Completed transcript token records** now contribute the delta when a message id reappears, instead of being skipped; session token totals were under-reporting.
+- **Cached auth derivation** against `claude.json`'s mtime + size. That file is the user's whole CLI config and grows with project history, and auth was re-derived on every interaction.
+- **Unicode variation selectors treated as zero-width** — an emoji written with U+FE0F over-counted the rendered width and truncated the line early.
+- **Orphaned Git processes on Windows**, via `git-runner.ts` and `windows-git-worker.ts`.
+- Stale completed agent entries expire; empty model-scoped snapshots are preserved; the setup terminal probe is silenced.
+
+### Fork adaptations worth knowing
+
+Several upstream tests were adapted rather than weakened, each because of a pre-existing difference in this fork:
+
+- `formatResetTime()` keeps this fork's third parameter `windowScale` (a 5-hour window shows a bare clock; a weekly window names its weekday). Upstream replaced it; taking that verbatim would have deleted the feature. Both now exist over one shared `formatClockTime` helper, with upstream's exported `formatAbsoluteTime` used by the prompt-cache line.
+- This fork's `format.absoluteTime` locale is bare `{time}` where upstream's carries `at`, because the label already reads "resets …".
+- Defaults kept: `timeFormat: 'absolute'`, `showAuthInModel`, `authShortLabel`, `usageOnNewLine`, `compactSingleRow`, `idleUsageReset`, `oauthUsagePoll`, and the `daemon` config block — each of which an upstream hunk would otherwise have removed.
+- `stripBom()` retained in both `auth.ts` and `config.ts`: upstream reads those files raw, so a config saved by a Windows editor with a U+FEFF mark makes `JSON.parse` throw and silently discards the value.
+- `TRANSCRIPT_CACHE_VERSION` reaches **16**. The resume accumulator now persists per-message usage and the prompt-cache clock state; without them a resumed parse diverges from a full parse of the same file, which the resume-parity test catches.
+
+### Note on upstream
+
+Upstream `main` carries a MiniMax-M3 test with no matching pricing row, most likely dropped in a merge commit. The row is restored here, with a comment, rather than copying the inconsistency.
+
 ## [0.6.0] - 2026-07-19
 
 ### Added

@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _setCreateReadStreamForTests, parseTranscript } from '../dist/transcript.js';
+import { TRANSCRIPT_MODEL_MAX_LEN } from '../dist/model-source.js';
 import { countConfigs } from '../dist/config-reader.js';
 import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, getUsageFromStdin, isBedrockModelId, stripContextSuffix, formatModelName, resolveModelName } from '../dist/stdin.js';
 import { estimateSessionCost, resolveSessionCost, formatUsd } from '../dist/cost.js';
@@ -754,6 +755,55 @@ test('parseTranscript deduplicates non-consecutive duplicate assistant usage by 
   });
 });
 
+test('parseTranscript replaces a zero placeholder with later message usage', async () => {
+  const result = await parseTempTranscript('session-tokens-placeholder.jsonl', [
+    { type: 'assistant', message: { id: 'msg-placeholder', usage: {} } },
+    {
+      type: 'assistant',
+      message: {
+        id: 'msg-placeholder',
+        usage: {
+          input_tokens: 100,
+          output_tokens: 25,
+          cache_creation_input_tokens: 10,
+          cache_read_input_tokens: 5,
+        },
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.sessionTokens, {
+    inputTokens: 100,
+    outputTokens: 25,
+    cacheCreationTokens: 10,
+    cacheReadTokens: 5,
+  });
+});
+
+test('parseTranscript adds only positive per-field message usage deltas', async () => {
+  const result = await parseTempTranscript('session-tokens-progressive.jsonl', [
+    {
+      type: 'assistant',
+      message: { id: 'msg-progressive', usage: { input_tokens: 100, output_tokens: 10 } },
+    },
+    {
+      type: 'assistant',
+      message: { id: 'msg-progressive', usage: { input_tokens: 80, output_tokens: 25 } },
+    },
+    {
+      type: 'assistant',
+      message: { id: 'msg-progressive', usage: { input_tokens: 120, output_tokens: 25 } },
+    },
+  ]);
+
+  assert.deepEqual(result.sessionTokens, {
+    inputTokens: 120,
+    outputTokens: 25,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+  });
+});
+
 test('parseTranscript counts different message IDs with identical usage', async () => {
   const usage = {
     input_tokens: 100,
@@ -937,6 +987,209 @@ test('parseTranscript captures the last assistant response timestamp', async () 
     const result = await parseTranscript(filePath);
     assert.equal(result.lastAssistantResponseAt?.toISOString(), '2024-01-01T00:00:10.000Z');
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Prompt cache clock
+// ---------------------------------------------------------------------------
+
+/** Assistant record carrying a cache write on the given tier. */
+function cacheWrite(fields, tier) {
+  const cache_creation = tier === '1h'
+    ? { ephemeral_1h_input_tokens: 1128, ephemeral_5m_input_tokens: 0 }
+    : tier === '5m'
+      ? { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 1128 }
+      : tier;
+  return {
+    type: 'assistant',
+    ...fields,
+    message: { usage: { input_tokens: 4, output_tokens: 8, cache_creation } },
+  };
+}
+
+test('parseTranscript anchors the prompt cache clock to the request, not the response', async () => {
+  const result = await parseTempTranscript('cache-anchor.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    // A response 90s later must not push the clock 90s out: the cache was
+    // written when the request went out, at the user record.
+    cacheWrite({ timestamp: '2024-01-01T00:01:30.000Z', requestId: 'req-1' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:00.000Z');
+  assert.equal(result.lastAssistantResponseAt?.toISOString(), '2024-01-01T00:01:30.000Z');
+});
+
+test('parseTranscript shares one anchor across records from the same request', async () => {
+  const result = await parseTempTranscript('cache-request-group.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+    // Same request, second record. The first record is not the request start.
+    cacheWrite({ timestamp: '2024-01-01T00:00:20.000Z', requestId: 'req-1' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:00.000Z');
+});
+
+test('parseTranscript treats oversized request IDs as ungrouped records', async () => {
+  const oversizedRequestId = 'x'.repeat(129);
+  const result = await parseTempTranscript('cache-oversized-request-id.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: oversizedRequestId }, '5m'),
+    cacheWrite({ timestamp: '2024-01-01T00:00:20.000Z', requestId: oversizedRequestId }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:10.000Z');
+});
+
+test('parseTranscript re-anchors on each new request', async () => {
+  const result = await parseTempTranscript('cache-next-request.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+    // Tool result, then the follow-up request it triggers.
+    { type: 'user', timestamp: '2024-01-01T00:00:30.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:40.000Z', requestId: 'req-2' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:30.000Z');
+});
+
+test('parseTranscript falls back to the response when nothing precedes it', async () => {
+  const result = await parseTempTranscript('cache-no-parent.jsonl', [
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:10.000Z');
+});
+
+test('parseTranscript ignores an anchor stamped after the response', async () => {
+  const result = await parseTempTranscript('cache-anchor-inverted.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:05:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:10.000Z');
+});
+
+test('parseTranscript keeps subagent records out of the prompt cache clock', async () => {
+  const result = await parseTempTranscript('cache-sidechain.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+    // A subagent runs for 10 minutes on the 1h tier. Neither its clock nor its
+    // tier belongs to the main session.
+    { type: 'user', timestamp: '2024-01-01T00:00:20.000Z', isSidechain: true },
+    cacheWrite({ timestamp: '2024-01-01T00:10:00.000Z', requestId: 'req-2', isSidechain: true }, '1h'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:00.000Z');
+  assert.equal(result.promptCacheTtlSeconds, 300);
+  // The last-response element keeps counting subagents, as it always has.
+  assert.equal(result.lastAssistantResponseAt?.toISOString(), '2024-01-01T00:10:00.000Z');
+});
+
+test('parseTranscript does not let a subagent record become the next anchor', async () => {
+  const result = await parseTempTranscript('cache-sidechain-anchor.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+    { type: 'assistant', timestamp: '2024-01-01T00:03:00.000Z', requestId: 'req-x', isSidechain: true },
+    // Main-chain tool result, then the request it triggers. The anchor is the
+    // tool result, never the subagent record that happens to sit before it.
+    { type: 'user', timestamp: '2024-01-01T00:04:00.000Z' },
+    cacheWrite({ timestamp: '2024-01-01T00:04:10.000Z', requestId: 'req-2' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:04:00.000Z');
+});
+
+test('parseTranscript detects the prompt cache TTL tier', async () => {
+  const oneHour = await parseTempTranscript('cache-ttl-1h.jsonl', [
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '1h'),
+  ]);
+  assert.equal(oneHour.promptCacheTtlSeconds, 3600);
+
+  const fiveMin = await parseTempTranscript('cache-ttl-5m.jsonl', [
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '5m'),
+  ]);
+  assert.equal(fiveMin.promptCacheTtlSeconds, 300);
+});
+
+test('parseTranscript follows a mid-session tier change', async () => {
+  const result = await parseTempTranscript('cache-ttl-change.jsonl', [
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '1h'),
+    cacheWrite({ timestamp: '2024-01-01T00:05:10.000Z', requestId: 'req-2' }, '5m'),
+  ]);
+
+  assert.equal(result.promptCacheTtlSeconds, 300);
+});
+
+test('parseTranscript takes the shortest tier when a request writes both', async () => {
+  const result = await parseTempTranscript('cache-ttl-mixed.jsonl', [
+    cacheWrite(
+      { timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' },
+      { ephemeral_1h_input_tokens: 2048, ephemeral_5m_input_tokens: 512 },
+    ),
+  ]);
+
+  assert.equal(result.promptCacheTtlSeconds, 300);
+});
+
+test('parseTranscript keeps the detected tier through a pure cache read', async () => {
+  const result = await parseTempTranscript('cache-ttl-carry.jsonl', [
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '1h'),
+    // Reads the cache, writes nothing: both counters zero, tier unchanged.
+    cacheWrite(
+      { timestamp: '2024-01-01T00:01:10.000Z', requestId: 'req-2' },
+      { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 },
+    ),
+  ]);
+
+  assert.equal(result.promptCacheTtlSeconds, 3600);
+});
+
+test('parseTranscript reports no tier when nothing has written a cache', async () => {
+  const result = await parseTempTranscript('cache-ttl-absent.jsonl', [
+    { type: 'user', timestamp: '2024-01-01T00:00:00.000Z' },
+    {
+      type: 'assistant',
+      timestamp: '2024-01-01T00:00:10.000Z',
+      requestId: 'req-1',
+      message: { usage: { input_tokens: 4, output_tokens: 8 } },
+    },
+  ]);
+
+  assert.equal(result.promptCacheTtlSeconds, undefined);
+  assert.equal(result.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:00.000Z');
+});
+
+test('parseTranscript drops a cached TTL that is not a real tier', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-transcript-cache-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 'cache-ttl-poison.jsonl');
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const line = `${JSON.stringify(
+    cacheWrite({ timestamp: '2024-01-01T00:00:10.000Z', requestId: 'req-1' }, '1h'),
+  )}\n`;
+
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  await writeFile(transcriptPath, line, 'utf8');
+
+  try {
+    const first = await parseTranscript(transcriptPath);
+    assert.equal(first.promptCacheTtlSeconds, 3600);
+
+    const cachePath = await getTranscriptCacheFile(configDir);
+    const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    cache.data.promptCacheTtlSeconds = 86_400;
+    await writeFile(cachePath, JSON.stringify(cache), 'utf8');
+
+    const second = await parseTranscript(transcriptPath);
+    assert.equal(second.promptCacheTtlSeconds, undefined,
+      'a TTL no cache write could have produced must not survive the round-trip');
+    assert.equal(second.promptCacheAnchorAt?.toISOString(), '2024-01-01T00:00:10.000Z',
+      'the anchor must still survive the cache round-trip');
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -1380,6 +1633,74 @@ test('parseTranscript truncates long bash commands in targets', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('parseTranscript attributes MCP tool errors back to their server', async () => {
+  const result = await parseTempTranscript('mcp-errors.jsonl', [
+    {
+      message: {
+        content: [
+          { type: 'tool_use', id: 'm1', name: 'mcp__github__create_pr', input: {} },
+          { type: 'tool_use', id: 'm2', name: 'mcp__tenable__search_tools', input: {} },
+          { type: 'tool_use', id: 'm3', name: 'mcp__github__list_prs', input: {} },
+          { type: 'tool_result', tool_use_id: 'm1', is_error: true },
+          { type: 'tool_result', tool_use_id: 'm2', is_error: true },
+          { type: 'tool_result', tool_use_id: 'm3', is_error: false },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.mcpErrors, ['tenable']);
+});
+
+test('parseTranscript records no MCP errors when every MCP call succeeds', async () => {
+  const result = await parseTempTranscript('mcp-clean.jsonl', [
+    {
+      message: {
+        content: [
+          { type: 'tool_use', id: 'm1', name: 'mcp__linear__list_issues', input: {} },
+          { type: 'tool_result', tool_use_id: 'm1', is_error: false },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.mcpErrors, []);
+});
+
+test('parseTranscript sanitizes and bounds MCP error server names on first parse', async () => {
+  const poisoned = `bad\x1b]8;;https://evil.test\x07link\x1b]8;;\x07\u202E${'x'.repeat(100)}`;
+  const result = await parseTempTranscript('mcp-error-sanitized.jsonl', [{
+    message: {
+      content: [
+        { type: 'tool_use', id: 'm1', name: `mcp__${poisoned}__run`, input: {} },
+        { type: 'tool_result', tool_use_id: 'm1', is_error: true },
+      ],
+    },
+  }]);
+
+  assert.equal(result.mcpErrors.length, 1);
+  assert.equal(result.mcpErrors[0].length, 64);
+  assert.doesNotMatch(result.mcpErrors[0], /[\x1b\u202E]/u);
+});
+
+// A failing non-MCP tool must not be attributed to a server — the name has no
+// mcp__<server>__<tool> shape to parse, and mislabelling one would point an
+// investigation at the wrong subsystem.
+test('parseTranscript ignores non-MCP tool errors for MCP attribution', async () => {
+  const result = await parseTempTranscript('non-mcp-error.jsonl', [
+    {
+      message: {
+        content: [
+          { type: 'tool_use', id: 't1', name: 'Read', input: { path: '/nope' } },
+          { type: 'tool_result', tool_use_id: 't1', is_error: true },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.mcpErrors, []);
 });
 
 test('parseTranscript handles edge-case lines and error statuses', async () => {
@@ -1857,6 +2178,50 @@ test('parseTranscript reuses cached data when transcript state is unchanged', as
     assert.equal(second.tools.length, 1);
     assert.equal(second.tools[0].target, '/tmp/original.txt');
     assert.equal(second.compactionCount, 1);
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// mcpErrors must survive the transcript cache round-trip. The status line is
+// invoked continuously and almost every invocation is a CACHE HIT, so a field
+// that serializes but does not deserialize (or vice versa) is populated on the
+// very first tick and silently empty for the rest of the session. The file is
+// corrupted here while mtime+size are held constant, so a cache MISS would
+// re-parse garbage and yield nothing — the assertion can only pass if the
+// value genuinely round-tripped through the cache.
+test('parseTranscript round-trips mcpErrors through the transcript cache', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-mcperr-cache-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 'mcp-cache.jsonl');
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const line = `${JSON.stringify({
+    timestamp: '2024-01-01T00:00:00.000Z',
+    message: {
+      content: [
+        { type: 'tool_use', id: 'm1', name: 'mcp__airlock__block_hash', input: {} },
+        { type: 'tool_result', tool_use_id: 'm1', is_error: true },
+      ],
+    },
+  })}\n`;
+
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  await writeFile(transcriptPath, line, 'utf8');
+  fs.utimesSync(transcriptPath, 1710000000, 1710000000);
+
+  try {
+    const first = await parseTranscript(transcriptPath);
+    assert.deepEqual(first.mcpErrors, ['airlock'], 'first parse should attribute the error');
+
+    // Same mtime and size, different bytes: only a cache hit can still answer.
+    const stat = fs.statSync(transcriptPath);
+    await writeFile(transcriptPath, '#'.repeat(stat.size), 'utf8');
+    fs.utimesSync(transcriptPath, 1710000000, 1710000000);
+
+    const second = await parseTranscript(transcriptPath);
+    assert.deepEqual(second.mcpErrors, ['airlock'],
+      'mcpErrors must survive the cache round-trip, not just the first parse');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(dir, { recursive: true, force: true });
@@ -2983,4 +3348,117 @@ test('parseTranscript caps oversized advisorModel at the transcript length limit
     typeof result.advisorModel === 'string' && result.advisorModel.length <= 64,
     `expected capped advisorModel, got length ${result.advisorModel?.length}`,
   );
+});
+
+function agentLaunchEntries(toolUseId, input, toolUseResult) {
+  const entries = [
+    {
+      timestamp: '2026-07-19T10:00:00.000Z',
+      message: {
+        content: [
+          { type: 'tool_use', id: toolUseId, name: 'Agent', input },
+        ],
+      },
+    },
+    {
+      timestamp: '2026-07-19T10:00:00.040Z',
+      message: {
+        content: [
+          { type: 'tool_result', tool_use_id: toolUseId, content: 'launched' },
+        ],
+      },
+    },
+  ];
+  if (toolUseResult) {
+    entries[1].toolUseResult = toolUseResult;
+  }
+  return entries;
+}
+
+test('parseTranscript reads the agent model from toolUseResult.resolvedModel', async () => {
+  const result = await parseTempTranscript(
+    'agent-resolved-model.jsonl',
+    agentLaunchEntries(
+      'agent-resolved',
+      { subagent_type: 'general-purpose', description: 'inherits the session model' },
+      { status: 'async_launched', isAsync: true, resolvedModel: 'claude-sonnet-5[1m]' },
+    ),
+  );
+
+  assert.equal(result.agents.length, 1);
+  assert.equal(result.agents[0]?.model, 'claude-sonnet-5[1m]');
+});
+
+test('parseTranscript prefers resolvedModel over the model passed by the caller', async () => {
+  const result = await parseTempTranscript(
+    'agent-resolved-wins.jsonl',
+    agentLaunchEntries(
+      'agent-both',
+      { subagent_type: 'Explore', model: 'opus' },
+      { status: 'completed', resolvedModel: 'claude-opus-4-8[1m]' },
+    ),
+  );
+
+  assert.equal(result.agents[0]?.model, 'claude-opus-4-8[1m]');
+});
+
+test('parseTranscript keeps the caller model when no resolvedModel is reported', async () => {
+  const result = await parseTempTranscript(
+    'agent-no-resolved.jsonl',
+    agentLaunchEntries('agent-alias', { subagent_type: 'Explore', model: 'haiku' }, null),
+  );
+
+  assert.equal(result.agents[0]?.model, 'haiku');
+});
+
+test('parseTranscript leaves the agent model unset when neither source reports one', async () => {
+  const result = await parseTempTranscript(
+    'agent-no-model.jsonl',
+    agentLaunchEntries('agent-none', { subagent_type: 'Explore' }, { status: 'completed' }),
+  );
+
+  assert.equal(result.agents[0]?.model, undefined);
+});
+
+test('parseTranscript caps an oversized resolvedModel at the model length limit', async () => {
+  const result = await parseTempTranscript(
+    'agent-oversized-model.jsonl',
+    agentLaunchEntries(
+      'agent-oversized',
+      { subagent_type: 'Explore' },
+      { status: 'completed', resolvedModel: 'claude-' + 'x'.repeat(500) },
+    ),
+  );
+
+  assert.ok(
+    typeof result.agents[0]?.model === 'string'
+      && result.agents[0].model.length <= TRANSCRIPT_MODEL_MAX_LEN,
+    `expected capped agent model, got length ${result.agents[0]?.model?.length}`,
+  );
+});
+
+test('parseTranscript strips terminal escapes from resolvedModel', async () => {
+  const result = await parseTempTranscript(
+    'agent-escape-model.jsonl',
+    agentLaunchEntries(
+      'agent-escape',
+      { subagent_type: 'Explore' },
+      { status: 'completed', resolvedModel: '\u001b[31mclaude-opus-4-8\u001b[0m' },
+    ),
+  );
+
+  assert.equal(result.agents[0]?.model, 'claude-opus-4-8');
+});
+
+test('parseTranscript ignores a non-string resolvedModel', async () => {
+  const result = await parseTempTranscript(
+    'agent-bad-model.jsonl',
+    agentLaunchEntries(
+      'agent-bad',
+      { subagent_type: 'Explore', model: 'sonnet' },
+      { status: 'completed', resolvedModel: { id: 'claude-opus-4-8' } },
+    ),
+  );
+
+  assert.equal(result.agents[0]?.model, 'sonnet');
 });

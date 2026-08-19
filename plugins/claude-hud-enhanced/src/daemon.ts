@@ -23,10 +23,15 @@ const debug = createDebug('daemon');
  * Warm daemon (phase 1, unix-only; docs/daemon-mode-design.md). Long-lived
  * per-profile process serving renders over a local socket so repaints cost a
  * socket round-trip instead of a runtime cold start. Requests are handled
- * SERIALIZED (see the design addendum): terminal width reaches render via the
- * process-global COLUMNS env, and main() awaits between env application and
- * render — a queue removes the interleaving hazard for ~5-15ms requests
- * against 1-5s ticks.
+ * SERIALIZED (see the design addendum): the requesting session's WHOLE
+ * environment reaches render via process.env, and main() awaits between env
+ * application and render — a queue removes the interleaving hazard for ~5-15ms
+ * requests against 1-5s ticks.
+ *
+ * Staging the whole environment, rather than a named set, is what keeps the
+ * daemon's own environment out of its answers. The daemon outlives every
+ * session that talks to it, so anything it reads from its own env is the env of
+ * whichever session started it first.
  */
 export const DAEMON_IDLE_EXIT_MS = 10 * 60_000;
 /** Cap one render so a slow repo/subprocess can't stall other terminals'
@@ -53,6 +58,43 @@ export function safeColumns(raw: string | undefined): string | undefined {
   if (raw == null) return undefined;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) && n >= 1 && n <= 2000 ? String(n) : undefined;
+}
+
+/**
+ * Replaces process.env in place with the requesting session's snapshot.
+ *
+ * IN PLACE matters: `process.env = obj` drops Node's exotic env object, after
+ * which writes no longer reach the real environment. So absent keys are deleted
+ * and present keys assigned, leaving the same object identity.
+ *
+ * COLUMNS keeps its safeColumns() validation. It is the one value a render
+ * consumes as a number, so it stays a checked trust boundary; an unusable width
+ * is removed rather than passed through, and the render falls back to its
+ * default. Every other variable is copied verbatim, because the daemon cannot
+ * know which of them a future render will read.
+ */
+export function applyRequestEnv(requestEnv: Record<string, string> | undefined): void {
+  const next = requestEnv ?? {};
+  for (const key of Object.keys(process.env)) {
+    if (!(key in next)) delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(next)) {
+    if (typeof value !== 'string' || key === 'COLUMNS') continue;
+    process.env[key] = value;
+  }
+  const columns = safeColumns(next.COLUMNS);
+  if (columns != null) process.env.COLUMNS = columns;
+  else delete process.env.COLUMNS;
+}
+
+/** Restores a snapshot taken before applyRequestEnv, in place and exactly. */
+export function restoreEnv(snapshot: NodeJS.ProcessEnv): void {
+  for (const key of Object.keys(process.env)) {
+    if (!(key in snapshot)) delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (typeof value === 'string') process.env[key] = value;
+  }
 }
 
 /**
@@ -150,11 +192,22 @@ export function runDaemon(options: DaemonOptions = {}): void {
       // Env staging happens HERE, inside the serialized queue section — never
       // in the handler, whose orphaned continuation after a timeout must not
       // touch shared state (see defaultHandleRequest's contract). The orphan
-      // may then render with a later request's width, but its output is
+      // may then render with a later request's env, but its output is
       // discarded, so that is harmless by construction.
-      const prevColumns = process.env.COLUMNS;
-      const columns = safeColumns(request.env?.COLUMNS);
-      if (columns != null) process.env.COLUMNS = columns;
+      //
+      // The WHOLE requesting environment is staged, not a named allowlist.
+      // Every render-time `process.env` read then resolves to the REQUESTING
+      // session's value, including reads added long after this code was
+      // written. An allowlist has to be extended by hand for each new
+      // variable, and one forgotten entry makes the daemon answer with another
+      // session's environment. That is precisely how a Bedrock session's
+      // CLAUDE_CODE_USE_BEDROCK=1 came to label every subscription session
+      // "Bedrock" and hide its usage windows: getProviderLabel() reads that
+      // variable, shouldHideUsage() treats Bedrock as API-billed, and the
+      // daemon supplied its own env for both. ANTHROPIC_API_KEY (auth.ts) and
+      // CLAUDE_HUD_DISABLE (index.ts) are the same shape.
+      const prevEnv = { ...process.env };
+      applyRequestEnv(request.env);
       let timeoutTimer: NodeJS.Timeout | undefined;
       try {
         // Per-request timeout: one slow render (e.g. git status on a flaky
@@ -175,8 +228,7 @@ export function runDaemon(options: DaemonOptions = {}): void {
         output = null; // client falls back inline
       } finally {
         clearTimeout(timeoutTimer); // don't leave a ~2s timer dangling per request
-        if (prevColumns === undefined) delete process.env.COLUMNS;
-        else process.env.COLUMNS = prevColumns;
+        restoreEnv(prevEnv);
       }
     }
 

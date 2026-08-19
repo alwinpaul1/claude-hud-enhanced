@@ -21,7 +21,13 @@ export interface DaemonRequest {
   pluginVersion: string;
   stdin: StdinData;
   cwd: string;
-  env: { COLUMNS?: string; CLAUDE_CONFIG_DIR?: string };
+  // The REQUESTING session's full environment. Not an allowlist: the daemon
+  // stages this over its own process.env for the duration of one render, so
+  // every render-time env read resolves to the requester's value. Widened from
+  // { COLUMNS, CLAUDE_CONFIG_DIR } without a protocol bump — an older daemon
+  // still finds both keys in the record, and the pluginVersion handshake
+  // already forces daemon turnover on the release that ships this.
+  env: Record<string, string>;
   now: number;
 }
 

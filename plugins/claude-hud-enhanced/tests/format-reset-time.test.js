@@ -137,6 +137,52 @@ test('both: format is "<relative>, <absolute>"', () => {
 });
 
 // ---------------------------------------------------------------------------
+// hourCycle / showSeconds opts
+//
+// Fork note: this fork's formatResetTime takes `windowScale` third (short
+// windows show a bare clock time, long windows name the weekday), so the
+// opts object is the FOURTH argument here, not the third as upstream.
+// ---------------------------------------------------------------------------
+
+test('opts: default (auto) matches the pre-existing locale-driven output', () => {
+  const resetAt = future(2 * HOUR);
+  const withoutOpts = formatResetTime(resetAt, 'absolute');
+  const withAutoOpts = formatResetTime(resetAt, 'absolute', 'long', { hourCycle: 'auto', showSeconds: false });
+  assert.equal(withoutOpts, withAutoOpts);
+});
+
+test('opts: h23 avoids AM/PM and uses 00-23 hours', () => {
+  const resetAt = future(2 * HOUR);
+  const result = formatResetTime(resetAt, 'absolute', 'short', { hourCycle: 'h23', showSeconds: false });
+  assert.doesNotMatch(result, /AM|PM/i);
+  // Fork note: our en/zh `format.absoluteTime` is bare "{time}" — the label
+  // already reads "resets …", so the preposition upstream prints is dropped.
+  assert.match(result, /^\d{2}:\d{2}$/);
+});
+
+test('opts: showSeconds adds a seconds component', () => {
+  const resetAt = future(2 * HOUR);
+  const result = formatResetTime(resetAt, 'absolute', 'short', { hourCycle: 'h23', showSeconds: true });
+  assert.match(result, /^\d{2}:\d{2}:\d{2}$/);
+});
+
+test('opts: midnight boundary — h23 shows 00, not 24', () => {
+  const resetAt = new Date();
+  resetAt.setDate(resetAt.getDate() + 1);
+  resetAt.setHours(0, 5, 0, 0);
+  const result = formatResetTime(resetAt, 'absolute', 'short', { hourCycle: 'h23', showSeconds: false });
+  assert.match(result, /00:05$/);
+});
+
+test('opts: midnight boundary — h24 shows 24, not 00', () => {
+  const resetAt = new Date();
+  resetAt.setDate(resetAt.getDate() + 1);
+  resetAt.setHours(0, 5, 0, 0);
+  const result = formatResetTime(resetAt, 'absolute', 'short', { hourCycle: 'h24', showSeconds: false });
+  assert.match(result, /24:05$/);
+});
+
+// ---------------------------------------------------------------------------
 // config integration — mergeConfig accepts and validates timeFormat
 // ---------------------------------------------------------------------------
 
@@ -162,4 +208,38 @@ test('mergeConfig rejects invalid timeFormat and falls back to "absolute"', asyn
   const { mergeConfig } = await import('../dist/config.js');
   const config = mergeConfig({ display: { timeFormat: 'invalid-value' } });
   assert.equal(config.display.timeFormat, 'absolute');
+});
+
+// ---------------------------------------------------------------------------
+// config integration — mergeConfig accepts and validates hourCycle / showClockSeconds
+// ---------------------------------------------------------------------------
+
+test('mergeConfig defaults hourCycle to "auto"', async () => {
+  const { mergeConfig } = await import('../dist/config.js');
+  const config = mergeConfig({});
+  assert.equal(config.display.hourCycle, 'auto');
+});
+
+test('mergeConfig accepts a valid hourCycle', async () => {
+  const { mergeConfig } = await import('../dist/config.js');
+  const config = mergeConfig({ display: { hourCycle: 'h23' } });
+  assert.equal(config.display.hourCycle, 'h23');
+});
+
+test('mergeConfig rejects invalid hourCycle and falls back to "auto"', async () => {
+  const { mergeConfig } = await import('../dist/config.js');
+  const config = mergeConfig({ display: { hourCycle: 'not-a-cycle' } });
+  assert.equal(config.display.hourCycle, 'auto');
+});
+
+test('mergeConfig defaults showClockSeconds to false', async () => {
+  const { mergeConfig } = await import('../dist/config.js');
+  const config = mergeConfig({});
+  assert.equal(config.display.showClockSeconds, false);
+});
+
+test('mergeConfig accepts showClockSeconds true', async () => {
+  const { mergeConfig } = await import('../dist/config.js');
+  const config = mergeConfig({ display: { showClockSeconds: true } });
+  assert.equal(config.display.showClockSeconds, true);
 });

@@ -12,6 +12,7 @@ export interface SessionCostDisplay {
 }
 export declare function estimateSessionCost(stdin: StdinData, sessionTokens: SessionTokenUsage | undefined, options?: {
     allowRoutedCost?: boolean;
+    now?: Date;
 }): SessionCostEstimate | null;
 export declare function resolveSessionCost(stdin: StdinData, sessionTokens: SessionTokenUsage | undefined, options?: {
     allowRoutedCost?: boolean;

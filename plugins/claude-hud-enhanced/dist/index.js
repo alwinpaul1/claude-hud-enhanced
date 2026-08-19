@@ -4,6 +4,7 @@ import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
 import { getGitStatusCached } from "./git-cache.js";
+import { getJjStatus, isJjRepo } from "./jj.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
 import { getClaudeCodeVersion } from "./version.js";
@@ -74,6 +75,23 @@ export function isHudDisabled(env = process.env) {
     }
     return value !== "0" && value !== "false" && value !== "off" && value !== "no";
 }
+/**
+ * Prefers jj when an eligible `.jj` marker is found and the opt-in is enabled.
+ * If the bounded jj probe fails, Git remains the safe compatibility fallback.
+ */
+export async function resolveVcsStatus(deps, config, cwd) {
+    if (!cwd)
+        return null;
+    if (config.jjStatus.enabled && deps.isJjRepo(cwd)) {
+        const jjStatus = await deps.getJjStatus(cwd);
+        if (jjStatus)
+            return jjStatus;
+    }
+    if (config.gitStatus.enabled) {
+        return deps.getGitStatus(cwd);
+    }
+    return null;
+}
 export async function main(overrides = {}) {
     if (isHudDisabled()) {
         // Print nothing so Claude Code renders an empty statusline, and skip all
@@ -92,6 +110,8 @@ export async function main(overrides = {}) {
         // TTL+mtime cached: avoids ~7 git spawns per repaint (critical at 1-2s
         // refreshInterval across many terminals; see git-cache.ts).
         getGitStatus: getGitStatusCached,
+        getJjStatus,
+        isJjRepo,
         loadConfig,
         parseExtraCmdArg,
         runExtraCmd,
@@ -152,9 +172,10 @@ export async function main(overrides = {}) {
             lastCompactPostTokens: transcript.lastCompactPostTokens,
         });
         const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } = configCounts;
-        const gitStatus = config.gitStatus.enabled
-            ? await deps.getGitStatus(stdin.cwd)
-            : null;
+        // resolveVcsStatus keeps our enabled-gate (it checks
+        // config.gitStatus.enabled before spawning) and routes through
+        // getGitStatusCached via deps, so the git cache survives.
+        const gitStatus = await resolveVcsStatus(deps, config, stdin.cwd);
         let usageData = null;
         const shouldReadUsage = config.display.showUsage !== false;
         const shouldWriteUsage = Boolean(config.display.externalUsageWritePath);
@@ -181,6 +202,13 @@ export async function main(overrides = {}) {
                         ...(usageData.sevenDay == null && ext.sevenDay != null && {
                             sevenDay: ext.sevenDay,
                             sevenDayResetAt: ext.sevenDayResetAt ?? null,
+                        }),
+                        // Likewise, model-scoped windows (e.g. Fable) are absent from stdin
+                        // today (see #669); let an external feeder supply them until
+                        // Claude Code forwards rate_limits.model_scoped itself. Stdin wins
+                        // whenever it does carry scoped windows.
+                        ...(usageData.scopedWindows == null && ext.scopedWindows != null && {
+                            scopedWindows: ext.scopedWindows,
                         }),
                     };
                 }

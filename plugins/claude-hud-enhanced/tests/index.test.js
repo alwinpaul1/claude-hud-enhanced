@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_CONFIG } from "../dist/config.js";
 import { setLanguage } from "../dist/i18n/index.js";
-import { formatSessionDuration, main } from "../dist/index.js";
+import { formatSessionDuration, main, resolveVcsStatus } from "../dist/index.js";
 
 function restoreEnvVar(name, value) {
   if (value === undefined) {
@@ -23,6 +23,10 @@ function makeConfig(overrides = {}) {
     gitStatus: {
       ...DEFAULT_CONFIG.gitStatus,
       ...(overrides.gitStatus ?? {}),
+    },
+    jjStatus: {
+      ...DEFAULT_CONFIG.jjStatus,
+      ...(overrides.jjStatus ?? {}),
     },
     display: {
       ...DEFAULT_CONFIG.display,
@@ -342,6 +346,150 @@ test("main includes git status in render context", async () => {
   });
 
   assert.equal(renderedContext?.gitStatus?.branch, "feature/test");
+});
+
+test("resolveVcsStatus returns null without a cwd", async () => {
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => { throw new Error("should not be called"); },
+      getJjStatus: async () => { throw new Error("should not be called"); },
+      isJjRepo: () => { throw new Error("should not be called"); },
+    },
+    makeConfig(),
+    undefined,
+  );
+  assert.equal(result, null);
+});
+
+test("resolveVcsStatus prefers jj over git and never calls getGitStatus", async () => {
+  let gitCalled = false;
+
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => {
+        gitCalled = true;
+        return null;
+      },
+      getJjStatus: async (cwd) => ({
+        branch: "mybookmark",
+        isDirty: false,
+        ahead: 0,
+        behind: 0,
+        vcs: "jj",
+        conflict: false,
+      }),
+      isJjRepo: () => true,
+    },
+    makeConfig({ jjStatus: { enabled: true } }),
+    "/some/jj/repo",
+  );
+
+  assert.equal(gitCalled, false);
+  assert.equal(result?.vcs, "jj");
+  assert.equal(result?.branch, "mybookmark");
+});
+
+test("resolveVcsStatus falls back to git when the jj probe returns null", async () => {
+  let gitCalled = false;
+
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => {
+        gitCalled = true;
+        return { branch: "main", isDirty: false, ahead: 0, behind: 0 };
+      },
+      getJjStatus: async () => null,
+      isJjRepo: () => true,
+    },
+    makeConfig({ jjStatus: { enabled: true } }),
+    "/some/colocated/repo",
+  );
+
+  assert.equal(gitCalled, true);
+  assert.equal(result?.branch, "main");
+  assert.equal(result?.vcs, undefined);
+});
+
+test("resolveVcsStatus does not fall back to git when git status is disabled", async () => {
+  let gitCalled = false;
+
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => {
+        gitCalled = true;
+        return { branch: "main", isDirty: false, ahead: 0, behind: 0 };
+      },
+      getJjStatus: async () => null,
+      isJjRepo: () => true,
+    },
+    makeConfig({
+      jjStatus: { enabled: true },
+      gitStatus: { enabled: false },
+    }),
+    "/some/jj/repo",
+  );
+
+  assert.equal(gitCalled, false);
+  assert.equal(result, null);
+});
+
+test("resolveVcsStatus falls back to git when isJjRepo is false", async () => {
+  let jjCalled = false;
+
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => ({
+        branch: "main",
+        isDirty: false,
+        ahead: 0,
+        behind: 0,
+      }),
+      getJjStatus: async () => {
+        jjCalled = true;
+        return null;
+      },
+      isJjRepo: () => false,
+    },
+    makeConfig(),
+    "/some/git/repo",
+  );
+
+  assert.equal(jjCalled, false);
+  assert.equal(result?.branch, "main");
+});
+
+test("resolveVcsStatus skips jj entirely when jjStatus.enabled is false", async () => {
+  let jjCalled = false;
+
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => ({ branch: "main", isDirty: false, ahead: 0, behind: 0 }),
+      getJjStatus: async () => {
+        jjCalled = true;
+        return null;
+      },
+      isJjRepo: () => true,
+    },
+    makeConfig({ jjStatus: { enabled: false } }),
+    "/some/repo",
+  );
+
+  assert.equal(jjCalled, false);
+  assert.equal(result?.branch, "main");
+});
+
+test("resolveVcsStatus returns null when both git and jj are disabled", async () => {
+  const result = await resolveVcsStatus(
+    {
+      getGitStatus: async () => { throw new Error("should not be called"); },
+      getJjStatus: async () => { throw new Error("should not be called"); },
+      isJjRepo: () => false,
+    },
+    makeConfig({ gitStatus: { enabled: false } }),
+    "/some/repo",
+  );
+
+  assert.equal(result, null);
 });
 
 test("main includes usageData from stdin when available", async () => {
@@ -730,4 +878,129 @@ test("main skips auth file I/O when auth segments are disabled", async () => {
 
   assert.equal(lookupCalls, 0);
   assert.equal(renderedContext?.authInfo, null);
+});
+
+test("main merges scoped windows from the external snapshot when stdin lacks them", async () => {
+  let renderedContext;
+  const scopedWindows = [{ label: "Fable", percent: 89, resetAt: new Date("2026-04-27T12:00:00.000Z") }];
+
+  await main({
+    readStdin: async () => makeStdin({
+      rate_limits: {
+        five_hour: { used_percentage: 49.6, resets_at: 1710000000 },
+        seven_day: { used_percentage: 25.2, resets_at: 1710600000 },
+      },
+    }),
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    loadConfig: async () => makeConfig({
+      display: { externalUsagePath: "/tmp/usage.json" },
+    }),
+    getGitStatus: async () => null,
+    getUsageFromExternalSnapshot: () => ({
+      fiveHour: null,
+      sevenDay: null,
+      fiveHourResetAt: null,
+      sevenDayResetAt: null,
+      scopedWindows,
+    }),
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.deepEqual(renderedContext?.usageData?.scopedWindows, scopedWindows);
+  assert.equal(renderedContext?.usageData?.fiveHour, 50);
+  assert.equal(renderedContext?.usageData?.sevenDay, 25);
+});
+
+test("main prefers stdin scoped windows over the external snapshot", async () => {
+  let renderedContext;
+
+  await main({
+    readStdin: async () => makeStdin({
+      rate_limits: {
+        five_hour: { used_percentage: 49.6, resets_at: 1710000000 },
+        model_scoped: [
+          { display_name: "Fable", utilization: 41, resets_at: "2026-04-27T12:00:00.000Z" },
+        ],
+      },
+    }),
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    loadConfig: async () => makeConfig({
+      display: { externalUsagePath: "/tmp/usage.json" },
+    }),
+    getGitStatus: async () => null,
+    getUsageFromExternalSnapshot: () => ({
+      fiveHour: null,
+      sevenDay: null,
+      fiveHourResetAt: null,
+      sevenDayResetAt: null,
+      scopedWindows: [{ label: "Fable", percent: 99, resetAt: null }],
+    }),
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.deepEqual(renderedContext?.usageData?.scopedWindows, [
+    { label: "Fable", percent: 41, resetAt: new Date("2026-04-27T12:00:00.000Z") },
+  ]);
+});
+
+test("main preserves an explicit empty stdin scoped snapshot", async () => {
+  let renderedContext;
+
+  await main({
+    readStdin: async () => makeStdin({
+      rate_limits: {
+        five_hour: { used_percentage: 49.6, resets_at: 1710000000 },
+        model_scoped: [],
+      },
+    }),
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    loadConfig: async () => makeConfig({
+      display: { externalUsagePath: "/tmp/usage.json" },
+    }),
+    getGitStatus: async () => null,
+    getUsageFromExternalSnapshot: () => ({
+      fiveHour: null,
+      sevenDay: null,
+      fiveHourResetAt: null,
+      sevenDayResetAt: null,
+      scopedWindows: [{ label: "Stale", percent: 99, resetAt: null }],
+    }),
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.deepEqual(renderedContext?.usageData?.scopedWindows, []);
+});
+
+test("main uses a scoped-only external snapshot when stdin has no rate limits", async () => {
+  let renderedContext;
+  const scopedOnly = {
+    fiveHour: null,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+    scopedWindows: [{ label: "Fable", percent: 89, resetAt: null }],
+  };
+
+  await main({
+    readStdin: async () => makeStdin({ rate_limits: null }),
+    parseTranscript: async () => makeTranscript(),
+    countConfigs: async () => makeCounts(),
+    loadConfig: async () => makeConfig(),
+    getGitStatus: async () => null,
+    getUsageFromExternalSnapshot: () => scopedOnly,
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.deepEqual(renderedContext?.usageData, scopedOnly);
 });

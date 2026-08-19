@@ -76,6 +76,44 @@ test('estimateSessionCost calculates cache costs correctly', () => {
   assert.ok(Math.abs(result.totalUsd - 4.05) < 1e-10);
 });
 
+test('estimateSessionCost applies MiniMax-M3 pricing without a cache write charge', () => {
+  const result = estimateSessionCost(
+    { model: { display_name: 'MiniMax-M3' } },
+    {
+      inputTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    },
+  );
+
+  assert.ok(result);
+  assert.equal(result.inputUsd, 0.6);
+  assert.equal(result.cacheCreationUsd, 0);
+  assert.equal(result.cacheReadUsd, 0.12);
+  assert.equal(result.outputUsd, 2.4);
+  assert.equal(result.totalUsd, 3.12);
+});
+
+test('estimateSessionCost applies MiniMax-M2.7 cache pricing from the model parameters', () => {
+  const result = estimateSessionCost(
+    { model: { id: 'MiniMax-M2.7' } },
+    {
+      inputTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    },
+  );
+
+  assert.ok(result);
+  assert.equal(result.inputUsd, 0.3);
+  assert.equal(result.cacheCreationUsd, 0.375);
+  assert.equal(result.cacheReadUsd, 0.06);
+  assert.equal(result.outputUsd, 1.2);
+  assert.ok(Math.abs(result.totalUsd - 1.935) < 1e-12);
+});
+
 test('estimateSessionCost matches model from id when display_name fails', () => {
   const tokens = { inputTokens: 1000000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
   const result = estimateSessionCost({ model: { display_name: 'Unknown', id: 'claude-sonnet-3.5-20241022' } }, tokens);
@@ -101,6 +139,53 @@ test('estimateSessionCost prices enterprise plan aliases', () => {
   assert.ok(haikuPlan);
   assert.equal(haikuPlan.inputUsd, 0.8);
   assert.equal(haikuPlan.outputUsd, 4);
+});
+
+test('estimateSessionCost prices the Claude 5 family', () => {
+  const tokens = { inputTokens: 1000000, outputTokens: 1000000, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  const options = { now: new Date('2026-08-01T00:00:00.000Z') };
+
+  const opus5 = estimateSessionCost({ model: { display_name: 'Opus 5' } }, tokens, options);
+  assert.ok(opus5);
+  assert.equal(opus5.inputUsd, 5);
+  assert.equal(opus5.outputUsd, 25);
+
+  const sonnet5 = estimateSessionCost({ model: { display_name: 'Sonnet 5' } }, tokens, options);
+  assert.ok(sonnet5);
+  assert.equal(sonnet5.inputUsd, 2);
+  assert.equal(sonnet5.outputUsd, 10);
+
+  const fable5 = estimateSessionCost({ model: { display_name: 'Fable 5' } }, tokens, options);
+  assert.ok(fable5);
+  assert.equal(fable5.inputUsd, 10);
+  assert.equal(fable5.outputUsd, 50);
+});
+
+test('estimateSessionCost prices Claude 5 ids carrying a context-window suffix', () => {
+  const tokens = { inputTokens: 1000000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+
+  const fromDisplayName = estimateSessionCost(
+    { model: { display_name: 'Opus 5 (1M context)', id: 'claude-opus-5[1m]' } },
+    tokens,
+  );
+  assert.ok(fromDisplayName);
+  assert.equal(fromDisplayName.inputUsd, 5);
+
+  const fromId = estimateSessionCost({ model: { display_name: 'Unknown', id: 'claude-opus-5[1m]' } }, tokens);
+  assert.ok(fromId);
+  assert.equal(fromId.inputUsd, 5);
+});
+
+test('estimateSessionCost prices Claude 5 point releases like their base model', () => {
+  const tokens = { inputTokens: 1000000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+
+  const opus51 = estimateSessionCost({ model: { display_name: 'Opus 5.1' } }, tokens);
+  assert.ok(opus51);
+  assert.equal(opus51.inputUsd, 5);
+
+  const sonnet51 = estimateSessionCost({ model: { display_name: 'Sonnet 5.1' } }, tokens);
+  assert.ok(sonnet51);
+  assert.equal(sonnet51.inputUsd, 2);
 });
 
 test('estimateSessionCost prices Sonnet 3.7', () => {

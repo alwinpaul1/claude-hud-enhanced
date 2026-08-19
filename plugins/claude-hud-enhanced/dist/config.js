@@ -1,10 +1,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { getHudPluginDir } from './claude-config-dir.js';
+import { getClaudeConfigDir, getHudPluginDir } from './claude-config-dir.js';
 import { createDebug } from './debug.js';
 import { stripBom } from './utils/sanitize.js';
+import { MAX_TERMINAL_WIDTH } from './utils/terminal.js';
+import { sanitizeDisplayText } from './utils/sanitize.js';
 const debug = createDebug('config');
+const MAX_CONFIG_FILE_BYTES = 64 * 1024;
+const MAX_CONFIG_NESTING_DEPTH = 8;
+const UNSAFE_CONFIG_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 export const DEFAULT_ELEMENT_ORDER = [
     'project',
     'addedDirs',
@@ -23,7 +28,23 @@ export const DEFAULT_ELEMENT_ORDER = [
 export const DEFAULT_MERGE_GROUPS = [
     ['context', 'usage'],
 ];
+const PROJECT_LINE_SEGMENTS = [
+    'model',
+    'project',
+    'advisor',
+    'sessionName',
+    'version',
+    'extra',
+    'duration',
+    'cost',
+    'speed',
+    'auth',
+];
+// An empty order is deliberate: renderers retain their byte-for-byte native
+// order until the user opts in to moving one or more segments.
+export const DEFAULT_PROJECT_LINE_ORDER = [];
 const KNOWN_ELEMENTS = new Set(DEFAULT_ELEMENT_ORDER);
+const KNOWN_FIRST_LINE_SEGMENTS = new Set(PROJECT_LINE_SEGMENTS);
 export const DEFAULT_CONFIG = {
     language: 'en',
     lineLayout: 'compact',
@@ -32,6 +53,7 @@ export const DEFAULT_CONFIG = {
     maxWidth: null,
     forceMaxWidth: false,
     elementOrder: [...DEFAULT_ELEMENT_ORDER],
+    projectLineOrder: [...DEFAULT_PROJECT_LINE_ORDER],
     gitStatus: {
         enabled: true,
         showDirty: true,
@@ -43,6 +65,11 @@ export const DEFAULT_CONFIG = {
     },
     daemon: {
         enabled: false,
+    },
+    jjStatus: {
+        enabled: false,
+        showDirty: true,
+        showConflicts: true,
     },
     display: {
         showModel: true,
@@ -75,6 +102,7 @@ export const DEFAULT_CONFIG = {
         authUserLength: 8,
         showClaudeCodeVersion: false,
         showEffortLevel: false,
+        effortFormat: 'full',
         showMemoryUsage: false,
         showPromptCache: false,
         promptCacheTtlSeconds: 300,
@@ -84,6 +112,7 @@ export const DEFAULT_CONFIG = {
         showLastResponseAt: false,
         showCompactions: false,
         mergeGroups: DEFAULT_MERGE_GROUPS.map(group => [...group]),
+        rightAlign: [],
         autocompactBuffer: 'enabled',
         contextWarningThreshold: 70,
         contextCriticalThreshold: 85,
@@ -110,6 +139,8 @@ export const DEFAULT_CONFIG = {
         customLine: '',
         customLinePosition: 'last',
         timeFormat: 'absolute', // enhanced: absolute reset clock times ("resets at 11:00 PM")
+        hourCycle: 'auto',
+        showClockSeconds: false,
         showAdvisor: false,
         advisorOverride: '',
         autoCompactWindow: null,
@@ -134,8 +165,21 @@ export function getConfigPath() {
     const homeDir = os.homedir();
     return path.join(getHudPluginDir(homeDir), 'config.json');
 }
+/**
+ * Optional per-config-directory overrides, layered on top of the main config.
+ *
+ * Users who run several Claude config directories side by side (via
+ * CLAUDE_CONFIG_DIR) commonly symlink `plugins/` to one shared location, which
+ * makes `plugins/claude-hud/config.json` the very same physical file for every
+ * directory. This file lives outside `plugins/`, so it stays per-directory and
+ * can override any part of the shared config.
+ */
+export function getConfigOverridePath() {
+    const homeDir = os.homedir();
+    return path.join(getClaudeConfigDir(homeDir), 'claude-hud.json');
+}
 function validatePathLevels(value) {
-    return value === 1 || value === 2 || value === 3;
+    return value === 1 || value === 2 || value === 3 || value === 'full';
 }
 function validateLineLayout(value) {
     return value === 'compact' || value === 'expanded';
@@ -158,6 +202,9 @@ function validateLanguage(value) {
 function validateModelFormat(value) {
     return value === 'full' || value === 'compact' || value === 'short';
 }
+function validateEffortFormat(value) {
+    return value === 'full' || value === 'symbol' || value === 'text';
+}
 function validateTimeFormat(value) {
     return value === 'relative'
         || value === 'absolute'
@@ -167,6 +214,9 @@ function validateTimeFormat(value) {
 }
 function validateCustomLinePosition(value) {
     return value === 'first' || value === 'last';
+}
+function validateHourCycle(value) {
+    return value === 'auto' || value === 'h11' || value === 'h12' || value === 'h23' || value === 'h24';
 }
 function validateColorName(value) {
     return value === 'dim'
@@ -219,6 +269,47 @@ function validateElementOrder(value) {
         elementOrder.push(element);
     }
     return elementOrder.length > 0 ? elementOrder : [...DEFAULT_ELEMENT_ORDER];
+}
+// Unlike `elementOrder`, `projectLineOrder` only reorders segments. A partial
+// list is preserved as a requested prefix; each renderer appends all remaining
+// visible parts in its own existing order.
+function validateProjectLineOrder(value) {
+    if (!Array.isArray(value)) {
+        return [...DEFAULT_PROJECT_LINE_ORDER];
+    }
+    const seen = new Set();
+    const order = [];
+    for (const item of value) {
+        if (typeof item !== 'string' || !KNOWN_FIRST_LINE_SEGMENTS.has(item)) {
+            continue;
+        }
+        const segment = item;
+        if (seen.has(segment)) {
+            continue;
+        }
+        seen.add(segment);
+        order.push(segment);
+    }
+    return order;
+}
+function validateRightAlign(value) {
+    if (!Array.isArray(value)) {
+        return [...DEFAULT_CONFIG.display.rightAlign];
+    }
+    const seen = new Set();
+    const elements = [];
+    for (const item of value) {
+        if (typeof item !== 'string' || !KNOWN_ELEMENTS.has(item)) {
+            continue;
+        }
+        const element = item;
+        if (seen.has(element)) {
+            continue;
+        }
+        seen.add(element);
+        elements.push(element);
+    }
+    return elements;
 }
 function validateMergeGroups(value) {
     if (!Array.isArray(value)) {
@@ -280,7 +371,7 @@ function migrateConfig(userConfig) {
                 migrated.lineLayout = obj.lineLayout;
             if (typeof obj.showSeparators === 'boolean')
                 migrated.showSeparators = obj.showSeparators;
-            if (typeof obj.pathLevels === 'number')
+            if (typeof obj.pathLevels === 'number' || obj.pathLevels === 'full')
                 migrated.pathLevels = obj.pathLevels;
         }
         delete migrated.layout;
@@ -324,6 +415,11 @@ function validateAutoCompactWindow(value) {
 function validateOptionalPath(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
+function validateDisplayText(value, maxLength, fallback) {
+    return typeof value === 'string'
+        ? sanitizeDisplayText(value).slice(0, maxLength)
+        : fallback;
+}
 function validateFreshnessMs(value) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         return DEFAULT_CONFIG.display.externalUsageFreshnessMs;
@@ -346,9 +442,10 @@ export function mergeConfig(userConfig) {
         : DEFAULT_CONFIG.pathLevels;
     const rawMaxWidth = migrated.maxWidth;
     const maxWidth = (typeof rawMaxWidth === 'number' && Number.isFinite(rawMaxWidth) && rawMaxWidth > 0)
-        ? Math.floor(rawMaxWidth)
+        ? Math.min(Math.floor(rawMaxWidth), MAX_TERMINAL_WIDTH)
         : null;
     const elementOrder = validateElementOrder(migrated.elementOrder);
+    const projectLineOrder = validateProjectLineOrder(migrated.projectLineOrder);
     const forceMaxWidth = typeof migrated.forceMaxWidth === 'boolean'
         ? migrated.forceMaxWidth
         : DEFAULT_CONFIG.forceMaxWidth;
@@ -375,6 +472,17 @@ export function mergeConfig(userConfig) {
         enabled: typeof migrated.daemon?.enabled === 'boolean'
             ? migrated.daemon.enabled
             : DEFAULT_CONFIG.daemon.enabled,
+    };
+    const jjStatus = {
+        enabled: typeof migrated.jjStatus?.enabled === 'boolean'
+            ? migrated.jjStatus.enabled
+            : DEFAULT_CONFIG.jjStatus.enabled,
+        showDirty: typeof migrated.jjStatus?.showDirty === 'boolean'
+            ? migrated.jjStatus.showDirty
+            : DEFAULT_CONFIG.jjStatus.showDirty,
+        showConflicts: typeof migrated.jjStatus?.showConflicts === 'boolean'
+            ? migrated.jjStatus.showConflicts
+            : DEFAULT_CONFIG.jjStatus.showConflicts,
     };
     const display = {
         showModel: typeof migrated.display?.showModel === 'boolean'
@@ -463,6 +571,9 @@ export function mergeConfig(userConfig) {
         showEffortLevel: typeof migrated.display?.showEffortLevel === 'boolean'
             ? migrated.display.showEffortLevel
             : DEFAULT_CONFIG.display.showEffortLevel,
+        effortFormat: validateEffortFormat(migrated.display?.effortFormat)
+            ? migrated.display.effortFormat
+            : DEFAULT_CONFIG.display.effortFormat,
         showMemoryUsage: typeof migrated.display?.showMemoryUsage === 'boolean'
             ? migrated.display.showMemoryUsage
             : DEFAULT_CONFIG.display.showMemoryUsage,
@@ -486,6 +597,7 @@ export function mergeConfig(userConfig) {
             ? migrated.display.showCompactions
             : DEFAULT_CONFIG.display.showCompactions,
         mergeGroups: validateMergeGroups(migrated.display?.mergeGroups),
+        rightAlign: validateRightAlign(migrated.display?.rightAlign),
         autocompactBuffer: validateAutocompactBuffer(migrated.display?.autocompactBuffer)
             ? migrated.display.autocompactBuffer
             : DEFAULT_CONFIG.display.autocompactBuffer,
@@ -500,9 +612,7 @@ export function mergeConfig(userConfig) {
         modelFormat: validateModelFormat(migrated.display?.modelFormat)
             ? migrated.display.modelFormat
             : DEFAULT_CONFIG.display.modelFormat,
-        modelOverride: typeof migrated.display?.modelOverride === 'string'
-            ? migrated.display.modelOverride.slice(0, 80)
-            : DEFAULT_CONFIG.display.modelOverride,
+        modelOverride: validateDisplayText(migrated.display?.modelOverride, 80, DEFAULT_CONFIG.display.modelOverride),
         modelSource: ['auto', 'stdin', 'transcript'].includes(migrated.display?.modelSource)
             ? migrated.display.modelSource
             : DEFAULT_CONFIG.display.modelSource,
@@ -527,24 +637,26 @@ export function mergeConfig(userConfig) {
         oauthUsagePoll: typeof migrated.display?.oauthUsagePoll === 'boolean'
             ? migrated.display.oauthUsagePoll
             : DEFAULT_CONFIG.display.oauthUsagePoll,
-        providerName: typeof migrated.display?.providerName === 'string'
-            ? migrated.display.providerName.slice(0, 40)
-            : DEFAULT_CONFIG.display.providerName,
-        customLine: typeof migrated.display?.customLine === 'string'
-            ? migrated.display.customLine.slice(0, 80)
-            : DEFAULT_CONFIG.display.customLine,
+        // Upstream's validateDisplayText also strips control/ANSI sequences, which a
+        // bare typeof + slice did not, so these two adopt it.
+        providerName: validateDisplayText(migrated.display?.providerName, 40, DEFAULT_CONFIG.display.providerName),
+        customLine: validateDisplayText(migrated.display?.customLine, 80, DEFAULT_CONFIG.display.customLine),
         customLinePosition: validateCustomLinePosition(migrated.display?.customLinePosition)
             ? migrated.display.customLinePosition
             : DEFAULT_CONFIG.display.customLinePosition,
         timeFormat: validateTimeFormat(migrated.display?.timeFormat)
             ? migrated.display.timeFormat
             : DEFAULT_CONFIG.display.timeFormat,
+        hourCycle: validateHourCycle(migrated.display?.hourCycle)
+            ? migrated.display.hourCycle
+            : DEFAULT_CONFIG.display.hourCycle,
+        showClockSeconds: typeof migrated.display?.showClockSeconds === 'boolean'
+            ? migrated.display.showClockSeconds
+            : DEFAULT_CONFIG.display.showClockSeconds,
         showAdvisor: typeof migrated.display?.showAdvisor === 'boolean'
             ? migrated.display.showAdvisor
             : DEFAULT_CONFIG.display.showAdvisor,
-        advisorOverride: typeof migrated.display?.advisorOverride === 'string'
-            ? migrated.display.advisorOverride.slice(0, 80)
-            : DEFAULT_CONFIG.display.advisorOverride,
+        advisorOverride: validateDisplayText(migrated.display?.advisorOverride, 80, DEFAULT_CONFIG.display.advisorOverride),
         autoCompactWindow: validateAutoCompactWindow(migrated.display?.autoCompactWindow),
     };
     const colors = {
@@ -588,21 +700,71 @@ export function mergeConfig(userConfig) {
             ? migrated.colors.barEmpty
             : DEFAULT_CONFIG.colors.barEmpty,
     };
-    return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, gitStatus, daemon, display, colors };
+    return { language, lineLayout, showSeparators, pathLevels, maxWidth, forceMaxWidth, elementOrder, projectLineOrder, gitStatus, jjStatus, daemon, display, colors };
 }
-export async function loadConfig() {
-    const configPath = getConfigPath();
+function isPlainObject(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function hasSafeConfigShape(value, depth = 0) {
+    if (depth > MAX_CONFIG_NESTING_DEPTH) {
+        return false;
+    }
+    if (Array.isArray(value)) {
+        return value.every(item => hasSafeConfigShape(item, depth + 1));
+    }
+    if (!isPlainObject(value)) {
+        return true;
+    }
+    return Object.entries(value).every(([key, child]) => (!UNSAFE_CONFIG_KEYS.has(key) && hasSafeConfigShape(child, depth + 1)));
+}
+/**
+ * Layer `override` on top of `base`. Nested config sections (display, colors,
+ * gitStatus, …) merge key by key so an override only has to name what it
+ * changes; arrays and scalars replace the base value wholesale.
+ */
+function mergeOverrides(base, override) {
+    const result = Object.assign(Object.create(null), base);
+    for (const [key, value] of Object.entries(override)) {
+        const current = result[key];
+        result[key] = isPlainObject(current) && isPlainObject(value)
+            ? mergeOverrides(current, value)
+            : value;
+    }
+    return result;
+}
+function readConfigFile(configPath) {
     try {
-        if (!fs.existsSync(configPath)) {
-            return mergeConfig({});
+        const stat = fs.lstatSync(configPath);
+        if (stat.isSymbolicLink() || !stat.isFile()) {
+            debug('Ignoring %s: expected a regular, non-symlink file', configPath);
+            return null;
         }
+        if (stat.size > MAX_CONFIG_FILE_BYTES) {
+            debug('Ignoring %s: file exceeds %d bytes', configPath, MAX_CONFIG_FILE_BYTES);
+            return null;
+        }
+        // stripBom stays: a config.json written by a Windows editor carries U+FEFF
+        // and JSON.parse rejects it, which would silently discard the whole config.
         const content = stripBom(fs.readFileSync(configPath, 'utf-8'));
-        const userConfig = JSON.parse(content);
-        return mergeConfig(userConfig);
+        const parsed = JSON.parse(content);
+        if (!isPlainObject(parsed) || !hasSafeConfigShape(parsed)) {
+            debug('Ignoring %s: expected a bounded JSON object without unsafe keys', configPath);
+            return null;
+        }
+        return parsed;
     }
     catch (err) {
-        debug('Failed to load config from %s, using defaults:', configPath, err instanceof Error ? err.message : err);
-        return mergeConfig({});
+        if (err.code === 'ENOENT') {
+            return null;
+        }
+        debug('Failed to load config from %s, ignoring it:', configPath, err instanceof Error ? err.message : err);
+        return null;
     }
+}
+export async function loadConfig() {
+    const base = readConfigFile(getConfigPath()) ?? {};
+    const override = readConfigFile(getConfigOverridePath());
+    const userConfig = override ? mergeOverrides(base, override) : base;
+    return mergeConfig(userConfig);
 }
 //# sourceMappingURL=config.js.map
