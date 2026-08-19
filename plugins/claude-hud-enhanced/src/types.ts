@@ -152,6 +152,12 @@ export interface TranscriptData {
   tools: ToolEntry[];
   skills: string[];
   mcpServers: string[];
+  /**
+   * MCP servers whose latest observed tool result is an error, derived
+   * from `mcp__<server>__<tool>` results carrying is_error. Distinct from
+   * mcpServers, which is a plain activity list.
+   */
+  mcpErrors: string[];
   agents: AgentEntry[];
   todos: TodoItem[];
   sessionStart?: Date;

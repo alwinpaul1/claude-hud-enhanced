@@ -1432,6 +1432,74 @@ test('parseTranscript truncates long bash commands in targets', async () => {
   }
 });
 
+test('parseTranscript attributes MCP tool errors back to their server', async () => {
+  const result = await parseTempTranscript('mcp-errors.jsonl', [
+    {
+      message: {
+        content: [
+          { type: 'tool_use', id: 'm1', name: 'mcp__github__create_pr', input: {} },
+          { type: 'tool_use', id: 'm2', name: 'mcp__tenable__search_tools', input: {} },
+          { type: 'tool_use', id: 'm3', name: 'mcp__github__list_prs', input: {} },
+          { type: 'tool_result', tool_use_id: 'm1', is_error: true },
+          { type: 'tool_result', tool_use_id: 'm2', is_error: true },
+          { type: 'tool_result', tool_use_id: 'm3', is_error: false },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.mcpErrors, ['tenable']);
+});
+
+test('parseTranscript records no MCP errors when every MCP call succeeds', async () => {
+  const result = await parseTempTranscript('mcp-clean.jsonl', [
+    {
+      message: {
+        content: [
+          { type: 'tool_use', id: 'm1', name: 'mcp__linear__list_issues', input: {} },
+          { type: 'tool_result', tool_use_id: 'm1', is_error: false },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.mcpErrors, []);
+});
+
+test('parseTranscript sanitizes and bounds MCP error server names on first parse', async () => {
+  const poisoned = `bad\x1b]8;;https://evil.test\x07link\x1b]8;;\x07\u202E${'x'.repeat(100)}`;
+  const result = await parseTempTranscript('mcp-error-sanitized.jsonl', [{
+    message: {
+      content: [
+        { type: 'tool_use', id: 'm1', name: `mcp__${poisoned}__run`, input: {} },
+        { type: 'tool_result', tool_use_id: 'm1', is_error: true },
+      ],
+    },
+  }]);
+
+  assert.equal(result.mcpErrors.length, 1);
+  assert.equal(result.mcpErrors[0].length, 64);
+  assert.doesNotMatch(result.mcpErrors[0], /[\x1b\u202E]/u);
+});
+
+// A failing non-MCP tool must not be attributed to a server — the name has no
+// mcp__<server>__<tool> shape to parse, and mislabelling one would point an
+// investigation at the wrong subsystem.
+test('parseTranscript ignores non-MCP tool errors for MCP attribution', async () => {
+  const result = await parseTempTranscript('non-mcp-error.jsonl', [
+    {
+      message: {
+        content: [
+          { type: 'tool_use', id: 't1', name: 'Read', input: { path: '/nope' } },
+          { type: 'tool_result', tool_use_id: 't1', is_error: true },
+        ],
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.mcpErrors, []);
+});
+
 test('parseTranscript handles edge-case lines and error statuses', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-'));
   const filePath = path.join(dir, 'edge-cases.jsonl');
@@ -1907,6 +1975,50 @@ test('parseTranscript reuses cached data when transcript state is unchanged', as
     assert.equal(second.tools.length, 1);
     assert.equal(second.tools[0].target, '/tmp/original.txt');
     assert.equal(second.compactionCount, 1);
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// mcpErrors must survive the transcript cache round-trip. The status line is
+// invoked continuously and almost every invocation is a CACHE HIT, so a field
+// that serializes but does not deserialize (or vice versa) is populated on the
+// very first tick and silently empty for the rest of the session. The file is
+// corrupted here while mtime+size are held constant, so a cache MISS would
+// re-parse garbage and yield nothing — the assertion can only pass if the
+// value genuinely round-tripped through the cache.
+test('parseTranscript round-trips mcpErrors through the transcript cache', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-mcperr-cache-'));
+  const configDir = path.join(dir, '.claude-test');
+  const transcriptPath = path.join(dir, 'mcp-cache.jsonl');
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const line = `${JSON.stringify({
+    timestamp: '2024-01-01T00:00:00.000Z',
+    message: {
+      content: [
+        { type: 'tool_use', id: 'm1', name: 'mcp__airlock__block_hash', input: {} },
+        { type: 'tool_result', tool_use_id: 'm1', is_error: true },
+      ],
+    },
+  })}\n`;
+
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  await writeFile(transcriptPath, line, 'utf8');
+  fs.utimesSync(transcriptPath, 1710000000, 1710000000);
+
+  try {
+    const first = await parseTranscript(transcriptPath);
+    assert.deepEqual(first.mcpErrors, ['airlock'], 'first parse should attribute the error');
+
+    // Same mtime and size, different bytes: only a cache hit can still answer.
+    const stat = fs.statSync(transcriptPath);
+    await writeFile(transcriptPath, '#'.repeat(stat.size), 'utf8');
+    fs.utimesSync(transcriptPath, 1710000000, 1710000000);
+
+    const second = await parseTranscript(transcriptPath);
+    assert.deepEqual(second.mcpErrors, ['airlock'],
+      'mcpErrors must survive the cache round-trip, not just the first parse');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     await rm(dir, { recursive: true, force: true });

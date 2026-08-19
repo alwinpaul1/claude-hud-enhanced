@@ -1174,7 +1174,9 @@ test('label color overrides apply across shared secondary text surfaces', () => 
   assert.ok(renderUsageLine(ctx)?.includes(`${expected}Usage\x1b[0m`));
   assert.ok(renderUsageLine(ctx, true)?.includes(`${expected}Usage  \x1b[0m`));
   assert.ok(renderUsageLine(ctx, { align: true })?.includes(`${expected}Usage  \x1b[0m`));
-  assert.ok(renderEnvironmentLine(ctx)?.includes(`${expected}2 CLAUDE.md | 1 rules\x1b[0m`));
+  const environmentLine = renderEnvironmentLine(ctx);
+  assert.ok(environmentLine?.includes(`${expected}2 CLAUDE.md\x1b[0m`));
+  assert.ok(environmentLine?.includes(`${expected}1 rules\x1b[0m`));
   assert.ok(renderMemoryLine({ ...ctx, config: { ...ctx.config, lineLayout: 'expanded', display: { ...ctx.config.display, showMemoryUsage: true } } })?.includes(`${expected}Approx RAM\x1b[0m`));
   assert.ok(renderToolsLine(ctx)?.includes(`${expected}: src/index.ts\x1b[0m`));
   assert.ok(renderSkillsLine(ctx)?.includes(`${expected}(1)\x1b[0m`));
@@ -1201,6 +1203,71 @@ test('renderEnvironmentLine appends output style after config counts', () => {
   const line = renderEnvironmentLine(ctx);
   assert.ok(line?.includes('1 CLAUDE.md'));
   assert.ok(line?.includes('style: learning'));
+});
+
+test('renderEnvironmentLine flags MCP servers that returned errors', () => {
+  const ctx = baseContext();
+  ctx.config.display.showConfigCounts = true;
+  ctx.mcpCount = 5;
+  ctx.transcript.mcpErrors = ['github', 'tenable'];
+
+  const line = renderEnvironmentLine(ctx);
+  assert.ok(line?.includes('5 MCPs'), 'count should still render');
+  assert.ok(line?.includes('github, tenable'), 'failing servers should be named');
+  assert.ok(line?.includes('\x1b[31m'), 'error segment should be red');
+});
+
+test('renderEnvironmentLine collapses more than three failing MCPs to a count', () => {
+  const ctx = baseContext();
+  ctx.config.display.showConfigCounts = true;
+  ctx.mcpCount = 9;
+  ctx.transcript.mcpErrors = ['a', 'b', 'c', 'd', 'e'];
+
+  const line = renderEnvironmentLine(ctx);
+  assert.ok(line?.includes('a, b, c +2'), `expected overflow count, got: ${line}`);
+});
+
+// A live fault must not be hidden behind an unrelated display toggle: the
+// config counts are ambient detail people switch off, an erroring server is not.
+test('renderEnvironmentLine preserves the default layout when MCP displays are off', () => {
+  const ctx = baseContext();
+  ctx.config.display.showConfigCounts = false;
+  ctx.mcpCount = 5;
+  ctx.transcript.mcpErrors = ['airlock'];
+
+  ctx.config.display.showMcp = false;
+
+  assert.equal(renderEnvironmentLine(ctx), null);
+});
+
+test('renderEnvironmentLine surfaces MCP errors when the MCP display is enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showConfigCounts = false;
+  ctx.config.display.showMcp = true;
+  ctx.transcript.mcpErrors = ['airlock'];
+
+  const line = renderEnvironmentLine(ctx);
+  assert.ok(line?.includes('airlock'));
+});
+
+test('renderEnvironmentLine sanitizes direct MCP errors and uses the critical theme', () => {
+  const ctx = baseContext();
+  ctx.config.display.showMcp = true;
+  ctx.config.colors.critical = 'magenta';
+  ctx.transcript.mcpErrors = ['safe\x1b]8;;https://evil.test\x07link\x1b]8;;\x07\u202E'];
+
+  const line = renderEnvironmentLine(ctx);
+  assert.ok(line?.includes('\x1b[35m'));
+  assert.doesNotMatch(line ?? '', /evil\.test|\u202E/u);
+});
+
+test('renderEnvironmentLine stays null when nothing is enabled and no MCP errors', () => {
+  const ctx = baseContext();
+  ctx.config.display.showConfigCounts = false;
+  ctx.mcpCount = 5;
+  ctx.transcript.mcpErrors = [];
+
+  assert.equal(renderEnvironmentLine(ctx), null);
 });
 
 test('renderEnvironmentLine treats missing showConfigCounts as disabled in expanded layout', () => {
