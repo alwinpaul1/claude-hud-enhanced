@@ -29,3 +29,38 @@ jobs:
         run: |
           npm ci
           npm run test:coverage
+
+  windows-git:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: plugins/claude-hud-enhanced/package-lock.json
+      - name: Install and build
+        working-directory: plugins/claude-hud-enhanced
+        run: |
+          npm ci
+          npm run build
+      # node --test exits non-zero but GitHub's log view collapses the reason, so
+      # the failing tail is re-emitted as an ::error annotation. Bounded at 3500
+      # characters: an annotation longer than that is silently dropped, which
+      # would turn a real failure into a job that looks like it said nothing.
+      - name: Run Windows Git tests
+        working-directory: plugins/claude-hud-enhanced
+        shell: pwsh
+        run: |
+          $output = & node --test tests/git.test.js tests/git-runner.test.js 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Output $_ }
+          if ($exitCode -ne 0) {
+            $details = $output -join "`n"
+            if ($details.Length -gt 3500) {
+              $details = $details.Substring($details.Length - 3500)
+            }
+            $annotation = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows Git tests failed::$annotation"
+            exit $exitCode
+          }
