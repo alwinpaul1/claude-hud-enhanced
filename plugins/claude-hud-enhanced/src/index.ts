@@ -5,6 +5,7 @@ import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
 import type { getGitStatus } from "./git.js";
 import { getGitStatusCached } from "./git-cache.js";
+import { getJjStatus, isJjRepo } from "./jj.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
 import { getClaudeCodeVersion } from "./version.js";
@@ -18,6 +19,8 @@ import { getLockPath } from "./usage-snapshot.js";
 import { setLanguage, t } from "./i18n/index.js";
 import { tryDaemonRender } from "./daemon-client.js";
 import type { RenderContext, StdinData } from "./types.js";
+import type { GitStatus } from "./git.js";
+import type { HudConfig } from "./config.js";
 
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
@@ -34,6 +37,8 @@ export type MainDeps = {
   parseTranscript: typeof parseTranscript;
   countConfigs: typeof countConfigs;
   getGitStatus: typeof getGitStatus;
+  getJjStatus: typeof getJjStatus;
+  isJjRepo: typeof isJjRepo;
   loadConfig: typeof loadConfig;
   parseExtraCmdArg: typeof parseExtraCmdArg;
   runExtraCmd: typeof runExtraCmd;
@@ -107,6 +112,26 @@ export function isHudDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return value !== "0" && value !== "false" && value !== "off" && value !== "no";
 }
 
+/**
+ * Prefers jj when an eligible `.jj` marker is found and the opt-in is enabled.
+ * If the bounded jj probe fails, Git remains the safe compatibility fallback.
+ */
+export async function resolveVcsStatus(
+  deps: Pick<MainDeps, "getGitStatus" | "getJjStatus" | "isJjRepo">,
+  config: HudConfig,
+  cwd?: string,
+): Promise<GitStatus | null> {
+  if (!cwd) return null;
+  if (config.jjStatus.enabled && deps.isJjRepo(cwd)) {
+    const jjStatus = await deps.getJjStatus(cwd);
+    if (jjStatus) return jjStatus;
+  }
+  if (config.gitStatus.enabled) {
+    return deps.getGitStatus(cwd);
+  }
+  return null;
+}
+
 export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
   if (isHudDisabled()) {
     // Print nothing so Claude Code renders an empty statusline, and skip all
@@ -126,6 +151,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     // TTL+mtime cached: avoids ~7 git spawns per repaint (critical at 1-2s
     // refreshInterval across many terminals; see git-cache.ts).
     getGitStatus: getGitStatusCached,
+    getJjStatus,
+    isJjRepo,
     loadConfig,
     parseExtraCmdArg,
     runExtraCmd,
@@ -193,9 +220,10 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
 
     const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } =
       configCounts;
-    const gitStatus = config.gitStatus.enabled
-      ? await deps.getGitStatus(stdin.cwd)
-      : null;
+    // resolveVcsStatus keeps our enabled-gate (it checks
+    // config.gitStatus.enabled before spawning) and routes through
+    // getGitStatusCached via deps, so the git cache survives.
+    const gitStatus = await resolveVcsStatus(deps, config, stdin.cwd);
 
     let usageData: RenderContext["usageData"] = null;
     const shouldReadUsage = config.display.showUsage !== false;
