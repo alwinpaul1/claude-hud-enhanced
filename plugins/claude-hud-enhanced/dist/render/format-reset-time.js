@@ -1,4 +1,5 @@
 import { interpolate, t } from '../i18n/index.js';
+const DEFAULT_WALL_CLOCK_OPTIONS = { hourCycle: 'auto', showSeconds: false };
 /**
  * Formats a usage-window reset timestamp for display in the HUD.
  *
@@ -7,10 +8,11 @@ import { interpolate, t } from '../i18n/index.js';
  *   - `'relative'` (default) — duration until reset, e.g. `2h 30m`
  *   - `'absolute'`           — wall-clock time,       e.g. `at 14:30` (locale-aware)
  *   - `'both'`               — both combined,          e.g. `2h 30m, at 14:30` (locale-aware)
+ * @param opts    - Wall-clock rendering options (hourCycle, showSeconds); defaults preserve existing behavior.
  * @returns A formatted string, or an empty string when the reset is in the past
  *          or the date is unknown.
  */
-export function formatResetTime(resetAt, mode = 'relative', windowScale = 'long') {
+export function formatResetTime(resetAt, mode = 'relative', windowScale = 'long', opts = DEFAULT_WALL_CLOCK_OPTIONS) {
     if (!resetAt)
         return '';
     const now = new Date();
@@ -20,7 +22,7 @@ export function formatResetTime(resetAt, mode = 'relative', windowScale = 'long'
     if (mode === 'relative') {
         return formatRelative(diffMs);
     }
-    const absolute = formatAbsolute(resetAt, now, windowScale);
+    const absolute = formatAbsolute(resetAt, now, windowScale, opts);
     if (mode === 'absolute') {
         return absolute;
     }
@@ -42,9 +44,56 @@ function formatRelative(diffMs) {
     }
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
-function formatAbsolute(resetAt, now, windowScale) {
+/**
+ * Renders just the clock portion of a timestamp.
+ *
+ * `hour: 'numeric'` is this fork's look ("9:33 PM", not "09:33 PM"), so the
+ * default path is unchanged for existing users. An explicit hourCycle or seconds
+ * switches to '2-digit', because a fixed 24-hour clock only reads unambiguously
+ * zero-padded ("09:33", "00:05").
+ */
+function formatClockTime(at, opts) {
+    const explicitClock = opts.hourCycle !== 'auto' || opts.showSeconds;
+    const timeOpts = {
+        hour: explicitClock ? '2-digit' : 'numeric',
+        minute: '2-digit',
+    };
+    if (opts.showSeconds)
+        timeOpts.second = '2-digit';
+    if (opts.hourCycle !== 'auto')
+        timeOpts.hourCycle = opts.hourCycle;
+    return at.toLocaleTimeString([], timeOpts);
+}
+/**
+ * Renders a timestamp as wall-clock time, adding a date component when it falls
+ * on a different calendar day than `now`.
+ *
+ * Exported for the prompt-cache line, which shows an expiry instant rather than
+ * a usage window and so has no short/long window scale to apply.
+ *
+ * @param resetAt - The timestamp to render.
+ * @param now     - Reference for the same-day check.
+ * @param opts    - Wall-clock rendering options (hourCycle, showSeconds).
+ */
+export function formatAbsoluteTime(resetAt, now, opts = DEFAULT_WALL_CLOCK_OPTIONS) {
+    const timeStr = formatClockTime(resetAt, opts);
+    const sameDay = resetAt.getFullYear() === now.getFullYear() &&
+        resetAt.getMonth() === now.getMonth() &&
+        resetAt.getDate() === now.getDate();
+    if (sameDay) {
+        return interpolate(t('format.absoluteTime'), { time: timeStr });
+    }
+    const dateStr = resetAt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return interpolate(t('format.absoluteTime'), { time: `${dateStr} ${timeStr}` });
+}
+/**
+ * Usage-window variant. Upstream dropped `windowScale` when it exported
+ * formatAbsoluteTime; this fork keeps it, because a 5-hour window and a weekly
+ * window want different date treatment (see the branches below).
+ */
+function formatAbsolute(resetAt, now, windowScale, opts) {
     // Locale "format.absoluteTime" wraps the value (en/zh both "{time}" — bare).
-    const timeStr = resetAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const timeStr = formatClockTime(resetAt, opts);
     // Short windows (e.g. the 5-hour limit) are always imminent, so the date is
     // noise — show just the clock time ("3:20 AM"), even across a midnight roll.
     if (windowScale === 'short') {

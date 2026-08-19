@@ -12,10 +12,7 @@ export interface DaemonRequest {
     pluginVersion: string;
     stdin: StdinData;
     cwd: string;
-    env: {
-        COLUMNS?: string;
-        CLAUDE_CONFIG_DIR?: string;
-    };
+    env: Record<string, string>;
     now: number;
 }
 export interface DaemonResponse {
