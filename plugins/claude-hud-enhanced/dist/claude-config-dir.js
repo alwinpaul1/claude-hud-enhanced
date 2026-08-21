@@ -20,21 +20,38 @@ export function getClaudeConfigDir(homeDir) {
     }
     return path.resolve(expandHomeDirPrefix(envConfigDir, homeDir));
 }
-export function getClaudeConfigJsonPath(homeDir) {
+/**
+ * Ordered candidate paths for the profile's main config JSON — the file that
+ * carries `oauthAccount`, MCP servers, etc. — highest priority first.
+ *
+ * Claude Code stores that file in one of two places depending on the profile:
+ *   - a custom `CLAUDE_CONFIG_DIR` profile keeps it INSIDE the dir at
+ *     `${CLAUDE_CONFIG_DIR}/.claude.json`
+ *   - the default `~/.claude` profile keeps it as the SIBLING `~/.claude.json`
+ *
+ * Both layouts can coexist: a default profile can carry an inside STUB
+ * `~/.claude/.claude.json` (migration flags, no account) while the real
+ * account sits in the sibling `~/.claude.json`. Returning both, inside-first,
+ * lets a caller pick the file that actually holds what it needs instead of
+ * trusting mere existence (see auth.ts, which reads the first file that has an
+ * account rather than the first that exists).
+ */
+export function getClaudeConfigJsonCandidates(homeDir) {
     const configDir = getClaudeConfigDir(homeDir);
-    // Claude Code stores the main config (with `oauthAccount`) in one of two
-    // places depending on the profile:
-    //   - the default `~/.claude` profile keeps it as the SIBLING `~/.claude.json`
-    //   - a custom `CLAUDE_CONFIG_DIR` profile keeps it INSIDE the dir at
-    //     `${CLAUDE_CONFIG_DIR}/.claude.json`
-    // Prefer the inside file when it exists so custom profiles (e.g. a work
-    // profile on a Team plan) resolve their own account, then fall back to the
-    // sibling for the default profile.
     const insidePath = path.join(configDir, '.claude.json');
-    if (fs.existsSync(insidePath)) {
-        return insidePath;
-    }
-    return `${configDir}.json`;
+    const siblingPath = `${configDir}.json`;
+    // insidePath always ends in `/.claude.json` and siblingPath in `.json` on the
+    // dir itself, so they can never coincide; guard anyway to keep the list unique.
+    return insidePath === siblingPath ? [insidePath] : [insidePath, siblingPath];
+}
+export function getClaudeConfigJsonPath(homeDir) {
+    // Prefer the inside file when it exists so custom profiles (e.g. a work
+    // profile on a Team plan) resolve their own config, then fall back to the
+    // sibling for the default profile. (Callers that specifically need the
+    // ACCOUNT should iterate getClaudeConfigJsonCandidates instead — an inside
+    // stub can exist without carrying one.)
+    const candidates = getClaudeConfigJsonCandidates(homeDir);
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[candidates.length - 1];
 }
 // Rename seam so tests can exercise the cross-device (EXDEV) fallback, which is
 // otherwise unreachable without a real second filesystem. Defaults to fs.renameSync.
