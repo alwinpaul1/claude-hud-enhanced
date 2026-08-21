@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { getClaudeConfigJsonPath, getHudPluginDir } from './claude-config-dir.js';
+import { getClaudeConfigJsonCandidates, getHudPluginDir } from './claude-config-dir.js';
 import { sanitizeDisplayText, stripBom } from './utils/sanitize.js';
 
 /**
@@ -23,6 +23,19 @@ const AUTH_VALUE_MAX_LEN = 128;
 
 function hasApiKey(env: NodeJS.ProcessEnv): boolean {
   return typeof env.ANTHROPIC_API_KEY === 'string' && env.ANTHROPIC_API_KEY.trim().length > 0;
+}
+
+/**
+ * True when a cloud provider (Amazon Bedrock or Google Vertex) is the active
+ * auth. In that mode the request is signed with the cloud IAM identity, so any
+ * `oauthAccount` still sitting in claude.json is a stale claude.ai login, not
+ * the credential in effect — rendering its plan (e.g. "Team") beside the
+ * provider label is misleading. Mirrors getProviderLabel()'s Bedrock/Vertex
+ * detection (stdin.ts) and is read at render time, so the daemon's staged
+ * per-request env resolves it to the REQUESTING session (see daemon.ts).
+ */
+function isCloudProviderAuthActive(env: NodeJS.ProcessEnv): boolean {
+  return env.CLAUDE_CODE_USE_BEDROCK === '1' || env.CLAUDE_CODE_USE_VERTEX === '1';
 }
 
 // Strip ANSI sequences and control/bidi characters so values from
@@ -108,11 +121,13 @@ export function deriveAuthInfo(claudeJson: unknown, env: NodeJS.ProcessEnv = pro
  */
 interface AuthCacheEntry {
   version: number;
-  mtimeMs: number;
-  ctimeMs: number;
-  size: number;
-  dev: number;
-  ino: number;
+  /**
+   * Composite identity of ALL candidate config files (path + existence + stat)
+   * in priority order. Any change to EITHER candidate — including an account
+   * later appearing in a file that previously had none — changes this string
+   * and busts the cache.
+   */
+  identity: string;
   method: string | null;
   user: string | null;
 }
@@ -122,7 +137,9 @@ function authCachePath(homeDir: string): string {
 }
 
 const AUTH_CACHE_DIRNAME = 'auth-cache';
-const AUTH_CACHE_VERSION = 1;
+// v2: keyed on a composite identity over ALL candidate config files rather than
+// one file's stat fields. Older v1 entries fail the version check and re-parse.
+const AUTH_CACHE_VERSION = 2;
 const AUTH_CACHE_MAX_BYTES = 4096;
 
 function normalizeCachedValue(value: unknown): string | null | undefined {
@@ -150,20 +167,20 @@ function readAuthCache(homeDir: string): AuthCacheEntry | null {
     const user = parsed && typeof parsed === 'object'
       ? normalizeCachedValue((parsed as Record<string, unknown>).user)
       : undefined;
+    const identity = parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>).identity
+      : undefined;
     if (
       parsed == null || typeof parsed !== 'object'
       || (parsed as AuthCacheEntry).version !== AUTH_CACHE_VERSION
-      || typeof (parsed as AuthCacheEntry).mtimeMs !== 'number'
-      || typeof (parsed as AuthCacheEntry).ctimeMs !== 'number'
-      || typeof (parsed as AuthCacheEntry).size !== 'number'
-      || typeof (parsed as AuthCacheEntry).dev !== 'number'
-      || typeof (parsed as AuthCacheEntry).ino !== 'number'
+      || typeof identity !== 'string'
+      || identity.length === 0
       || method === undefined
       || user === undefined
     ) {
       return null;
     }
-    return { ...(parsed as AuthCacheEntry), method, user };
+    return { version: AUTH_CACHE_VERSION, identity, method, user };
   } catch {
     return null;
   } finally {
@@ -206,14 +223,68 @@ function writeAuthCache(homeDir: string, entry: AuthCacheEntry): void {
   }
 }
 
+interface ConfigSource {
+  path: string;
+  stat: fs.Stats | null;
+}
+
+/**
+ * Builds the composite identity used as the auth cache key: every candidate
+ * config path with its existence and stat fields, in priority order. A rewrite,
+ * a same-size edit, or an account appearing in a file that previously had none
+ * all change this string.
+ */
+function buildAuthSourceIdentity(sources: ConfigSource[]): string {
+  return sources
+    .map(({ path: sourcePath, stat }) =>
+      stat
+        ? `${sourcePath}|${stat.mtimeMs}|${stat.ctimeMs}|${stat.size}|${stat.dev}|${stat.ino}`
+        : `${sourcePath}|absent`,
+    )
+    .join('\n');
+}
+
+/**
+ * Derives auth from the candidate config files in priority order. The first
+ * file that yields an actual account (a method or user) wins — this is what
+ * lets a default profile skip an empty `~/.claude/.claude.json` stub and
+ * resolve the real account from the sibling `~/.claude.json`. When no file
+ * carries an account, the first parseable (empty) result is returned so the
+ * outcome is a clean "nothing to show" rather than an error.
+ */
+function deriveAuthInfoFromSources(sources: ConfigSource[]): AuthInfo {
+  let fallback: AuthInfo | null = null;
+  for (const { path: sourcePath, stat } of sources) {
+    if (!stat) {
+      continue;
+    }
+    let info: AuthInfo;
+    try {
+      // stripBom stays: a config.json saved by a Windows editor carries U+FEFF,
+      // and JSON.parse rejects it. Upstream does not handle that.
+      const content = stripBom(fs.readFileSync(sourcePath, 'utf-8'));
+      info = deriveAuthInfo(JSON.parse(content));
+    } catch {
+      continue;
+    }
+    if (info.method || info.user) {
+      return info;
+    }
+    if (fallback === null) {
+      fallback = info;
+    }
+  }
+  return fallback ?? EMPTY_AUTH_INFO;
+}
+
 /**
  * Reads auth info for the current login. Never throws.
  *
  * claude.json is the user's entire CLI config and grows with project history —
- * 73 KB on the host this was measured on. The status line runs on every
- * interaction, so parsing it per tick is not free. The two derived fields are
- * cached against the file's (mtimeMs, ctimeMs, size, dev, ino) identity instead,
- * making the steady-state cost a stat plus a ~100-byte read.
+ * tens of KB is common. The status line runs on every interaction, so parsing
+ * it per tick is not free. The derived fields are cached against the identity
+ * of every candidate config file (path + existence + stat), so the steady-state
+ * cost is a couple of stats plus a small read.
  */
 export function readAuthInfo(): AuthInfo {
   // Avoid reading a stale OAuth profile when the active source is an API key.
@@ -222,46 +293,32 @@ export function readAuthInfo(): AuthInfo {
   }
 
   const homeDir = os.homedir();
-  const configJsonPath = getClaudeConfigJsonPath(homeDir);
+  const sources: ConfigSource[] = getClaudeConfigJsonCandidates(homeDir).map((sourcePath) => {
+    try {
+      return { path: sourcePath, stat: fs.statSync(sourcePath) };
+    } catch {
+      return { path: sourcePath, stat: null };
+    }
+  });
 
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(configJsonPath);
-  } catch {
+  if (!sources.some((source) => source.stat)) {
     return EMPTY_AUTH_INFO;
   }
 
+  const identity = buildAuthSourceIdentity(sources);
   const cached = readAuthCache(homeDir);
-  if (
-    cached
-    && cached.mtimeMs === stat.mtimeMs
-    && cached.ctimeMs === stat.ctimeMs
-    && cached.size === stat.size
-    && cached.dev === stat.dev
-    && cached.ino === stat.ino
-  ) {
+  if (cached && cached.identity === identity) {
     return { method: cached.method, user: cached.user };
   }
 
-  try {
-    // stripBom stays: a config.json saved by a Windows editor carries U+FEFF,
-    // and JSON.parse rejects it. Upstream does not handle that.
-    const content = stripBom(fs.readFileSync(configJsonPath, 'utf-8'));
-    const info = deriveAuthInfo(JSON.parse(content));
-    writeAuthCache(homeDir, {
-      version: AUTH_CACHE_VERSION,
-      mtimeMs: stat.mtimeMs,
-      ctimeMs: stat.ctimeMs,
-      size: stat.size,
-      dev: stat.dev,
-      ino: stat.ino,
-      method: info.method,
-      user: info.user,
-    });
-    return info;
-  } catch {
-    return EMPTY_AUTH_INFO;
-  }
+  const info = deriveAuthInfoFromSources(sources);
+  writeAuthCache(homeDir, {
+    version: AUTH_CACHE_VERSION,
+    identity,
+    method: info.method,
+    user: info.user,
+  });
+  return info;
 }
 
 export function truncateUser(user: string, maxLength: number): string {
@@ -279,8 +336,16 @@ export function truncateUser(user: string, maxLength: number): string {
 export function formatAuthSegment(
   info: AuthInfo | null | undefined,
   display: { showAuth?: boolean; showAuthUser?: boolean; authUserLength?: number; authShortLabel?: boolean } | undefined,
+  env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   if (!info) {
+    return null;
+  }
+
+  // Under Bedrock/Vertex the cloud IAM identity is the active credential, so a
+  // leftover claude.ai `oauthAccount` would render a stale plan (e.g. "Team")
+  // beside the provider label. Suppress the whole segment in that mode.
+  if (isCloudProviderAuthActive(env)) {
     return null;
   }
 

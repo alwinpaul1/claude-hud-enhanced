@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.1] - 2026-08-22
+
+Fixes two ways the plan/provider label in the model bracket showed the wrong thing.
+
+### Fixed — the default profile rendered no plan when an empty `~/.claude/.claude.json` stub existed
+
+Auth was read from a single config path chosen by mere existence: `getClaudeConfigJsonPath()` preferred `${CONFIG_DIR}/.claude.json` (inside the dir) over the sibling `${CONFIG_DIR}.json`. For the default `~/.claude` profile the real `oauthAccount` lives in the sibling `~/.claude.json`, but some setups also leave a tiny `~/.claude/.claude.json` stub (migration flags, MCP list, no account). The stub won the lookup, `deriveAuthInfo` found no account, and a 20x Max session rendered with no plan label at all — `[Opus 5]` instead of `[Opus 5 | Max 20x]`.
+
+- Auth now iterates **all** candidate config files (inside, then sibling) via the new `getClaudeConfigJsonCandidates()` and uses the first that actually carries an account, not the first that exists. An empty stub is skipped and the sibling account resolves; a custom profile's inside account still wins over any sibling.
+- The derived-auth cache is now keyed on a **composite identity over every candidate** (path + existence + stat), not one file's stat, so an account later appearing in a file that previously had none busts the cache. Schema bumped to v2; v1 entries are rejected and re-parsed.
+
+### Fixed — a Bedrock/Vertex session showed a stale claude.ai plan
+
+Under `CLAUDE_CODE_USE_BEDROCK=1` (or `CLAUDE_CODE_USE_VERTEX=1`) the active credential is the cloud IAM identity, but a leftover claude.ai `oauthAccount` still sits in the config, so the bracket read `[Opus | Bedrock | Team]` — a subscription plan that is not the credential in effect. This is the sibling of the 0.7.0 daemon env-leak: even with correct per-session env, an intentional Bedrock session still surfaced the stale plan.
+
+- The plan/auth segment is now suppressed whenever a cloud provider is active; only the provider shows (`[Opus | Bedrock]`). A normal claude.ai session on the same profile still shows its plan. Read at render time, so the daemon's staged per-request env resolves it to the requesting session.
+
+Verified against real configs and covered by new tests in `auth.test.js` and `claude-config-dir.test.js` (full suite: 1211 passing).
+
 ## [0.7.0] - 2026-08-19
 
 Synchronizes with upstream [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) **v0.8.0** and fixes a cross-session environment leak in this fork's daemon.

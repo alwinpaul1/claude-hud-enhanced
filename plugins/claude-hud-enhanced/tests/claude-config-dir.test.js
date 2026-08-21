@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   getHudPluginDir,
   getClaudeConfigJsonPath,
+  getClaudeConfigJsonCandidates,
   migrateLegacyHudPluginDir,
   _setRenameSyncImplForTests,
   HUD_PLUGIN_DIRNAME,
@@ -29,6 +30,23 @@ test('getHudPluginDir returns plugins/claude-hud-enhanced under CLAUDE_CONFIG_DI
   try {
     const dir = getHudPluginDir(path.join(root, 'home-unused'));
     assert.equal(dir, path.join(root, 'plugins', HUD_PLUGIN_DIRNAME));
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prev;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('getClaudeConfigJsonCandidates lists the inside file before the sibling', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'hud-cfgcand-'));
+  const prev = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = root;
+  try {
+    // Order is fixed regardless of which files exist: inside first, then sibling.
+    assert.deepEqual(getClaudeConfigJsonCandidates('/unused'), [
+      path.join(root, '.claude.json'),
+      `${root}.json`,
+    ]);
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = prev;

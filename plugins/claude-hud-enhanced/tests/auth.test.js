@@ -126,20 +126,21 @@ test('truncateUser truncates with ellipsis and honors 0 = full', () => {
 
 test('formatAuthSegment joins method and truncated user', () => {
   const info = deriveAuthInfo(MAX_ACCOUNT, {});
+  // Explicit empty env keeps this independent of any ambient CLAUDE_CODE_USE_*.
   assert.equal(
-    formatAuthSegment(info, { showAuth: true, showAuthUser: true, authUserLength: 8 }),
+    formatAuthSegment(info, { showAuth: true, showAuthUser: true, authUserLength: 8 }, {}),
     'Claude Max 20x · someone.…',
   );
   assert.equal(
-    formatAuthSegment(info, { showAuth: true, showAuthUser: false }),
+    formatAuthSegment(info, { showAuth: true, showAuthUser: false }, {}),
     'Claude Max 20x',
   );
   assert.equal(
-    formatAuthSegment(info, { showAuth: false, showAuthUser: true, authUserLength: 0 }),
+    formatAuthSegment(info, { showAuth: false, showAuthUser: true, authUserLength: 0 }, {}),
     'someone.long',
   );
-  assert.equal(formatAuthSegment(info, { showAuth: false, showAuthUser: false }), null);
-  assert.equal(formatAuthSegment(null, { showAuth: true, showAuthUser: true }), null);
+  assert.equal(formatAuthSegment(info, { showAuth: false, showAuthUser: false }, {}), null);
+  assert.equal(formatAuthSegment(null, { showAuth: true, showAuthUser: true }, {}), null);
 });
 
 // --- derived-auth caching -------------------------------------------------
@@ -206,10 +207,12 @@ test('readAuthInfo re-parses when claude.json actually changes', async () => {
   }
 });
 
-// Size is in the key alongside mtime because two writes can land in the same
-// millisecond. Hard to provoke by racing the clock, so the entry is forged.
-test('readAuthInfo busts the cache when only the SIZE differs', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'hud-auth-size-'));
+// The cache key is a composite identity over every candidate config file. Any
+// change to the identity string must bust it. Forged by reading the real v2
+// entry the plugin just wrote and corrupting only its identity, so the test
+// stays independent of the exact identity format.
+test('readAuthInfo busts the cache when the source identity changes', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-auth-identity-'));
   const configDir = path.join(dir, '.claude');
   const original = process.env.CLAUDE_CONFIG_DIR;
   const originalKey = process.env.ANTHROPIC_API_KEY;
@@ -224,12 +227,47 @@ test('readAuthInfo busts the cache when only the SIZE differs', async () => {
     assert.equal(readAuthInfo().user, 'someone.long', 'seed the cache');
 
     const cacheFile = path.join(configDir, 'plugins', 'claude-hud-enhanced', 'auth-cache', 'auth.json');
+    const entry = JSON.parse(fsSync.readFileSync(cacheFile, 'utf8'));
+    assert.equal(entry.version, 2);
+    assert.equal(typeof entry.identity, 'string');
+    entry.identity = `${entry.identity}#stale`;
+    entry.method = 'STALE';
+    entry.user = 'stale-user';
+    fsSync.writeFileSync(cacheFile, JSON.stringify(entry), 'utf8');
+
+    assert.equal(readAuthInfo().user, 'someone.long',
+      'a changed identity must bust the cache and re-parse');
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', original);
+    restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// A v1 entry (the pre-composite-identity schema) must be rejected outright, so
+// an upgraded plugin never trusts a cache the old code wrote.
+test('readAuthInfo rejects a stale v1 cache entry', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-auth-v1-'));
+  const configDir = path.join(dir, '.claude');
+  const original = process.env.CLAUDE_CONFIG_DIR;
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  const fsSync = await import('node:fs');
+
+  try {
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    fsSync.mkdirSync(configDir, { recursive: true });
+    const jsonPath = `${configDir}.json`;
+    await writeFile(jsonPath, JSON.stringify(MAX_ACCOUNT), 'utf8');
+    assert.equal(readAuthInfo().user, 'someone.long', 'seed a real cache first');
+
+    const cacheFile = path.join(configDir, 'plugins', 'claude-hud-enhanced', 'auth-cache', 'auth.json');
     const stat = fsSync.statSync(jsonPath);
     fsSync.writeFileSync(cacheFile, JSON.stringify({
       version: 1,
       mtimeMs: stat.mtimeMs,
       ctimeMs: stat.ctimeMs,
-      size: stat.size + 1,
+      size: stat.size,
       dev: stat.dev,
       ino: stat.ino,
       method: 'STALE',
@@ -237,7 +275,7 @@ test('readAuthInfo busts the cache when only the SIZE differs', async () => {
     }), 'utf8');
 
     assert.equal(readAuthInfo().user, 'someone.long',
-      'a size mismatch must bust the cache and re-parse');
+      'a v1 entry must be rejected and re-parsed under v2');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
@@ -260,18 +298,13 @@ test('readAuthInfo rejects a poisoned cache even when source identity matches', 
     await writeFile(jsonPath, JSON.stringify(MAX_ACCOUNT), 'utf8');
     assert.equal(readAuthInfo().user, 'someone.long');
 
+    // Keep the real identity so the entry WOULD be served, then poison only the
+    // rendered values: the sanitizer must still reject them and re-parse.
     const cacheFile = path.join(configDir, 'plugins', 'claude-hud-enhanced', 'auth-cache', 'auth.json');
-    const stat = fsSync.statSync(jsonPath);
-    fsSync.writeFileSync(cacheFile, JSON.stringify({
-      version: 1,
-      mtimeMs: stat.mtimeMs,
-      ctimeMs: stat.ctimeMs,
-      size: stat.size,
-      dev: stat.dev,
-      ino: stat.ino,
-      method: 'Max\x1b[31m',
-      user: 'attacker\x1b]8;;https://evil.test\x07link\x1b]8;;\x07',
-    }), { encoding: 'utf8', mode: 0o600 });
+    const entry = JSON.parse(fsSync.readFileSync(cacheFile, 'utf8'));
+    entry.method = 'Max\x1b[31m';
+    entry.user = 'attacker\x1b]8;;https://evil.test\x07link\x1b]8;;\x07';
+    fsSync.writeFileSync(cacheFile, JSON.stringify(entry), { encoding: 'utf8', mode: 0o600 });
 
     assert.deepEqual(readAuthInfo(), { method: 'Claude Max 20x', user: 'someone.long' });
   } finally {
@@ -279,6 +312,89 @@ test('readAuthInfo rejects a poisoned cache even when source identity matches', 
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// --- config-file resolution (the reported bug) ---------------------------
+// A default profile can carry an empty inside stub `~/.claude/.claude.json`
+// (migration flags, no oauthAccount) while the real account lives in the
+// sibling `~/.claude.json`. The stub must NOT shadow the account.
+
+test('readAuthInfo skips an empty inside stub and resolves the account from the sibling', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-auth-shadow-'));
+  const configDir = path.join(dir, '.claude');
+  const original = process.env.CLAUDE_CONFIG_DIR;
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  const fsSync = await import('node:fs');
+
+  try {
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    fsSync.mkdirSync(configDir, { recursive: true });
+    // Empty stub INSIDE the dir (mirrors the file that shadowed the account).
+    await writeFile(path.join(configDir, '.claude.json'),
+      JSON.stringify({ mcpServers: {}, migrationVersion: 13 }), 'utf8');
+    // Real account in the SIBLING.
+    await writeFile(`${configDir}.json`, JSON.stringify(MAX_ACCOUNT), 'utf8');
+
+    assert.deepEqual(readAuthInfo(), { method: 'Claude Max 20x', user: 'someone.long' });
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', original);
+    restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('readAuthInfo prefers the inside account over a sibling for a custom profile', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hud-auth-inside-'));
+  const configDir = path.join(dir, 'work');
+  const original = process.env.CLAUDE_CONFIG_DIR;
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  const fsSync = await import('node:fs');
+
+  try {
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CONFIG_DIR = configDir;
+    fsSync.mkdirSync(configDir, { recursive: true });
+    // Custom-profile layout: the real account is INSIDE.
+    await writeFile(path.join(configDir, '.claude.json'), JSON.stringify({
+      oauthAccount: { emailAddress: 'w@team.co', organizationType: 'claude_team', organizationRateLimitTier: 'default_raven' },
+    }), 'utf8');
+    // A different sibling account must NOT win over the inside one.
+    await writeFile(`${configDir}.json`, JSON.stringify(MAX_ACCOUNT), 'utf8');
+
+    assert.deepEqual(readAuthInfo(), { method: 'Claude Team', user: 'w' });
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', original);
+    restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// --- cloud-provider suppression (Bedrock/Vertex) -------------------------
+// A leftover claude.ai plan must not render beside the provider label when the
+// active credential is a cloud IAM identity.
+
+test('deriveAuthInfo formats claude_team and short label strips "Claude"', () => {
+  const info = deriveAuthInfo({
+    oauthAccount: { emailAddress: 'a@team.co', organizationType: 'claude_team', organizationRateLimitTier: 'default_raven' },
+  }, {});
+  assert.equal(info.method, 'Claude Team');
+  assert.equal(formatAuthSegment(info, { showAuth: true, authShortLabel: true }, {}), 'Team');
+});
+
+test('formatAuthSegment suppresses the plan under Bedrock and Vertex', () => {
+  const info = deriveAuthInfo(MAX_ACCOUNT, {});
+  assert.equal(formatAuthSegment(info, { showAuth: true }, { CLAUDE_CODE_USE_BEDROCK: '1' }), null);
+  assert.equal(
+    formatAuthSegment(info, { showAuth: true, showAuthUser: true }, { CLAUDE_CODE_USE_VERTEX: '1' }),
+    null,
+  );
+  // No cloud provider (and the flag set to something other than '1') → normal label.
+  assert.equal(formatAuthSegment(info, { showAuth: true, authShortLabel: true }, {}), 'Max 20x');
+  assert.equal(
+    formatAuthSegment(info, { showAuth: true, authShortLabel: true }, { CLAUDE_CODE_USE_BEDROCK: '0' }),
+    'Max 20x',
+  );
 });
 
 test('readAuthInfo rejects symlink cache files without touching their target', async () => {
