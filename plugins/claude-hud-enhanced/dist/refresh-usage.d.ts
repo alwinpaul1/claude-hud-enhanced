@@ -24,8 +24,9 @@ export declare function parseUsageResponse(body: string): UsageWindows | null;
 export declare function parseRetryAfterMs(headerValue: string | null, nowMs: number): number | null;
 export declare function successSnapshot(windows: UsageWindows, now: number): UsageSnapshot;
 /**
- * Failed attempt → snapshot that PRESERVES the last-good values and does NOT
- * bump `updated_at` (the idle-TTL clock), only sets the retry backoff.
+ * Failed attempt → snapshot that PRESERVES the last-good values and moves neither
+ * clock (`updated_at`, `oauth_updated_at`), only sets the retry backoff. A poll
+ * that failed is not a read, and must not be recorded as one.
  */
 export declare function failureSnapshot(prev: UsageSnapshot | null, status: Exclude<UsageSnapshot['status'], 'ok'>, now: number, retryAfterMs?: number | null): UsageSnapshot;
 export {};

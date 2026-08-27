@@ -38,6 +38,14 @@ export function readSnapshot(snapshotPath, deps = defaultSnapshotFs) {
         const s = parsed;
         if (typeof s.updated_at !== 'string')
             return null;
+        // Absent on snapshots written before this field existed. Tolerated (and read
+        // as never-polled) so an upgrade does not throw away a good last-known value;
+        // a wrong TYPE is still a corrupt file.
+        if (s.oauth_updated_at !== undefined &&
+            s.oauth_updated_at !== null &&
+            typeof s.oauth_updated_at !== 'string') {
+            return null;
+        }
         if (s.source !== 'stdin' && s.source !== 'oauth')
             return null;
         if (!isWindow(s.five_hour) || !isWindow(s.seven_day))

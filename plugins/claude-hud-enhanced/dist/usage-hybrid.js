@@ -18,14 +18,29 @@ import { defaultSnapshotFs, getLockPath, getSnapshotPath, readSnapshot, writeSna
  * is decidable from the two values alone — a stale stdin from a second idle session
  * can never clobber a fresher OAuth snapshot.
  */
-export const USAGE_TTL_MS = 180_000; // 3 min, matching ccstatusline's cache gate
+/** Idle gate: how long the snapshot may sit unwritten before we refresh it. */
+export const USAGE_TTL_MS = 60_000;
+/**
+ * Active gate: how stale the last LIVE read may get while the user is chatting.
+ * stdin re-stamps `updated_at` on every message, so the idle gate alone can never
+ * fire mid-conversation — and usage burned in another terminal, on another
+ * machine, or on claude.ai would stay invisible until the session went quiet.
+ */
+export const OAUTH_MAX_AGE_MS = 120_000;
 export const LOCK_STALE_MS = 60_000; // a refresher lock older than this is abandoned
-// Refresher backoff policy lives HERE, next to the TTL it must comfortably
-// exceed: if a backoff dropped below USAGE_TTL_MS, a failing refresher would
+// Refresher backoff policy lives HERE, next to the gates it must comfortably
+// exceed: if a backoff dropped below a spawn gate, a failing refresher would
 // be respawned on nearly every stale render — the retry-storm shape this
-// feature exists to prevent (ccstatusline #204).
+// feature exists to prevent (ccstatusline #204). tests/usage-hybrid.test.js
+// asserts the margin so a future gate cut cannot quietly erase it.
 export const BACKOFF_AUTH_MS = 30 * 60_000;
 export const BACKOFF_ERROR_MS = 5 * 60_000;
+/**
+ * 429 fallback when the server sent no Retry-After. Its own constant rather than
+ * a multiple of USAGE_TTL_MS, so cutting the TTL cannot silently shorten the one
+ * backoff a server explicitly asked for.
+ */
+export const BACKOFF_RATE_LIMIT_MS = 6 * 60_000;
 function toMs(d) {
     return d instanceof Date && Number.isFinite(d.getTime()) ? d.getTime() : null;
 }
@@ -91,12 +106,16 @@ export function snapshotOverStdin(snap, stdinUsage) {
 }
 /**
  * UsageData → snapshot. `source` marks who wrote it. Refresher-owned fields
- * (`status`, `next_attempt_at`) are carried verbatim from the previous snapshot so
- * a stdin write never clears an in-flight backoff the poller set.
+ * (`oauth_updated_at`, `status`, `next_attempt_at`) are carried verbatim from the
+ * previous snapshot so a stdin write never clears an in-flight backoff the poller
+ * set, nor forges a LIVE read that never happened.
  */
 export function usageToSnapshot(usage, source, now, prev) {
     return {
         updated_at: new Date(now).toISOString(),
+        // Carried, never stamped: only a real OAuth read may move this clock. Resetting
+        // it here would make every active render look never-polled and spawn again.
+        oauth_updated_at: prev?.oauth_updated_at ?? null,
         source,
         five_hour: {
             used_percentage: usage.fiveHour,
@@ -109,6 +128,28 @@ export function usageToSnapshot(usage, source, now, prev) {
         status: prev?.status ?? 'ok',
         next_attempt_at: prev?.next_attempt_at ?? null,
     };
+}
+/**
+ * The single decision point for "should a refresher run now?", shared by the parent
+ * (resolveUsage, which spawns) and the child (refresh-usage, which re-checks before
+ * spending a request). Keeping it in ONE place is load-bearing: if the parent
+ * spawned on a condition the child did not honour, the child would no-op, release
+ * the lock, and be respawned on the very next render — a spawn storm wearing the
+ * costume of a working single-flight.
+ *
+ * Unparseable timestamps read as infinitely stale, never as fresh: a corrupt clock
+ * should cost one refresh, not freeze the display at a stale number forever.
+ */
+export function shouldRefresh(snap, now) {
+    // Backoff outranks both gates — it is the storm guard itself.
+    const nextAttempt = parseMs(snap.next_attempt_at);
+    if (nextAttempt != null && nextAttempt > now)
+        return false;
+    const age = now - (parseMs(snap.updated_at) ?? 0);
+    if (age > USAGE_TTL_MS)
+        return true; // idle: nobody has written in a while
+    const oauthAt = parseMs(snap.oauth_updated_at);
+    return oauthAt == null || now - oauthAt > OAUTH_MAX_AGE_MS; // active: stale LIVE read
 }
 /**
  * Try to claim the single-flight refresher lock. Cleans up a stale lock (older than
@@ -168,14 +209,12 @@ export function resolveUsage(stdinUsage, enabled, deps) {
     const lockPath = getLockPath(deps.homeDir);
     const snap = readSnapshot(snapshotPath, deps.fs);
     const now = deps.now();
-    // Spawn the detached refresher iff the snapshot is past the TTL and not in
-    // backoff. Throttled by the single-flight lock; never blocks or throws.
+    // Spawn the detached refresher iff shouldRefresh() says so. Throttled by the
+    // single-flight lock; never blocks or throws.
     const maybeRefresh = (s) => {
         if (deps.canRefresh?.() === false)
             return; // refresher not installed — no lock churn
-        const age = now - (parseMs(s.updated_at) ?? 0);
-        const inBackoff = s.next_attempt_at != null && (parseMs(s.next_attempt_at) ?? 0) > now;
-        if (age > USAGE_TTL_MS && !inBackoff && tryTakeLock(lockPath, now, deps.fs)) {
+        if (shouldRefresh(s, now) && tryTakeLock(lockPath, now, deps.fs)) {
             try {
                 deps.spawnRefresher(deps.homeDir);
             }
@@ -191,8 +230,12 @@ export function resolveUsage(stdinUsage, enabled, deps) {
         const cmp = snap ? compareStdinSnapshot(stdinUsage, snap) : 1;
         if (snap == null || cmp > 0) {
             // stdin advanced → user is active. Persist it, which stamps updated_at and
-            // resets the idle TTL, so no refresher fires while chatting.
-            writeSnapshotAtomic(snapshotPath, usageToSnapshot(stdinUsage, 'stdin', now, snap), now, deps.fs);
+            // resets the idle gate. The LIVE clock is carried through untouched, so a
+            // long conversation still refreshes account-wide usage on its own cadence
+            // instead of going blind to every other terminal until it falls quiet.
+            const written = usageToSnapshot(stdinUsage, 'stdin', now, snap);
+            writeSnapshotAtomic(snapshotPath, written, now, deps.fs);
+            maybeRefresh(written);
             return stdinUsage;
         }
         // stdin did NOT advance (cmp <= 0) → frozen stdin, i.e. idle. The snapshot's

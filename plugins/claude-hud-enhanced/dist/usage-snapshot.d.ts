@@ -7,6 +7,15 @@ import * as fs from 'node:fs';
 export interface UsageSnapshot {
     /** ISO timestamp — the idle-TTL clock; bumped by whichever writer refreshed values. */
     updated_at: string;
+    /**
+     * ISO timestamp of the last LIVE (OAuth) read, on its own clock — null when we
+     * have never had one. Separate from `updated_at` because stdin carries only THIS
+     * session's view from response headers and re-stamps `updated_at` on every
+     * message: an `updated_at`-only gate can never fire while the user is chatting,
+     * so usage burned elsewhere stays invisible for the whole session. Only the
+     * refresher may move this.
+     */
+    oauth_updated_at: string | null;
     source: 'stdin' | 'oauth';
     five_hour: {
         used_percentage: number | null;

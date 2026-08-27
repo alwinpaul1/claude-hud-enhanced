@@ -19,10 +19,24 @@ import { type SnapshotFsDeps, type UsageSnapshot, defaultSnapshotFs } from './us
  * is decidable from the two values alone — a stale stdin from a second idle session
  * can never clobber a fresher OAuth snapshot.
  */
-export declare const USAGE_TTL_MS = 180000;
+/** Idle gate: how long the snapshot may sit unwritten before we refresh it. */
+export declare const USAGE_TTL_MS = 60000;
+/**
+ * Active gate: how stale the last LIVE read may get while the user is chatting.
+ * stdin re-stamps `updated_at` on every message, so the idle gate alone can never
+ * fire mid-conversation — and usage burned in another terminal, on another
+ * machine, or on claude.ai would stay invisible until the session went quiet.
+ */
+export declare const OAUTH_MAX_AGE_MS = 120000;
 export declare const LOCK_STALE_MS = 60000;
 export declare const BACKOFF_AUTH_MS: number;
 export declare const BACKOFF_ERROR_MS: number;
+/**
+ * 429 fallback when the server sent no Retry-After. Its own constant rather than
+ * a multiple of USAGE_TTL_MS, so cutting the TTL cannot silently shorten the one
+ * backoff a server explicitly asked for.
+ */
+export declare const BACKOFF_RATE_LIMIT_MS: number;
 /** +1 if stdin is newer than the snapshot, -1 if the snapshot is newer, 0 if equal. */
 export declare function compareStdinSnapshot(stdin: UsageData, snap: UsageSnapshot): number;
 /** True when stdin is strictly newer than the snapshot (write-back decision). */
@@ -37,10 +51,23 @@ export declare function snapshotToUsage(snap: UsageSnapshot): UsageData;
 export declare function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: UsageData): UsageData;
 /**
  * UsageData → snapshot. `source` marks who wrote it. Refresher-owned fields
- * (`status`, `next_attempt_at`) are carried verbatim from the previous snapshot so
- * a stdin write never clears an in-flight backoff the poller set.
+ * (`oauth_updated_at`, `status`, `next_attempt_at`) are carried verbatim from the
+ * previous snapshot so a stdin write never clears an in-flight backoff the poller
+ * set, nor forges a LIVE read that never happened.
  */
 export declare function usageToSnapshot(usage: UsageData, source: UsageSnapshot['source'], now: number, prev: UsageSnapshot | null): UsageSnapshot;
+/**
+ * The single decision point for "should a refresher run now?", shared by the parent
+ * (resolveUsage, which spawns) and the child (refresh-usage, which re-checks before
+ * spending a request). Keeping it in ONE place is load-bearing: if the parent
+ * spawned on a condition the child did not honour, the child would no-op, release
+ * the lock, and be respawned on the very next render — a spawn storm wearing the
+ * costume of a working single-flight.
+ *
+ * Unparseable timestamps read as infinitely stale, never as fresh: a corrupt clock
+ * should cost one refresh, not freeze the display at a stale number forever.
+ */
+export declare function shouldRefresh(snap: UsageSnapshot, now: number): boolean;
 /**
  * Try to claim the single-flight refresher lock. Cleans up a stale lock (older than
  * LOCK_STALE_MS) left by a crashed refresher, then creates the lock with `wx` so only
