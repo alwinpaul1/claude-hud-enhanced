@@ -18,6 +18,8 @@ Both gates are now one exported predicate, `shouldRefresh()`, shared by the pare
 
 **Request rate.** The ceiling moves from ~1 request per 3 minutes to ~1 per 60s per profile, machine-wide — still single-flight, still never on the render path. README updated: the old "~1 request per 3 minutes" claim in the privacy/scope section would otherwise have been wrong.
 
+`scripts/verify-usage-lag.mjs` (`npm run verify:usage`) is the rerunnable proof. It drives the shipped binary in a throwaway `CLAUDE_CONFIG_DIR` holding no credentials, so the refresher reaches no network and the real profile is never read. Eleven scenarios cover both gates, backoff precedence, single-flight, schema back-compat, the real refresher's own gate, and the daemon path. Point it at the pre-fix build and it fails six of them, including the reported defect. That is the failing repro.
+
 A regression test pins the loop-termination condition end to end (a landed OAuth read closes the active gate), so "refreshes while active" cannot quietly become "polls on every render while active". The pre-existing frozen-stdin test hardcoded 60s/120s offsets as "inside the TTL"; those are now expressed in `USAGE_TTL_MS` and no longer silently change meaning when it moves.
 
 ## [0.7.1] - 2026-08-22
