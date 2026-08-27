@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.2] - 2026-08-27
 
 ### Fixed — usage numbers went stale during long conversations, and stayed stale for 3 minutes when idle
 
