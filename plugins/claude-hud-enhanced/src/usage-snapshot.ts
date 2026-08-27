@@ -11,6 +11,15 @@ import { getHudPluginDir } from './claude-config-dir.js';
 export interface UsageSnapshot {
   /** ISO timestamp — the idle-TTL clock; bumped by whichever writer refreshed values. */
   updated_at: string;
+  /**
+   * ISO timestamp of the last LIVE (OAuth) read, on its own clock — null when we
+   * have never had one. Separate from `updated_at` because stdin carries only THIS
+   * session's view from response headers and re-stamps `updated_at` on every
+   * message: an `updated_at`-only gate can never fire while the user is chatting,
+   * so usage burned elsewhere stays invisible for the whole session. Only the
+   * refresher may move this.
+   */
+  oauth_updated_at: string | null;
   source: 'stdin' | 'oauth';
   five_hour: { used_percentage: number | null; resets_at: string | null };
   seven_day: { used_percentage: number | null; resets_at: string | null };
@@ -70,6 +79,16 @@ export function readSnapshot(
     if (typeof parsed !== 'object' || parsed === null) return null;
     const s = parsed as Record<string, unknown>;
     if (typeof s.updated_at !== 'string') return null;
+    // Absent on snapshots written before this field existed. Tolerated (and read
+    // as never-polled) so an upgrade does not throw away a good last-known value;
+    // a wrong TYPE is still a corrupt file.
+    if (
+      s.oauth_updated_at !== undefined &&
+      s.oauth_updated_at !== null &&
+      typeof s.oauth_updated_at !== 'string'
+    ) {
+      return null;
+    }
     if (s.source !== 'stdin' && s.source !== 'oauth') return null;
     if (!isWindow(s.five_hour) || !isWindow(s.seven_day)) return null;
     const status = s.status;

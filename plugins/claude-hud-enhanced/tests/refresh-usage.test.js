@@ -9,7 +9,7 @@ import {
   failureSnapshot,
   keychainServiceForConfigDir,
 } from '../dist/refresh-usage.js';
-import { USAGE_TTL_MS } from '../dist/usage-hybrid.js';
+import { USAGE_TTL_MS, BACKOFF_RATE_LIMIT_MS } from '../dist/usage-hybrid.js';
 
 const NOW = Date.UTC(2026, 6, 19, 12, 0, 0);
 const ISO = (ms) => new Date(ms).toISOString();
@@ -119,6 +119,7 @@ test('successSnapshot stamps updated_at=now, source=oauth, clears backoff', () =
   };
   assert.deepEqual(successSnapshot(windows, NOW), {
     updated_at: ISO(NOW),
+    oauth_updated_at: ISO(NOW),
     source: 'oauth',
     ...windows,
     status: 'ok',
@@ -130,6 +131,7 @@ test('successSnapshot stamps updated_at=now, source=oauth, clears backoff', () =
 
 const PREV = {
   updated_at: ISO(NOW - 10 * 60_000),
+  oauth_updated_at: ISO(NOW - 20 * 60_000),
   source: 'stdin',
   five_hour: { used_percentage: 40, resets_at: ISO(NOW + 3_600_000) },
   seven_day: { used_percentage: 70, resets_at: ISO(NOW + 86_400_000) },
@@ -151,15 +153,19 @@ test('failureSnapshot backoff: error ~5min, auth_expired ~30min', () => {
   assert.equal(failureSnapshot(PREV, 'auth_expired', NOW).next_attempt_at, ISO(NOW + 30 * 60_000));
 });
 
-test('failureSnapshot backoff: 429 honors Retry-After, else 2×TTL', () => {
+test('failureSnapshot backoff: 429 honors Retry-After, else its own constant', () => {
   assert.equal(
     failureSnapshot(PREV, 'rate_limited', NOW, 300_000).next_attempt_at,
     ISO(NOW + 300_000),
   );
   assert.equal(
     failureSnapshot(PREV, 'rate_limited', NOW, null).next_attempt_at,
-    ISO(NOW + 2 * USAGE_TTL_MS),
+    ISO(NOW + BACKOFF_RATE_LIMIT_MS),
   );
+  // Deriving this fallback from USAGE_TTL_MS meant every TTL cut silently
+  // shortened the 429 backoff too — the one backoff a server explicitly asked
+  // for. It is now its own constant.
+  assert.ok(BACKOFF_RATE_LIMIT_MS >= 2 * USAGE_TTL_MS, 'fallback must still clear the gate');
 });
 
 test('failureSnapshot with no previous snapshot writes null windows and epoch updated_at', () => {
@@ -168,4 +174,18 @@ test('failureSnapshot with no previous snapshot writes null windows and epoch up
   assert.equal(snap.source, 'oauth');
   assert.deepEqual(snap.five_hour, { used_percentage: null, resets_at: null });
   assert.deepEqual(snap.seven_day, { used_percentage: null, resets_at: null });
+});
+
+test('failureSnapshot preserves the LIVE-read clock (a failed poll is not a read)', () => {
+  for (const kind of ['error', 'auth_expired', 'rate_limited']) {
+    assert.equal(
+      failureSnapshot(PREV, kind, NOW).oauth_updated_at,
+      PREV.oauth_updated_at,
+      `${kind} must not pretend a fresh account-wide value arrived`,
+    );
+  }
+});
+
+test('failureSnapshot with no previous snapshot leaves the LIVE clock unset', () => {
+  assert.equal(failureSnapshot(null, 'error', NOW).oauth_updated_at, null);
 });

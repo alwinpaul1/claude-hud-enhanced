@@ -5,7 +5,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getClaudeConfigDir } from './claude-config-dir.js';
-import { BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, USAGE_TTL_MS } from './usage-hybrid.js';
+import {
+  BACKOFF_AUTH_MS,
+  BACKOFF_ERROR_MS,
+  BACKOFF_RATE_LIMIT_MS,
+  shouldRefresh,
+} from './usage-hybrid.js';
 import {
   type UsageSnapshot,
   getLockPath,
@@ -147,8 +152,11 @@ export function parseRetryAfterMs(headerValue: string | null, nowMs: number): nu
 }
 
 export function successSnapshot(windows: UsageWindows, now: number): UsageSnapshot {
+  const at = new Date(now).toISOString();
   return {
-    updated_at: new Date(now).toISOString(),
+    updated_at: at,
+    // A real LIVE read just landed — the one place this clock may move.
+    oauth_updated_at: at,
     source: 'oauth',
     ...windows,
     status: 'ok',
@@ -157,8 +165,9 @@ export function successSnapshot(windows: UsageWindows, now: number): UsageSnapsh
 }
 
 /**
- * Failed attempt → snapshot that PRESERVES the last-good values and does NOT
- * bump `updated_at` (the idle-TTL clock), only sets the retry backoff.
+ * Failed attempt → snapshot that PRESERVES the last-good values and moves neither
+ * clock (`updated_at`, `oauth_updated_at`), only sets the retry backoff. A poll
+ * that failed is not a read, and must not be recorded as one.
  */
 export function failureSnapshot(
   prev: UsageSnapshot | null,
@@ -168,10 +177,11 @@ export function failureSnapshot(
 ): UsageSnapshot {
   const backoffMs =
     status === 'auth_expired' ? BACKOFF_AUTH_MS
-    : status === 'rate_limited' ? (retryAfterMs ?? 2 * USAGE_TTL_MS)
+    : status === 'rate_limited' ? (retryAfterMs ?? BACKOFF_RATE_LIMIT_MS)
     : BACKOFF_ERROR_MS;
   return {
     updated_at: prev?.updated_at ?? new Date(0).toISOString(),
+    oauth_updated_at: prev?.oauth_updated_at ?? null,
     source: prev?.source ?? 'oauth',
     five_hour: prev?.five_hour ?? { used_percentage: null, resets_at: null },
     seven_day: prev?.seven_day ?? { used_percentage: null, resets_at: null },
@@ -212,12 +222,10 @@ async function main(): Promise<void> {
   const now = Date.now();
 
   // Double-check freshness: another writer (a second terminal's refresher, or
-  // an active session's stdin) may have refreshed between spawn and now.
-  if (prev) {
-    const age = now - (Date.parse(prev.updated_at) || 0);
-    const inBackoff = prev.next_attempt_at != null && Date.parse(prev.next_attempt_at) > now;
-    if (age <= USAGE_TTL_MS || inBackoff) return;
-  }
+  // an active session's stdin) may have refreshed between spawn and now. This is
+  // deliberately the SAME predicate the parent spawned on — a child that bailed on
+  // a condition the parent ignores would be respawned every render.
+  if (prev && !shouldRefresh(prev, now)) return;
 
   const token = readOauthToken(getClaudeConfigDir(homeDir));
   if (!token) {

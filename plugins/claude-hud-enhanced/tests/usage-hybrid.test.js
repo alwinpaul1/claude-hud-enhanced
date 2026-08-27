@@ -8,7 +8,10 @@ import {
   usageToSnapshot,
   tryTakeLock,
   resolveUsage,
+  shouldRefresh,
   USAGE_TTL_MS,
+  OAUTH_MAX_AGE_MS,
+  LOCK_STALE_MS,
 } from '../dist/usage-hybrid.js';
 import { getSnapshotPath, getLockPath, readSnapshot } from '../dist/usage-snapshot.js';
 
@@ -65,6 +68,7 @@ function makeFs(seedSnapshot) {
 function snap(overrides = {}) {
   return {
     updated_at: ISO(NOW),
+    oauth_updated_at: ISO(NOW),
     source: 'oauth',
     five_hour: { used_percentage: 50, resets_at: ISO(NOW + 3 * 3600_000) },
     seven_day: { used_percentage: 20, resets_at: ISO(NOW + 3 * 86400_000) },
@@ -255,7 +259,15 @@ test('resolveUsage idle + no snapshot: returns null', () => {
 // be detected as "stdin stopped advancing", not "stdin disappeared".
 test('resolveUsage frozen stdin: refresher fires once the snapshot goes stale', () => {
   let spawned = 0;
-  const fs = makeFs();
+  // Seeded one tick behind stdin so the T=0 message still counts as an advance,
+  // and with a fresh LIVE clock so this test isolates the IDLE gate. Offsets are
+  // expressed in USAGE_TTL_MS rather than hardcoded — they used to be literal
+  // 60s/120s, which quietly stopped meaning "inside the TTL" the moment it moved.
+  const fs = makeFs(snap({
+    five_hour: { used_percentage: 40, resets_at: ISO(NOW + 3 * 3600_000) },
+    updated_at: ISO(NOW - 1000),
+    oauth_updated_at: ISO(NOW),
+  }));
   const deps = (t) => {
     fs._now = t; // keep the fake fs mtime clock in sync with the render time
     return { now: () => t, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
@@ -266,9 +278,9 @@ test('resolveUsage frozen stdin: refresher fires once the snapshot goes stale', 
   resolveUsage(s, true, deps(NOW));
   assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW));
 
-  // Idle renders with the SAME frozen stdin, inside the TTL: no refresh.
-  resolveUsage(s, true, deps(NOW + 60_000));
-  resolveUsage(s, true, deps(NOW + 120_000));
+  // Idle renders with the SAME frozen stdin, inside both gates: no refresh.
+  resolveUsage(s, true, deps(NOW + Math.floor(USAGE_TTL_MS / 3)));
+  resolveUsage(s, true, deps(NOW + Math.floor(USAGE_TTL_MS / 2)));
   assert.equal(spawned, 0, 'fresh snapshot suppresses refresh while frozen');
   assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW), 'frozen stdin must not bump updated_at');
 
@@ -304,6 +316,7 @@ test('resolveUsage frozen stdin + newer OAuth snapshot: serves the snapshot', ()
 
 test('resolveUsage active stdin advance resets the idle clock', () => {
   let spawned = 0;
+  // Idle clock stale, LIVE clock fresh: activity must still suppress the refresher.
   const fs = makeFs(snap({ updated_at: ISO(NOW - USAGE_TTL_MS - 1000) })); // stale
   const s = stdin({ fiveHour: 60 }); // stdin ADVANCED past the snapshot's 50
   const deps = { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
@@ -311,4 +324,206 @@ test('resolveUsage active stdin advance resets the idle clock', () => {
   assert.equal(out, s, 'advancing stdin is authoritative');
   assert.equal(spawned, 0, 'activity suppresses the refresher even with a stale snapshot');
   assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW), 'advance stamps updated_at');
+});
+
+// --- shouldRefresh: the shared gate ---------------------------------------
+//
+// stdin only ever carries THIS session's view from response headers, and every
+// stdin write re-stamps `updated_at`. So an `updated_at`-only gate can never fire
+// during an active session, and usage burned elsewhere (another terminal, another
+// machine, claude.ai) stays invisible for the whole session. `oauth_updated_at`
+// tracks the last LIVE read on its own clock so that case still refreshes.
+//
+// Parent (resolveUsage) and child (refresh-usage main) MUST share this one gate:
+// if the parent spawns on a condition the child does not honour, the child
+// no-ops, releases the lock, and the parent respawns on the next render — a spawn
+// storm that looks exactly like the retry storm the backoff exists to prevent.
+
+test('shouldRefresh: everything fresh means no refresh', () => {
+  assert.equal(shouldRefresh(snap(), NOW), false);
+});
+
+test('shouldRefresh: stale idle clock fires (nobody has written in a while)', () => {
+  const s = snap({
+    updated_at: ISO(NOW - USAGE_TTL_MS - 1),
+    oauth_updated_at: ISO(NOW - USAGE_TTL_MS - 1),
+  });
+  assert.equal(shouldRefresh(s, NOW), true);
+});
+
+test('shouldRefresh: fresh idle clock but stale LIVE clock fires (the active-session gap)', () => {
+  const s = snap({
+    updated_at: ISO(NOW), // stdin just wrote — user is actively chatting
+    oauth_updated_at: ISO(NOW - OAUTH_MAX_AGE_MS - 1),
+    source: 'stdin',
+  });
+  assert.equal(shouldRefresh(s, NOW), true, 'activity must not mask a stale account-wide read');
+});
+
+test('shouldRefresh: LIVE clock inside its budget does not fire while active', () => {
+  const s = snap({ updated_at: ISO(NOW), oauth_updated_at: ISO(NOW - OAUTH_MAX_AGE_MS + 1000) });
+  assert.equal(shouldRefresh(s, NOW), false, 'normal chatting must not poll every render');
+});
+
+test('shouldRefresh: never-polled snapshot fires (null and legacy-missing alike)', () => {
+  assert.equal(shouldRefresh(snap({ oauth_updated_at: null }), NOW), true);
+  const legacy = snap();
+  delete legacy.oauth_updated_at; // written by a pre-upgrade build
+  assert.equal(shouldRefresh(legacy, NOW), true, 'legacy snapshot must self-heal on first render');
+});
+
+test('shouldRefresh: backoff beats BOTH stale clocks (storm guard)', () => {
+  const s = snap({
+    updated_at: ISO(NOW - USAGE_TTL_MS - 1),
+    oauth_updated_at: null,
+    status: 'error',
+    next_attempt_at: ISO(NOW + 1000),
+  });
+  assert.equal(shouldRefresh(s, NOW), false, 'an in-flight backoff suppresses every gate');
+});
+
+test('shouldRefresh: an expired backoff stops suppressing', () => {
+  const s = snap({ oauth_updated_at: null, status: 'error', next_attempt_at: ISO(NOW - 1) });
+  assert.equal(shouldRefresh(s, NOW), true);
+});
+
+test('shouldRefresh: unparseable timestamps count as infinitely stale, not as fresh', () => {
+  assert.equal(shouldRefresh(snap({ updated_at: 'not-a-date' }), NOW), true);
+  assert.equal(shouldRefresh(snap({ oauth_updated_at: 'not-a-date' }), NOW), true);
+  // ...but a corrupt backoff must not be read as "backoff expired, go now" only
+  // to storm; it simply cannot suppress, which the two gates above already cover.
+  assert.equal(shouldRefresh(snap({ next_attempt_at: 'not-a-date' }), NOW), false);
+});
+
+// --- resolveUsage: refreshing DURING an active session ---------------------
+
+test('resolveUsage active + stale LIVE clock: spawns once and still renders stdin', () => {
+  let spawned = 0;
+  const fs = makeFs(snap({
+    updated_at: ISO(NOW - 5_000), // fresh: user is mid-conversation
+    oauth_updated_at: ISO(NOW - OAUTH_MAX_AGE_MS - 1),
+    source: 'stdin',
+  }));
+  const s = stdin({ fiveHour: 60 }); // stdin ADVANCED past the snapshot's 50
+  const out = resolveUsage(s, true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ });
+  assert.equal(out, s, 'advancing stdin stays authoritative for THIS render');
+  assert.equal(spawned, 1, 'a stale account-wide read refreshes even while active');
+});
+
+test('resolveUsage active + stale LIVE clock: the stdin write preserves the LIVE clock', () => {
+  // If the stdin write reset oauth_updated_at, every active render would look
+  // never-polled and spawn again — the storm this field exists to avoid.
+  const oauthAt = ISO(NOW - OAUTH_MAX_AGE_MS - 1);
+  const fs = makeFs(snap({ updated_at: ISO(NOW - 5_000), oauth_updated_at: oauthAt, source: 'stdin' }));
+  resolveUsage(stdin({ fiveHour: 60 }), true, {
+    now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => {},
+  });
+  const written = readSnapshot(SNAP_PATH, fs);
+  assert.equal(written.updated_at, ISO(NOW), 'the stdin write still stamps the idle clock');
+  assert.equal(written.oauth_updated_at, oauthAt, 'only a real OAuth read may move the LIVE clock');
+});
+
+test('resolveUsage active + stale LIVE clock: repeated renders still spawn once', () => {
+  let spawned = 0;
+  const fs = makeFs(snap({
+    updated_at: ISO(NOW - 5_000),
+    oauth_updated_at: ISO(NOW - OAUTH_MAX_AGE_MS - 1),
+    source: 'stdin',
+  }));
+  const deps = (t) => {
+    fs._now = t;
+    return { now: () => t, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
+  };
+  // Three renders inside the lock window, stdin advancing each time.
+  resolveUsage(stdin({ fiveHour: 60 }), true, deps(NOW));
+  resolveUsage(stdin({ fiveHour: 61 }), true, deps(NOW + 300));
+  resolveUsage(stdin({ fiveHour: 62 }), true, deps(NOW + 600));
+  assert.equal(spawned, 1, 'single-flight lock holds on the active path too');
+});
+
+test('resolveUsage active + stale LIVE clock + canRefresh false: no spawn, no lock churn', () => {
+  let spawned = 0;
+  const fs = makeFs(snap({
+    updated_at: ISO(NOW - 5_000),
+    oauth_updated_at: null,
+    source: 'stdin',
+  }));
+  resolveUsage(stdin({ fiveHour: 60 }), true, {
+    now: () => NOW, homeDir: HOME, fs,
+    spawnRefresher: () => spawned++,
+    canRefresh: () => false,
+  });
+  assert.equal(spawned, 0);
+  assert.equal(fs.existsSync(LOCK_PATH), false, 'no lock file for a spawn that would no-op');
+});
+
+// --- snapshot schema: forward and backward compatibility ------------------
+
+test('readSnapshot: a legacy snapshot without oauth_updated_at still parses', () => {
+  const legacy = snap();
+  delete legacy.oauth_updated_at;
+  const fs = makeFs(legacy);
+  const out = readSnapshot(SNAP_PATH, fs);
+  assert.notEqual(out, null, 'an older on-disk snapshot must not be discarded wholesale');
+  assert.equal(out.five_hour.used_percentage, 50, 'its values survive the upgrade');
+});
+
+test('readSnapshot: rejects a wrong-typed oauth_updated_at', () => {
+  const fs = makeFs(snap({ oauth_updated_at: 12345 }));
+  assert.equal(readSnapshot(SNAP_PATH, fs), null);
+});
+
+test('readSnapshot: accepts an explicitly null oauth_updated_at', () => {
+  const fs = makeFs(snap({ oauth_updated_at: null }));
+  assert.notEqual(readSnapshot(SNAP_PATH, fs), null);
+});
+
+// --- the invariant the constants must keep -------------------------------
+//
+// The refresher's backoffs exist to stop a FAILING poll from being respawned on
+// nearly every render. That only holds while each backoff comfortably exceeds the
+// gate that triggers a spawn. Lowering a TTL is a one-character edit, so the
+// invariant is asserted rather than left to a comment.
+
+test('every refresher backoff comfortably exceeds both spawn gates', async () => {
+  const { BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, BACKOFF_RATE_LIMIT_MS } = await import('../dist/usage-hybrid.js');
+  const widestGate = Math.max(USAGE_TTL_MS, OAUTH_MAX_AGE_MS);
+  for (const [name, ms] of Object.entries({ BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, BACKOFF_RATE_LIMIT_MS })) {
+    assert.ok(ms >= 2 * widestGate, `${name} (${ms}ms) must be >= 2x the widest gate (${widestGate}ms)`);
+  }
+});
+
+test('a landed OAuth read closes the active gate (the loop terminates)', () => {
+  // The stub refresher in the tests above never writes; the real one does. This
+  // pins the termination condition end to end, so "spawns while active" can never
+  // quietly become "spawns on every render while active".
+  let spawned = 0;
+  const fs = makeFs(snap({
+    updated_at: ISO(NOW - 5_000),
+    oauth_updated_at: ISO(NOW - OAUTH_MAX_AGE_MS - 1), // stale LIVE read
+    source: 'stdin',
+  }));
+  const spawnRefresher = () => {
+    spawned++;
+    // Stand in for the detached child: a successful poll stamps BOTH clocks.
+    const current = readSnapshot(SNAP_PATH, fs);
+    fs.writeFileSync(
+      SNAP_PATH,
+      `${JSON.stringify({ ...current, updated_at: ISO(NOW), oauth_updated_at: ISO(NOW), source: 'oauth' })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    );
+  };
+  const deps = (t) => {
+    fs._now = t;
+    return { now: () => t, homeDir: HOME, fs, spawnRefresher };
+  };
+
+  resolveUsage(stdin({ fiveHour: 60 }), true, deps(NOW));
+  assert.equal(spawned, 1, 'the stale LIVE read triggers exactly one poll');
+
+  // Keep chatting well past the lock's stale window: the landed read holds the
+  // gate shut, so the lock is no longer what is doing the throttling.
+  resolveUsage(stdin({ fiveHour: 61 }), true, deps(NOW + LOCK_STALE_MS + 1_000));
+  resolveUsage(stdin({ fiveHour: 62 }), true, deps(NOW + LOCK_STALE_MS + 2_000));
+  assert.equal(spawned, 1, 'a fresh LIVE clock — not the lock — suppresses the next poll');
 });

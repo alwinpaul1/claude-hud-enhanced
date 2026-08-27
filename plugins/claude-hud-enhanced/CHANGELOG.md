@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed — usage numbers went stale during long conversations, and stayed stale for 3 minutes when idle
+
+The HUD read a lower usage percentage than the Claude app's Plan usage panel (e.g. `7%` / `3%` against a real `8%` / `4%`). Two separate causes, both in the refresh gating.
+
+**The active-session blind spot.** `resolveUsage` only ever considered refreshing on the *frozen stdin* and *no stdin* paths. On the active path — stdin advanced, user is chatting — it wrote the snapshot and returned, and that write re-stamped `updated_at`, the very clock the gate was reading. So during a conversation the gate could never fire: not late, never. stdin carries only this session's view from API response headers, so usage burned in another terminal, on another machine, or on claude.ai stayed invisible for the entire session. That is a correctness gap, not latency.
+
+The snapshot now carries `oauth_updated_at`, the last **live** read on its own clock, which only the refresher may move — a stdin write carries it through untouched. A second gate fires when that clock is older than `OAUTH_MAX_AGE_MS` (120s) no matter how active the session is. A snapshot that has never been polled (`null`, including one written by a pre-upgrade build) reads as stale and self-heals on first render; `readSnapshot` tolerates the missing field rather than discarding a good last-known value on upgrade.
+
+**The idle wait.** `USAGE_TTL_MS` 180s → 60s.
+
+Both gates are now one exported predicate, `shouldRefresh()`, shared by the parent that spawns the refresher and the child that re-checks before spending a request. They had been separate copies. Had they drifted — a parent spawning on a condition the child did not honour — the child would no-op, release the single-flight lock, and be respawned on the very next render: a spawn storm wearing the costume of a working lock. That was reachable with the new gate, so the two are now the same function by construction.
+
+**Backoff.** The 429 fallback was `2 * USAGE_TTL_MS`, so cutting the TTL would have silently shortened the one backoff a server explicitly asks for (360s → 120s). It is now its own constant, `BACKOFF_RATE_LIMIT_MS` (6 min). A test asserts every backoff stays at least 2x the widest spawn gate, so a future gate cut cannot quietly re-open the ccstatusline #204 retry-storm shape the comment only warned about in prose.
+
+**Request rate.** The ceiling moves from ~1 request per 3 minutes to ~1 per 60s per profile, machine-wide — still single-flight, still never on the render path. README updated: the old "~1 request per 3 minutes" claim in the privacy/scope section would otherwise have been wrong.
+
+A regression test pins the loop-termination condition end to end (a landed OAuth read closes the active gate), so "refreshes while active" cannot quietly become "polls on every render while active". The pre-existing frozen-stdin test hardcoded 60s/120s offsets as "inside the TTL"; those are now expressed in `USAGE_TTL_MS` and no longer silently change meaning when it moves.
+
 ## [0.7.1] - 2026-08-22
 
 Fixes two ways the plan/provider label in the model bracket showed the wrong thing.
