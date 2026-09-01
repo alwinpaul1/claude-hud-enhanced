@@ -14,6 +14,7 @@ import test from 'node:test';
 // which this repo keeps in step with the single plugin it ships.
 const pkgUrl = new URL('../package.json', import.meta.url);
 const pluginUrl = new URL('../.claude-plugin/plugin.json', import.meta.url);
+const lockUrl = new URL('../package-lock.json', import.meta.url);
 const marketplaceUrl = new URL('../../../.claude-plugin/marketplace.json', import.meta.url);
 
 const readJson = async (url) => JSON.parse(await readFile(url, 'utf8'));
@@ -25,6 +26,20 @@ test('package.json and plugin.json ship the same version', async () => {
     pkg.version,
     plugin.version,
     `package.json (${pkg.version}) and plugin.json (${plugin.version}) disagree`,
+  );
+});
+
+test('package-lock.json tracks package.json', async () => {
+  // The lock silently sat at 0.7.0 across the 0.7.1, 0.7.2 and 0.7.3 releases:
+  // `npm version` updates it, a hand-edited package.json does not, and nothing
+  // compared them. Nothing breaks loudly, which is exactly why it drifted.
+  const [pkg, lock] = await Promise.all([readJson(pkgUrl), readJson(lockUrl)]);
+
+  assert.equal(lock.version, pkg.version, `package-lock.json (${lock.version}) trails package.json (${pkg.version})`);
+  assert.equal(
+    lock.packages?.['']?.version,
+    pkg.version,
+    `package-lock.json root package entry (${lock.packages?.['']?.version}) trails package.json (${pkg.version})`,
   );
 });
 
