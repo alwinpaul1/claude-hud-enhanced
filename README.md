@@ -39,16 +39,26 @@ Claude Code hides.
 
 ```
 /plugin update claude-hud-enhanced
+/reload-plugins
 /claude-hud-enhanced:setup
 ```
 
-**Both commands, then restart.** The update replaces the plugin, but it cannot repair a
-`statusLine` already written into your `settings.json` — only re-running setup rewrites
-that. If a previous setup wrote a broken command, updating alone leaves it broken.
+**All three, in that order, then restart.**
+
+`/reload-plugins` is not optional, and skipping it is the trap. `/plugin update` replaces
+the files on disk, but your running session is still holding the **setup command it loaded
+at startup** — the old one. Run setup without reloading and you execute the old
+instructions against the new plugin, which writes the same broken statusline again. Claude
+Code says `Run /reload-plugins to apply` when the update finishes; that message is the
+whole reason this step exists. Quitting and relaunching Claude Code works too.
+
+Then setup, because the update cannot repair a `statusLine` already written into your
+`settings.json` — only re-running setup rewrites that. If a previous setup wrote a broken
+command, updating alone leaves it broken.
 
 Versions before 0.7.4 could write a statusline that never ran and still report success.
 The command died in a subshell, and Claude Code discards statusline stderr, so the only
-symptom was a HUD that never appeared. If that happened to you, the two commands above
+symptom was a HUD that never appeared. If that happened to you, the three commands above
 fix it.
 
 To see the error Claude Code hides:

@@ -66,13 +66,24 @@ test('MUTATION: the backslashed awk fragment must fail, or this suite proves not
   );
 });
 
-test('every awk fragment in setup.md is the unescaped form', async () => {
+test('every awk fragment in setup.md is one of the two unescaped forms', async () => {
   const setup = await readSetup();
   const fragments = setup.match(/\{ print \$\(NF-1\)[^}]*\}/g) ?? [];
 
-  assert.ok(fragments.length >= 3, `expected the awk fragment in setup.md, found ${fragments.length}`);
+  // Two legitimate shapes: the statusline lookup, which emits "<version>\t<path>",
+  // and the Step -1 staleness check, which needs the version alone. Anything else
+  // — a backslashed $ above all — is the bug this file exists to catch.
+  const VERSION_ONLY = '{ print $(NF-1) }';
+
+  assert.ok(fragments.length >= 4, `expected the awk fragments in setup.md, found ${fragments.length}`);
+  assert.ok(fragments.includes(AWK_PROGRAM), 'the tab-emitting fragment must be present');
+  assert.ok(fragments.includes(VERSION_ONLY), 'the Step -1 version-only fragment must be present');
+
   for (const fragment of fragments) {
-    assert.equal(fragment, AWK_PROGRAM);
+    assert.ok(
+      fragment === AWK_PROGRAM || fragment === VERSION_ONLY,
+      `unrecognised awk fragment in setup.md: ${fragment}`,
+    );
   }
 });
 
@@ -107,9 +118,17 @@ test('setup.md pins the grep separator as [[:space:]], never a bare \\t', async 
   // the documented pattern instead, which is platform-independent.
   const versionPatterns = setup.match(/\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+[^']*/g) ?? [];
 
-  assert.ok(versionPatterns.length >= 3, `expected the version grep pattern, found ${versionPatterns.length}`);
+  // Two shapes again. The statusline lookup matches "<version>\t<path>" and so
+  // must use [[:space:]]. The Step -1 check matches a bare version and anchors
+  // with $, where no separator is involved at all.
+  const VERSION_ONLY_PATTERN = '^[0-9]+\\.[0-9]+\\.[0-9]+$';
+
+  assert.ok(versionPatterns.length >= 4, `expected the version grep patterns, found ${versionPatterns.length}`);
   for (const pattern of versionPatterns) {
-    assert.ok(pattern.startsWith(GREP_PATTERN), `grep pattern must use [[:space:]], got: ${pattern}`);
+    assert.ok(
+      pattern.startsWith(GREP_PATTERN) || pattern === VERSION_ONLY_PATTERN,
+      `grep pattern must use [[:space:]] or anchor with $, got: ${pattern}`,
+    );
   }
 });
 
@@ -146,4 +165,58 @@ test('setup.md still requires a restart before declaring success', async () => {
 
   assert.match(setup, /Please restart Claude Code now/);
   assert.match(setup, /cannot appear in the same session where setup was run/);
+});
+
+// --- The stale-command trap ---------------------------------------------------
+//
+// /plugin update replaces files on disk, but a running session keeps the slash
+// command it loaded at startup. Setup run immediately after an update therefore
+// executes the OLD instructions against the NEW plugin, reinstating whatever bug
+// the update fixed. Observed live on 2026-09-01: a session on 0.7.4 invoked setup
+// and got the pre-fix Step 3 text with no Step 3.5.
+
+test('setup carries its own version, and it matches plugin.json', async () => {
+  // Two truths in two languages that no compiler compares. A bump that forgets
+  // the comment would ship a staleness guard that always reports "current".
+  const setup = await readSetup();
+  const plugin = JSON.parse(await readFile(new URL('../.claude-plugin/plugin.json', import.meta.url), 'utf8'));
+
+  const embedded = /<!-- SETUP_COMMAND_VERSION: (\d+\.\d+\.\d+) -->/.exec(setup)?.[1];
+  assert.ok(embedded, 'setup.md must carry a SETUP_COMMAND_VERSION comment');
+  assert.equal(embedded, plugin.version, 'SETUP_COMMAND_VERSION must track plugin.json');
+
+  // The version is also stated in prose and used in the stop condition; every
+  // mention must move together or the guard compares against a stale literal.
+  const mentions = setup.match(/`\d+\.\d+\.\d+`/g) ?? [];
+  const versionLike = mentions.filter((m) => /^`\d+\.\d+\.\d+`$/.test(m));
+  assert.ok(versionLike.length >= 2, 'setup.md must state its version in prose as well as the comment');
+  for (const m of versionLike) {
+    assert.equal(m, `\`${plugin.version}\``, `stale version literal in setup.md: ${m}`);
+  }
+});
+
+test('the staleness guard runs before any settings.json write', async () => {
+  const setup = await readSetup();
+
+  const guardAt = setup.indexOf('## Step -1:');
+  const ghostAt = setup.indexOf('## Step 0:');
+  const applyAt = setup.indexOf('## Step 3: Apply Configuration');
+
+  assert.ok(guardAt > -1, 'setup.md must carry the Step -1 staleness guard');
+  assert.ok(guardAt < ghostAt, 'the staleness guard must run before Step 0');
+  assert.ok(guardAt < applyAt, 'the staleness guard must run before the config is written');
+  assert.match(setup.slice(guardAt, ghostAt), /STOP/, 'a stale command must stop, not warn and continue');
+  assert.match(setup.slice(guardAt, ghostAt), /reload-plugins/, 'the guard must name the fix');
+});
+
+test('the README upgrade path reloads before running setup', async () => {
+  const readme = await readFile(new URL('../../../README.md', import.meta.url), 'utf8');
+
+  const update = readme.indexOf('/plugin update claude-hud-enhanced');
+  const reload = readme.indexOf('/reload-plugins');
+  const setupCmd = readme.indexOf('/claude-hud-enhanced:setup', update);
+
+  assert.ok(update > -1 && reload > -1 && setupCmd > -1, 'README must document all three upgrade commands');
+  assert.ok(update < reload, 'update must come before reload');
+  assert.ok(reload < setupCmd, 'reload must come before setup, or setup runs the stale command');
 });

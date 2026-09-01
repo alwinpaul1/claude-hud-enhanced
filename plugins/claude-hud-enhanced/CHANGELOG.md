@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.7.5] - 2026-09-01
+
+### Fixed — the upgrade instructions had the wrong order, and re-broke the thing they fixed
+
+0.7.4 told users to run:
+
+```
+/plugin update claude-hud-enhanced
+/claude-hud-enhanced:setup
+```
+
+That is wrong, and it reinstates the exact bug 0.7.4 fixed. `/plugin update` replaces the files on disk, but a running Claude Code session keeps the slash command **it loaded at startup**. So setup run immediately after an update executes the *old* instructions — including the old escaping guidance — and writes the same statusline that never runs. Claude Code prints `Run /reload-plugins to apply` for exactly this reason.
+
+Observed live: a session updated to 0.7.4, invoked setup, and the loaded command still carried the pre-fix Step 3 text and no Step 3.5, while 0.7.4 on disk had both.
+
+The order is now:
+
+```
+/plugin update claude-hud-enhanced
+/reload-plugins
+/claude-hud-enhanced:setup
+```
+
+### Added — setup now detects that it is stale instead of trusting the user to remember
+
+Documentation that depends on someone reading it in the right order is not a fix. New **Step -1** runs before anything else: setup carries its own version in a `SETUP_COMMAND_VERSION` comment, compares it against the newest version on disk, and **stops without touching `settings.json`** when they differ, telling the user to reload first.
+
+A test pins that embedded version to `plugin.json`. They are the same truth in two languages that no compiler compares — the failure mode this repo already knows well — so a bump that forgets the comment fails the build rather than shipping a guard that silently passes.
+
 ## [0.7.4] - 2026-09-01
 
 ### Fixed — 0.7.3 named three different trees

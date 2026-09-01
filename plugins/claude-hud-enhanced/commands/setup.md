@@ -5,6 +5,48 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 **Note**: Placeholders like `{RUNTIME_PATH}`, `{SOURCE}`, and `{GENERATED_COMMAND}` should be substituted with actual detected values.
 
+## Step -1: Am I the version that is installed? (Run before anything else)
+
+<!-- SETUP_COMMAND_VERSION: 0.7.5 -->
+
+**This command's own version is `0.7.5`**, written in the comment above and kept equal to
+`plugin.json` by a test.
+
+`/plugin update` replaces the files on disk, but a running Claude Code session keeps the
+slash command **it loaded at startup**. So immediately after an update you can be executing
+an *old* setup command against a *new* plugin — and older versions of this file carried an
+escaping bug that wrote a statusline which never ran. Running stale setup silently
+reinstates that bug.
+
+Compare this command's version against the newest version on disk:
+
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+ls -d "$CLAUDE_DIR"/plugins/cache/*/claude-hud-enhanced/*/ 2>/dev/null \
+  | awk -F/ '{ print $(NF-1) }' \
+  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+  | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+```
+
+**Windows (PowerShell)**:
+```powershell
+$claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
+(Get-ChildItem (Join-Path $claudeDir "plugins\cache\*\claude-hud-enhanced\*") -Directory -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } | Sort-Object { [version]$_.Name } -Descending |
+  Select-Object -First 1).Name
+```
+
+**If the printed version does not equal `0.7.5`, STOP.** Do not continue, and do not write
+anything to `settings.json`. Tell the user:
+
+> Your session is running the setup command from an older version, while <printed> is
+> installed on disk. Run `/reload-plugins` (or quit and relaunch Claude Code), then run
+> `/claude-hud-enhanced:setup` again. Continuing now would write the old, broken statusline.
+
+If the versions match, continue to Step 0.
+
+---
+
 ## Step 0: Detect Ghost Installation (Run First)
 
 Check for inconsistent plugin state that can occur after failed installations:
