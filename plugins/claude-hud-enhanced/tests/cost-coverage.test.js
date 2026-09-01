@@ -178,14 +178,53 @@ test('estimateSessionCost prices Claude 5 ids carrying a context-window suffix',
 
 test('estimateSessionCost prices Claude 5 point releases like their base model', () => {
   const tokens = { inputTokens: 1000000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  // Sonnet 5 is promo-priced until SONNET_5_PROMO_END_MS, so this test must pin
+  // the clock like its sibling above. Without it the assertion below was a
+  // countdown: it went red on 2026-09-01 with nobody touching the repo.
+  const options = { now: new Date('2026-08-01T00:00:00.000Z') };
 
-  const opus51 = estimateSessionCost({ model: { display_name: 'Opus 5.1' } }, tokens);
+  const opus51 = estimateSessionCost({ model: { display_name: 'Opus 5.1' } }, tokens, options);
   assert.ok(opus51);
   assert.equal(opus51.inputUsd, 5);
 
-  const sonnet51 = estimateSessionCost({ model: { display_name: 'Sonnet 5.1' } }, tokens);
+  const sonnet51 = estimateSessionCost({ model: { display_name: 'Sonnet 5.1' } }, tokens, options);
   assert.ok(sonnet51);
   assert.equal(sonnet51.inputUsd, 2);
+});
+
+test('estimateSessionCost moves Sonnet 5 off promo pricing at the boundary', () => {
+  // The promo end is a hard date in cost.ts and nothing covered it, which is why
+  // its arrival read as an unexplained CI failure rather than expected behaviour.
+  const tokens = { inputTokens: 1000000, outputTokens: 1000000, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  const lastPromoInstant = { now: new Date('2026-08-31T23:59:59.999Z') };
+  const firstFullPriceInstant = { now: new Date('2026-09-01T00:00:00.000Z') };
+
+  for (const name of ['Sonnet 5', 'Sonnet 5.1']) {
+    const promo = estimateSessionCost({ model: { display_name: name } }, tokens, lastPromoInstant);
+    assert.ok(promo, `${name} must resolve pricing`);
+    assert.equal(promo.inputUsd, 2, `${name} stays promo-priced up to the boundary`);
+    assert.equal(promo.outputUsd, 10, `${name} stays promo-priced up to the boundary`);
+
+    const full = estimateSessionCost({ model: { display_name: name } }, tokens, firstFullPriceInstant);
+    assert.ok(full, `${name} must resolve pricing`);
+    assert.equal(full.inputUsd, 3, `${name} reverts to list price at the boundary`);
+    assert.equal(full.outputUsd, 15, `${name} reverts to list price at the boundary`);
+  }
+});
+
+test('no Sonnet 5 pricing assertion depends on the wall clock', async () => {
+  // The class, not the instance. A promo-priced assertion that omits `now` is a
+  // test with an expiry date on it — exactly how CI went red unattended.
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('./cost-coverage.test.js', import.meta.url), 'utf8');
+
+  const unpinned = source
+    .split('\n')
+    .map((line, index) => [index + 1, line.trim()])
+    .filter(([, line]) => /estimateSessionCost\(.*display_name: (?:name|'Sonnet 5(?:\.\d+)?')/.test(line))
+    .filter(([, line]) => !/tokens,\s*[A-Za-z]/.test(line));
+
+  assert.deepEqual(unpinned, [], `these Sonnet 5 pricing calls pass no clock, so they expire: ${JSON.stringify(unpinned)}`);
 });
 
 test('estimateSessionCost prices Sonnet 3.7', () => {
