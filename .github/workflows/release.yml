@@ -18,6 +18,11 @@ jobs:
           node-version: 20.x
           cache: npm
           cache-dependency-path: plugins/claude-hud-enhanced/package-lock.json
+      - name: Release guard
+        working-directory: plugins/claude-hud-enhanced
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-release-tag.mjs
       - name: Install, build, and test
         working-directory: plugins/claude-hud-enhanced
         run: |

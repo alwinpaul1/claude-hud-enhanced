@@ -35,6 +35,35 @@ That's it. If the HUD still isn't there after the restart, run `/claude-hud-enha
 again — it re-runs the command stored in your `settings.json` and prints the error that
 Claude Code hides.
 
+## Upgrading, and fixing a HUD that never appeared
+
+```
+/plugin update claude-hud-enhanced
+/claude-hud-enhanced:setup
+```
+
+**Both commands, then restart.** The update replaces the plugin, but it cannot repair a
+`statusLine` already written into your `settings.json` — only re-running setup rewrites
+that. If a previous setup wrote a broken command, updating alone leaves it broken.
+
+Versions before 0.7.4 could write a statusline that never ran and still report success.
+The command died in a subshell, and Claude Code discards statusline stderr, so the only
+symptom was a HUD that never appeared. If that happened to you, the two commands above
+fix it.
+
+To see the error Claude Code hides:
+
+```bash
+node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).statusLine.command)' \
+  "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" > /tmp/hud.sh
+sh /tmp/hud.sh < /dev/null
+```
+
+Empty output means the statusline is broken no matter what the exit code says — a
+statusline that writes nothing to stdout renders nothing.
+
+---
+
 ---
 
 ## What is Claude HUD Enhanced?

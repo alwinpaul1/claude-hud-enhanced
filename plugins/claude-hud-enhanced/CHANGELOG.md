@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.7.4] - 2026-09-01
+
+### Fixed — 0.7.3 named three different trees
+
+v0.7.3 was tagged, its Release workflow failed at `npm test`, and the tag was then force-moved twice as follow-up fixes landed. Three distinct commits declared version `0.7.3`, and all three sat on the default branch.
+
+The reasoning that allowed it was wrong on both counts. "Safe because the release never published" assumed consumers resolve from GitHub Releases — they do not. The marketplace clones the **default branch**, so every one of those trees was live under the same version string. Anyone who ran `/plugin update` during that window holds a `0.7.3` that no longer exists anywhere, and no number distinguishes it from the current one.
+
+This release is that content under an honest version. **0.7.3 is retired; do not install it.** `/plugin update claude-hud-enhanced` moves you to 0.7.4.
+
+### Added — a release guard, because nothing checked either invariant
+
+`scripts/check-release-tag.mjs` runs in the Release workflow **before** build and test, and enforces two things nothing previously compared:
+
+- **The tag must name the version it ships.** `v0.9.9` could be pushed at a 0.7.3 tree and would have published under a version the plugin does not declare.
+- **A released version is immutable.** Re-cutting a version that already has a published release fails the build and tells you to bump instead.
+
+Order is part of the fix: running the guard after `npm test` means a red suite masks a version reuse, which is the exact sequence that produced this bug. A test pins the guard's position in the workflow.
+
+The guard **fails when it cannot verify** rather than passing. A guard that goes green when the API call fails reports an invariant it never tested.
+
+### Fixed — the README did not tell an affected user what to do
+
+A user whose HUD never appeared had nothing to read. New "Upgrading, and fixing a HUD that never appeared" section states plainly that `/plugin update` alone does **not** repair a broken `statusLine` already in `settings.json` — only re-running `/claude-hud-enhanced:setup` rewrites that — and gives the one-liner that prints the error Claude Code hides.
+
 ## [0.7.3] - 2026-09-01
 
 ### Fixed — setup could write a statusline that never ran, and report success
