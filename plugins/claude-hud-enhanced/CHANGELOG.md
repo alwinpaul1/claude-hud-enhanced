@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.7.3] - 2026-09-01
+
+### Fixed — setup could write a statusline that never ran, and report success
+
+A fresh install could finish `/claude-hud-enhanced:setup`, report success, and leave the user with a HUD that never appeared — not on restart, not ever. Three things combined to make it both reachable and invisible.
+
+**The wrong instruction.** Step 3 told the agent that the saved `settings.json` "should contain `\\$(NF-1)` and `\\$0`". Decoded from JSON that is `\$(NF-1)`, and awk rejects it:
+
+```
+awk: syntax error at source line 1
+```
+
+`plugin_dir` then resolves to the empty string, the runtime is handed a bare `src/index.ts`, and it exits with `Module not found`. The guidance also described a command shape that Step 1 no longer generates — the `$` signs sit inside single quotes and need no escaping at all — so an agent following it was being told to break a working command.
+
+**Nothing checked the file that was written.** Step 2 tested the command *as composed in memory*; Step 3 wrote it through a JSON encoder into `settings.json`. Those are two different strings, and nothing ever ran the second one. New **Step 3.5** reads `statusLine.command` back out of the file and executes exactly that, treating empty stdout as a failed setup regardless of exit code.
+
+**The failure is silent by construction.** Claude Code discards statusline **stderr**, so `awk: syntax error` and `Module not found` never reach the user. A statusline that writes nothing to stdout renders nothing, and a broken HUD is indistinguishable from a HUD that was never configured. Step 3.5 captures stderr explicitly and prints it, with a table mapping each signature to its cause.
+
+### Fixed — the README contradicted the setup command about restarting
+
+`README.md` and `CLAUDE.README.md` both said "The HUD appears immediately — no restart needed." `commands/setup.md` says the opposite twice, and instructs setup to confirm a restart happened before it even asks whether the HUD works. The statusline is read at startup, so the HUD cannot appear in the session that configured it. Both READMEs now carry a Step 4 telling the user to restart, and a test fails if that claim ever comes back.
+
+### Added — tests that can actually fail
+
+`tests/setup-command.test.js` grew from 1 test to 11. It executes the documented awk fragment through real `awk`, round-trips the generated command through `JSON.stringify`/`parse` and asserts it survives byte for byte, and pins the grep separator as `[[:space:]]`.
+
+Two of them exist to keep the others honest:
+
+- A **mutation** test asserting `awk` *rejects* `\$(NF-1)`. Without it, every escaping assertion above would pass against a broken command.
+- The grep separator is pinned by reading `setup.md`, not by running `grep` — because macOS `/usr/bin/grep` **does** expand `\t` while GNU grep does not. Asserting it by execution would pass on the maintainer's machine and hide a Linux-only break.
+
+`tests/version-homes.test.js` is new: it pins `package.json`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` to one version, and requires a CHANGELOG entry for it. A stale marketplace entry makes `/plugin update` a silent no-op — the user updates, it reports success, and they keep running the old code.
+
+### Upgrading
+
+`/plugin update claude-hud-enhanced`, then **re-run `/claude-hud-enhanced:setup`**. The update ships the corrected setup command, but it cannot repair a broken `statusLine` already sitting in your `settings.json` — only re-running setup rewrites that. Then restart Claude Code.
+
 ## [0.7.2] - 2026-08-27
 
 ### Fixed — usage numbers went stale during long conversations, and stayed stale for 3 minutes when idle

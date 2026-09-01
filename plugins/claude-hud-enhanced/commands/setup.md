@@ -719,8 +719,26 @@ terminal: the session-duration clock ticks, cross-terminal usage sync
 window rollover, and the all-idle OAuth refresher can trigger at all.
 
 **JSON safety**: Write `settings.json` with a real JSON serializer or editor API, not manual string concatenation.
-If you must inspect the saved JSON manually, the embedded bash command must preserve escaped backslashes inside the awk fragment.
-For example, the saved JSON should contain `\\$(NF-1)` and `\\$0`, not `\$(NF-1)` and `\$0`.
+
+**Do not "fix" the escaping by hand.** In the generated command the awk fragment is
+`{ print $(NF-1) "\t" $(0) }` and the `$` signs carry **no backslash**. They sit inside
+single quotes in the shell command, so nothing expands them and nothing needs escaping.
+The only backslashes in the whole command are the `\t` separator and the `\.` in the grep
+pattern, and a real serializer emits those correctly on its own.
+
+Putting a backslash before `$` breaks the HUD silently and completely:
+
+```
+{ print \$(NF-1) "\t" \$0 }   ->  awk: syntax error at source line 1
+```
+
+awk dies, `plugin_dir` resolves to the empty string, the runtime is handed a bare
+`src/index.ts`, and it exits with `Module not found`. Claude Code discards statusline
+**stderr**, so the only symptom is a statusline that never appears — after setup has
+already reported success. Step 3.5 exists to catch precisely this.
+
+Serialize once, then verify by **executing what is on disk** (Step 3.5). Never verify by
+eyeballing backslashes in the file.
 
 **Windows PowerShell 5.1 BOM**: on Windows PowerShell 5.1 (the default shell on Windows 10/11), `Set-Content -Encoding UTF8` and `Out-File -Encoding UTF8` emit a UTF-8 BOM (`EF BB BF`). RFC 8259 §8.1 forbids BOM in JSON. PowerShell 7+ added `-Encoding utf8NoBOM`, but PS 5.1 did not. Use `[System.IO.File]::WriteAllText` with `New-Object System.Text.UTF8Encoding $false` to write UTF-8 without a BOM from both PS versions:
 
@@ -735,9 +753,63 @@ Verify the first bytes are `7B 0D 0A` (`{` + CRLF) or `7B 0A` (`{` + LF), not `E
 ```
 
 
-After successfully writing the config, tell the user:
+## Step 3.5: Run the command that is actually on disk (do not skip)
 
-> ✅ Config written. **Please restart Claude Code now** — quit and run `claude` again in your terminal.
+Step 2 tested the command **as you composed it in memory**. Step 3 wrote it through a
+JSON encoder into a file. Those are two different strings, and every silent "setup said
+done but no HUD ever appeared" report traces to the gap between them. Close it by reading
+the command back out of `settings.json` and running that.
+
+**macOS/Linux**:
+```bash
+SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+"{RUNTIME_PATH}" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).statusLine.command)' "$SETTINGS" > "$TMPDIR/hud-verify.sh"
+COLUMNS=120 sh "$TMPDIR/hud-verify.sh" < /dev/null > "$TMPDIR/hud-verify.out" 2> "$TMPDIR/hud-verify.err"
+echo "exit=$?"
+echo "--- stdout (this is what the statusline shows) ---"; cat "$TMPDIR/hud-verify.out"
+echo "--- stderr (Claude Code throws this away at runtime) ---"; cat "$TMPDIR/hud-verify.err"
+rm -f "$TMPDIR/hud-verify.sh" "$TMPDIR/hud-verify.out" "$TMPDIR/hud-verify.err"
+```
+
+**Windows (PowerShell)**:
+```powershell
+$claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
+$cmd = (Get-Content (Join-Path $claudeDir "settings.json") -Raw | ConvertFrom-Json).statusLine.command
+$out = & cmd /c $cmd 2>&1
+Write-Host "exit=$LASTEXITCODE"; $out
+```
+
+### Reading the result
+
+| stdout | exit | Meaning | Action |
+|---|---|---|---|
+| non-empty | `0` | Config on disk is good | Continue |
+| **empty** | anything | Config on disk is broken | **Do not report success.** Diagnose from stderr, rewrite Step 3, re-run this step |
+
+On the very first run against a fresh config the stdout may be a
+`[claude-hud-enhanced] Initializing...` notice rather than HUD lines. That still counts as
+a pass — non-empty stdout with exit `0`. Run it a second time to see the real HUD.
+
+**stdout is the only thing that counts.** A statusline that prints nothing to stdout
+renders nothing, whatever it wrote to stderr and whatever its exit code was — Claude Code
+discards both. So an empty stdout here is a failed setup even if the command "looks fine".
+
+Common stderr signatures and what they mean:
+
+| stderr | Cause | Fix |
+|---|---|---|
+| `awk: syntax error at source line 1` | A backslash was added before `$` in the awk fragment | Re-serialize per Step 3; do not hand-escape |
+| `Module not found "src/index.ts"` | `plugin_dir` came back empty — the pipeline that resolves it failed upstream | Run the Step 1 glob on its own and see which stage returns nothing |
+| `warning: stray \ before t` | `\t` reached grep as a literal escape | The pattern must use `[[:space:]]`, not `\t` |
+| `command not found` | The runtime path is stale (nvm/mise/asdf shim moved) | Re-detect with `command -v`, resolve with `realpath` |
+
+Only once stdout carries HUD lines may you tell the user setup succeeded.
+
+---
+
+After the verification above passes, tell the user:
+
+> ✅ Config written and verified. **Please restart Claude Code now** — quit and run `claude` again in your terminal.
 > Once restarted, run `/claude-hud-enhanced:setup` again to complete Step 4 and verify the HUD is working.
 
 **Windows note**: Keep the restart guidance separate from runtime installation guidance.

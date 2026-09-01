@@ -26,7 +26,14 @@ Inside a Claude Code instance, run the following commands:
 /claude-hud-enhanced:setup
 ```
 
-Done! The HUD appears immediately — no restart needed.
+**Step 4: Restart Claude Code**
+
+Quit Claude Code and run `claude` again. The statusline is read at startup, so the HUD
+cannot appear in the session that configured it.
+
+That's it. If the HUD still isn't there after the restart, run `/claude-hud-enhanced:setup`
+again — it re-runs the command stored in your `settings.json` and prints the error that
+Claude Code hides.
 
 ---
 
