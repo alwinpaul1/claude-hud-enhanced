@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.6] - 2026-09-05
+
+### Fixed — the OAuth usage poll never ran when the HUD is launched from `src/index.ts`
+
+`refresherScriptPath()` looked for `refresh-usage.js` next to the running `index`
+file. The statusline entry that `setup` writes runs `src/index.ts` under bun, so the
+lookup landed on `src/refresh-usage.js`, which does not exist (`dist/refresh-usage.js`
+does). That branch was a deliberate silent no-op, so `oauthUsagePoll` degraded to
+stdin-only for every such install: the 5h bar stayed empty and the weekly number
+froze at whatever the last chatting session had reported (observed live: a snapshot
+with `five_hour: null`, `source: "stdin"`, 2.8 h old, while the usage API said 24%).
+
+The lookup now tries `<dir>/refresh-usage.js`, then `<dir>/../dist/refresh-usage.js`,
+then `<dir>/refresh-usage.ts` (bun runs TypeScript directly), and `canRefresh` uses the
+same resolution instead of a separate `existsSync` on the old path.
+
 ## [0.7.5] - 2026-09-01
 
 ### Fixed — the upgrade instructions had the wrong order, and re-broke the thing they fixed

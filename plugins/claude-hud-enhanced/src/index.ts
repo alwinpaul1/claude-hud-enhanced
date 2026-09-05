@@ -70,17 +70,25 @@ export type MainDeps = {
  * docs/oauth-usage-poll-handoff.md; if it is absent this is a silent no-op, so
  * the oauthUsagePoll flag degrades gracefully to plain stdin behavior.
  */
-function refresherScriptPath(): string {
-  return nodePath.join(
-    nodePath.dirname(fileURLToPath(import.meta.url)),
-    "refresh-usage.js",
-  );
+function refresherScriptPath(): string | null {
+  const here = nodePath.dirname(fileURLToPath(import.meta.url));
+  // Why three candidates: the statusLine entry runs `src/index.ts` under bun
+  // (the README's install line), so `here` is src/ and the sibling
+  // `refresh-usage.js` does not exist there — the old single lookup silently
+  // disabled the OAuth poll for every such install (5h bar missing, weekly
+  // frozen). dist/ is preferred when built; the .ts source is fine under bun.
+  const candidates = [
+    nodePath.join(here, "refresh-usage.js"),
+    nodePath.join(here, "..", "dist", "refresh-usage.js"),
+    nodePath.join(here, "refresh-usage.ts"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 function spawnUsageRefresher(_homeDir: string): void {
   try {
     const script = refresherScriptPath();
-    if (!existsSync(script)) return; // hand-off file not installed yet
+    if (!script) return; // hand-off file not installed yet
     const child = spawn(process.execPath, [script], {
       detached: true,
       stdio: "ignore",
@@ -275,7 +283,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
           spawnRefresher: spawnUsageRefresher,
           // Skip lock churn entirely while the owner-supplied refresher script
           // is absent (see docs/oauth-usage-poll-handoff.md).
-          canRefresh: () => existsSync(refresherScriptPath()),
+          canRefresh: () => refresherScriptPath() !== null,
         });
       }
 

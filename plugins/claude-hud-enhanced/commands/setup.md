@@ -7,9 +7,9 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 ## Step -1: Am I the version that is installed? (Run before anything else)
 
-<!-- SETUP_COMMAND_VERSION: 0.7.5 -->
+<!-- SETUP_COMMAND_VERSION: 0.7.6 -->
 
-**This command's own version is `0.7.5`**, written in the comment above and kept equal to
+**This command's own version is `0.7.6`**, written in the comment above and kept equal to
 `plugin.json` by a test.
 
 `/plugin update` replaces the files on disk, but a running Claude Code session keeps the
@@ -36,7 +36,7 @@ $claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-
   Select-Object -First 1).Name
 ```
 
-**If the printed version does not equal `0.7.5`, STOP.** Do not continue, and do not write
+**If the printed version does not equal `0.7.6`, STOP.** Do not continue, and do not write
 anything to `settings.json`. Tell the user:
 
 > Your session is running the setup command from an older version, while <printed> is
