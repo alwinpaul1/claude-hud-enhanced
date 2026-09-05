@@ -150,7 +150,9 @@ function truncateToWidth(str, maxWidth) {
     }
     const suffix = maxWidth >= 3 ? '...' : '.'.repeat(maxWidth);
     const keep = Math.max(0, maxWidth - suffix.length);
-    const sliced = sliceVisible(str, keep);
+    // A cut that lands right after a segment separator leaves a dangling "|"
+    // at the edge of the pane; drop trailing separators and spaces first.
+    const sliced = sliceVisible(str, keep).replace(/(?:\s|\||│)+(?:\x1b\[[0-9;]*m)*$/u, '');
     // Close the hyperlink (if any) before the ellipsis so the suffix renders
     // as plain text rather than as part of the truncated link.
     return `${sliced}${closeOpenHyperlink(sliced)}${suffix}${RESET}`;

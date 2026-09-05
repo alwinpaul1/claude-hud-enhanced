@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.7] - 2026-09-05
+
+### Fixed — a truncated line no longer ends in a dangling separator
+
+When a line is cut to the terminal width right after a ` | ` separator, the
+separator was left hanging at the pane edge. Trailing separators and spaces
+are now dropped before the ellipsis.
+
 ## [0.7.6] - 2026-09-05
 
 ### Fixed — the OAuth usage poll never ran when the HUD is launched from `src/index.ts`
