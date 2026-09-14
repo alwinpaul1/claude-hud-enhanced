@@ -89,6 +89,52 @@ test('slow daemon: returns null WITHOUT unlinking the live socket or spawning', 
   server.close();
 });
 
+test('starved client: a connect that outlives the connect timeout does NOT unlink the live socket or respawn', async () => {
+  // The leak seen on 2026-09-14: a 16 GB Mac in swap thrash. The statusline
+  // client is a fresh process that gets descheduled for longer than
+  // CONNECT_TIMEOUT_MS between net.connect() and its next event-loop turn.
+  // libuv runs the timers phase before the poll phase, so the connect timer
+  // fires first even though the kernel completed the connect long ago. The
+  // old client read that as "nothing is listening", rm'd the LIVE daemon's
+  // socket and spawned another; the orphan idled 10 minutes. One per
+  // minute (spawn lock) × 10 min = ~10 resident bun runtimes at all times.
+  const home = makeHome();
+  const socketPath = getIpcPath(home);
+  const server = await stubServer(socketPath, () => undefined); // alive, never responds
+  const { ino: liveIno } = fs.statSync(socketPath);
+  const spawns = [];
+  // Phase matters. net.connect() completes synchronously on a unix socket and
+  // 'connect' is delivered from the POLL phase; the connect timer fires from
+  // the TIMERS phase. Starting from the check phase (setImmediate) means the
+  // loop's next stop after we unblock is timers, so the timer is guaranteed
+  // to win — which is the starved-client order. Started from a timer callback
+  // (as node:test does when the previous test ended on a timeout) the loop
+  // would visit poll first and the test would quietly pass on old code.
+  const pending = await new Promise((resolve) =>
+    setImmediate(() => {
+      const p = tryDaemonRender(STDIN, '/entry.js', {
+        homeDir: home,
+        connectTimeoutMs: 20,
+        responseTimeoutMs: 200,
+        spawnDaemon: (p) => spawns.push(p),
+      });
+      // Starve our own event loop past the connect timer. net.connect() has
+      // already run synchronously inside tryDaemonRender.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
+      resolve(p);
+    }),
+  );
+  try {
+    const out = await pending;
+    assert.equal(out, null, 'renders inline this tick');
+    assert.deepEqual(spawns, [], 'a slow connect is not evidence the daemon is dead');
+    assert.equal(fs.existsSync(socketPath), true, 'live socket left alone');
+    assert.equal(fs.statSync(socketPath).ino, liveIno, 'same socket, not a replacement');
+  } finally {
+    server.close();
+  }
+});
+
 test('malformed daemon response: returns null (inline fallback)', async () => {
   const home = makeHome();
   const socketPath = getIpcPath(home);

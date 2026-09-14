@@ -40,11 +40,20 @@ export const DAEMON_IDLE_EXIT_MS = 10 * 60_000;
  * so by the time this fires the requester has already fallen back inline;
  * this timeout exists to unblock the QUEUE, not to answer the client. */
 export const HANDLER_TIMEOUT_MS = 2_000;
+/** How often the daemon confirms the socket at its path is still the one it
+ * bound. A client that decides we are dead unlinks that path and spawns a
+ * successor; from then on nothing can reach us, the idle timer is never
+ * touched again, and without this check we sit resident for the full
+ * DAEMON_IDLE_EXIT_MS. The fixed client no longer does that on a mere slow
+ * connect, but an older client on another profile, or a tmp cleaner, still
+ * can — so the daemon owns its own exit rather than trusting every caller. */
+export const SOCKET_CHECK_MS = 30_000;
 
 export interface DaemonOptions {
   socketPath?: string;
   idleTimeoutMs?: number;
   handlerTimeoutMs?: number;
+  socketCheckMs?: number;
   pluginVersion?: string;
   /** Injected in tests: turn one request into rendered output. */
   handleRequest?: (request: DaemonRequest) => Promise<string>;
@@ -127,6 +136,7 @@ export function runDaemon(options: DaemonOptions = {}): void {
   const socketPath = options.socketPath ?? getIpcPath(homeDir);
   const idleTimeoutMs = options.idleTimeoutMs ?? DAEMON_IDLE_EXIT_MS;
   const handlerTimeoutMs = options.handlerTimeoutMs ?? HANDLER_TIMEOUT_MS;
+  const socketCheckMs = options.socketCheckMs ?? SOCKET_CHECK_MS;
   const pluginVersion = options.pluginVersion ?? getPluginVersion();
   const handleRequest = options.handleRequest ?? defaultHandleRequest;
   const exit = options.exit ?? ((code: number) => process.exit(code));
@@ -134,15 +144,34 @@ export function runDaemon(options: DaemonOptions = {}): void {
 
   let shuttingDown = false;
   let removeProcessListeners = (): void => {};
-  const cleanup = (): void => {
+  // The inode this daemon bound, learned in the listen callback. Ownership
+  // of the path is decided by comparing against it: a successor that bound
+  // the same path after a client unlinked ours has a different inode.
+  let boundIno: number | bigint | undefined;
+  const ownsSocket = (): boolean => {
+    if (boundIno === undefined) return false;
     try {
-      fs.rmSync(socketPath, { force: true });
+      return fs.statSync(socketPath).ino === boundIno;
     } catch {
-      /* best effort */
+      return false; // gone, or unreadable — either way not something to rm
+    }
+  };
+  /** Remove the socket and pid file, but only the ones that are ours. A
+   * successor may already hold the path (a client decided we were dead and
+   * spawned it); deleting its socket would strand IT the same way. */
+  const cleanup = (): void => {
+    if (ownsSocket()) {
+      try {
+        fs.rmSync(socketPath, { force: true });
+      } catch {
+        /* best effort */
+      }
     }
     if (pidPath) {
       try {
-        fs.rmSync(pidPath, { force: true });
+        if (fs.readFileSync(pidPath, 'utf8').trim() === String(process.pid)) {
+          fs.rmSync(pidPath, { force: true });
+        }
       } catch {
         /* best effort */
       }
@@ -154,16 +183,43 @@ export function runDaemon(options: DaemonOptions = {}): void {
     debug('daemon exiting with code', code);
     removeProcessListeners();
     clearTimeout(idleTimer);
+    clearInterval(socketCheckTimer);
+    // Closing a bound pipe server unlinks its path. Only do that while the
+    // path is still ours; an orphan that idles out or crashes after a
+    // successor took the path must leave the successor reachable.
     try {
-      server.close();
+      if (ownsSocket()) server.close();
+      else server.unref();
     } catch {
       /* best effort */
     }
     cleanup();
     exit(code);
   };
+  /** Exit without touching the socket or pid file: they are not ours any
+   * more. Shared by the EADDRINUSE loser and the orphaned-socket check.
+   * Deliberately NO server.close(): closing a bound pipe server makes libuv
+   * unlink its path, and the path now belongs to the successor. process.exit
+   * skips handle teardown, so the file survives; unref only matters when a
+   * test injects `exit` and the loop has to be allowed to drain. */
+  const stepAside = (why: string): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    debug(why);
+    removeProcessListeners();
+    clearTimeout(idleTimer);
+    clearInterval(socketCheckTimer);
+    try {
+      server.unref();
+    } catch {
+      /* best effort */
+    }
+    exit(0);
+  };
 
   let idleTimer: NodeJS.Timeout = setTimeout(() => shutdown(0), idleTimeoutMs);
+  // Armed in the listen callback once the bound socket's inode is known.
+  let socketCheckTimer: NodeJS.Timeout | undefined;
   const touchIdle = (): void => {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => shutdown(0), idleTimeoutMs);
@@ -275,11 +331,7 @@ export function runDaemon(options: DaemonOptions = {}): void {
       // Another daemon is (probably) alive on this socket — it wins; exit
       // quietly. If it was actually a stale socket, the next client's
       // connect failure unlinks it and respawns us.
-      debug('socket in use — another daemon holds this profile');
-      shuttingDown = true;
-      removeProcessListeners();
-      clearTimeout(idleTimer);
-      exit(0); // deliberately NO socket/pid cleanup: they belong to the winner
+      stepAside('socket in use — another daemon holds this profile');
       return;
     }
     debug('server error:', err.message);
@@ -340,5 +392,32 @@ export function runDaemon(options: DaemonOptions = {}): void {
       }
     }
     debug('daemon listening on', socketPath, 'version', pluginVersion);
+
+    // Remember which inode we bound, then keep confirming it is still the
+    // one at our path. Gone or replaced means a client gave up on us and a
+    // successor may already own the path: step aside, and do not rm what is
+    // now theirs. A stat failure other than ENOENT is left alone — it says
+    // nothing about ownership, and exiting on it would turn a flaky
+    // filesystem into a daemon that never stays up.
+    try {
+      boundIno = fs.statSync(socketPath).ino;
+    } catch {
+      return; // cannot establish ownership; the idle timer still bounds us
+    }
+    socketCheckTimer = setInterval(() => {
+      let current: number | bigint | undefined;
+      try {
+        current = fs.statSync(socketPath).ino;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return;
+      }
+      if (current !== boundIno) {
+        stepAside(current === undefined
+          ? 'socket unlinked from under us — a client gave up; stepping aside'
+          : 'socket replaced by a successor — stepping aside');
+      }
+    }, socketCheckMs);
+    // Never the reason the process stays alive: the idle timer owns that.
+    socketCheckTimer.unref();
   });
 }

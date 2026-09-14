@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.7.8] - 2026-09-14
+
+### Fixed — daemon mode no longer leaks a bun process a minute on a loaded machine
+
+Seen on a 16 GB Mac in swap thrash: thirteen orphaned `bun … --daemon`
+processes, a fresh one every minute, each idling ten minutes. Two defects:
+
+- **Client.** `CONNECT_TIMEOUT_MS` (50 ms) expiring was classified as
+  "nothing is listening", so the client `rm`'d the *live* daemon's socket
+  and spawned a successor. But a unix-socket connect never *waits* for a
+  dead peer — the kernel refuses it instantly — so a timeout only ever
+  meant the statusline process itself was starved (libuv runs the timers
+  phase before the poll phase that delivers the already-completed
+  connect). A connect timeout is now `failed`, like a slow response: the
+  tick renders inline and the socket is left alone. Only `ENOENT` /
+  `ECONNREFUSED` unlink and respawn.
+- **Daemon.** Once its socket was pulled, nothing could reach it, so its
+  idle timer was never touched and it sat resident for the full
+  `DAEMON_IDLE_EXIT_MS`. It now stats its socket every `SOCKET_CHECK_MS`
+  (30 s) and compares the inode it bound; gone or replaced, it steps aside
+  without removing the successor's socket or pid file. This bounds the
+  damage even from an older client on another profile.
+- **Daemon, on every exit.** `shutdown()` closed the server and removed the
+  socket path unconditionally, and closing a bound pipe server makes libuv
+  unlink its path — so an orphan that idled out or crashed after a
+  successor had bound the same path deleted the *successor's* socket, and
+  the leak started over. Socket and pid cleanup now check ownership first
+  (inode match, pid-file content match) and leave anything else alone.
+
+Regression tests: `tests/daemon-client.test.js` starves its own event loop
+past the connect timer against a live stub daemon; `tests/daemon.test.js`
+unlinks a running daemon's socket, binds a successor, and checks the loser
+exits (by the check, and by idle) with the successor's socket intact.
+
 ## [0.7.7] - 2026-09-05
 
 ### Fixed — a truncated line no longer ends in a dangling separator

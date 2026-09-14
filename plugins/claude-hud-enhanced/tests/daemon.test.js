@@ -16,7 +16,14 @@ function tmpSocketPath() {
 async function waitForSocket(socketPath, ms = 2000) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (fs.existsSync(socketPath)) return;
+    if (fs.existsSync(socketPath)) {
+      // The file appears when listen() binds, synchronously inside
+      // runDaemon(); the 'listening' callback (pid file, socket-ownership
+      // check) runs on the next tick. Yield once so callers observe a daemon
+      // that has finished starting, not one caught between the two.
+      await new Promise((r) => setImmediate(r));
+      return;
+    }
     await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error('daemon never started listening');
@@ -116,6 +123,82 @@ test('idle timeout exits cleanly and removes the socket', async () => {
   await new Promise((r) => setTimeout(r, 300));
   assert.deepEqual(exits, [0]);
   assert.equal(fs.existsSync(socketPath), false);
+});
+
+test('socket pulled from under it: the daemon exits within one check, and leaves a successor\'s socket alone', async () => {
+  // Second half of the 2026-09-14 leak. Even with the client fixed, an older
+  // client (another profile still on 0.7.7, a tmp cleaner) can unlink a live
+  // daemon's socket. Nothing can reach it any more, so its idle timer never
+  // gets touched and it sits resident for the full 10 minutes. The daemon
+  // must notice its socket is gone — or replaced — and get out of the way.
+  const socketPath = tmpSocketPath();
+  const exits = [];
+  runDaemon({
+    socketPath,
+    idleTimeoutMs: 10_000, // far longer than the test: exit must come from the check
+    socketCheckMs: 60,
+    handleRequest: async () => 'x',
+    exit: (code) => exits.push(code),
+  });
+  await waitForSocket(socketPath);
+  fs.rmSync(socketPath); // what the old client did
+  // A successor daemon binds the same path; the loser must not rm it.
+  const successor = net.createServer();
+  await new Promise((r) => successor.listen(socketPath, r));
+  try {
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(exits, [0], 'orphaned daemon exits on its next socket check');
+    assert.equal(fs.existsSync(socketPath), true, "successor's socket survives the loser's exit");
+  } finally {
+    successor.close(); // a failed assertion must not leave a handle holding the runner open
+  }
+});
+
+test('an orphan that idles out after a successor took the path does not unlink the successor', async () => {
+  // shutdown() closes the server, and closing a bound pipe server makes
+  // libuv unlink the path. That deleted the SUCCESSOR's socket whenever an
+  // orphan reached its idle exit (or crashed) after being replaced.
+  const socketPath = tmpSocketPath();
+  const exits = [];
+  runDaemon({
+    socketPath,
+    idleTimeoutMs: 150,
+    socketCheckMs: 10_000, // never fires in this test: the exit must come from idle
+    handleRequest: async () => 'x',
+    exit: (code) => exits.push(code),
+  });
+  await waitForSocket(socketPath);
+  fs.rmSync(socketPath);
+  const successor = net.createServer();
+  await new Promise((r) => successor.listen(socketPath, r));
+  try {
+    await new Promise((r) => setTimeout(r, 350));
+    assert.deepEqual(exits, [0], 'idle exit still happens');
+    assert.equal(fs.existsSync(socketPath), true, "successor's socket survives the orphan's idle exit");
+  } finally {
+    successor.close();
+  }
+});
+
+test('socket check is a no-op while the socket is still its own', async () => {
+  const socketPath = tmpSocketPath();
+  const exits = [];
+  runDaemon({
+    socketPath,
+    idleTimeoutMs: 400,
+    socketCheckMs: 30,
+    handleRequest: async () => 'x',
+    exit: (code) => exits.push(code),
+  });
+  await waitForSocket(socketPath);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.deepEqual(exits, [], 'several checks passed; still serving');
+  const res = await sendRequest(socketPath, makeRequest());
+  assert.equal(res.output, 'x');
+  // The ordinary idle exit still owns its socket and still removes it.
+  await new Promise((r) => setTimeout(r, 600));
+  assert.deepEqual(exits, [0]);
+  assert.equal(fs.existsSync(socketPath), false, 'own socket cleaned up on idle exit');
 });
 
 test('handler failure responds with null output (client falls back inline)', async () => {

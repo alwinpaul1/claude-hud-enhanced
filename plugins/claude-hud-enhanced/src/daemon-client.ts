@@ -26,7 +26,7 @@ export const RESPONSE_TIMEOUT_MS = 500;
 
 type RequestOutcome =
   | { kind: 'ok'; output: string }
-  | { kind: 'conn-error' } // no daemon there (ENOENT/ECONNREFUSED/connect timeout)
+  | { kind: 'conn-error' } // nothing is listening: the kernel said so (ENOENT/ECONNREFUSED)
   | { kind: 'failed' }; // daemon alive but slow/broken — do NOT unlink its socket
 
 export interface DaemonClientDeps {
@@ -69,7 +69,19 @@ function requestOnce(
       return;
     }
 
-    connectTimer = setTimeout(() => finish({ kind: 'conn-error' }, socket), connectTimeoutMs);
+    // A connect TIMEOUT is `failed`, never `conn-error`. On a unix socket the
+    // kernel answers "nobody is listening" instantly, as an error; it never
+    // makes us wait for it. So a connect that hasn't reported back in time
+    // says nothing about the daemon and everything about THIS process being
+    // starved: libuv runs the timers phase before the poll phase, and a
+    // fresh statusline process that was descheduled for longer than
+    // connectTimeoutMs finds the timer due before the already-completed
+    // connect gets delivered. Treating that as "dead" unlinked a LIVE
+    // daemon's socket and spawned another, once a minute, each orphan
+    // idling ten minutes (2026-09-14, a 16 GB Mac in swap thrash: ~10 bun
+    // runtimes resident, permanently). Give up on the tick, leave the
+    // socket alone.
+    connectTimer = setTimeout(() => finish({ kind: 'failed' }, socket), connectTimeoutMs);
     overallTimer = setTimeout(() => finish({ kind: 'failed' }, socket), responseTimeoutMs);
 
     // An error BEFORE 'connect' means nothing is listening (ENOENT/ECONNREFUSED)

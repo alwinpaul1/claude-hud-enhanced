@@ -20,10 +20,19 @@ export declare const DAEMON_IDLE_EXIT_MS: number;
  * so by the time this fires the requester has already fallen back inline;
  * this timeout exists to unblock the QUEUE, not to answer the client. */
 export declare const HANDLER_TIMEOUT_MS = 2000;
+/** How often the daemon confirms the socket at its path is still the one it
+ * bound. A client that decides we are dead unlinks that path and spawns a
+ * successor; from then on nothing can reach us, the idle timer is never
+ * touched again, and without this check we sit resident for the full
+ * DAEMON_IDLE_EXIT_MS. The fixed client no longer does that on a mere slow
+ * connect, but an older client on another profile, or a tmp cleaner, still
+ * can — so the daemon owns its own exit rather than trusting every caller. */
+export declare const SOCKET_CHECK_MS = 30000;
 export interface DaemonOptions {
     socketPath?: string;
     idleTimeoutMs?: number;
     handlerTimeoutMs?: number;
+    socketCheckMs?: number;
     pluginVersion?: string;
     /** Injected in tests: turn one request into rendered output. */
     handleRequest?: (request: DaemonRequest) => Promise<string>;
