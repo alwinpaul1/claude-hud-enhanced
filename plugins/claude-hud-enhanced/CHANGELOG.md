@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.1] - 2026-09-25
+
+### Fixed
+
+- **Two narrow-pane tests failed by the clock.** They fitted the usage row into
+  a fixed 47 columns, but reset times print in the runner's zone and `9:28 PM`
+  is a character shorter than `11:02 PM`. In CI's UTC, whenever both resets
+  fell on a one-digit hour, the no-bars row was exactly 47 wide and the
+  compact fallback never ran, which failed the v0.8.0 CI run. The widths now
+  come from the rendered row one step up, so each test forces the step it
+  names at any hour in any zone. No change to the plugin itself: 0.8.1 ships
+  the same `dist/` as 0.8.0.
+
 ## [0.8.0] - 2026-09-25
 
 ### Added
