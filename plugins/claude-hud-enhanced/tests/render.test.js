@@ -4532,10 +4532,22 @@ test('renderSessionLine drops the bars first when the usage row is too wide', ()
   assert.ok(row.includes('Weekly') && row.includes('resets'), 'only the bars went');
 });
 
+// Widths below are derived from the rendered rows, never hard-coded: reset
+// times print in the runner's zone, and "9:28 PM" is a character shorter than
+// "11:02 PM", so a fixed 47 fit one step early in CI's UTC at some hours.
+function usageRowStyled(ctx, display) {
+  const styled = { ...ctx, config: { ...ctx.config, display: { ...ctx.config.display, ...display } } };
+  return usageRow(renderSessionLine(styled));
+}
+
 test('renderSessionLine falls back to the compact 5h/7d form before losing the weekly window', () => {
-  const row = usageRow(renderSessionLine(narrowUsageContext(), { fitsRow: fitsWithin(47) }));
+  const ctx = narrowUsageContext();
+  const noBarsNoLabel = usageRowStyled(ctx, { usageBarEnabled: false, showResetLabel: false });
+  const width = noBarsNoLabel.length - 1;
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(width) }));
   assert.ok(row.startsWith('5h:') && row.includes('| 7d:'), row);
-  assert.ok(row.length <= 47, `${row.length} > 47`);
+  assert.ok(row.includes('('), 'reset times are kept while the compact form fits');
+  assert.ok(row.length <= width, `${row.length} > ${width}`);
 });
 
 test('renderSessionLine keeps non-usage parts of the usage row while narrowing it', () => {
@@ -4551,10 +4563,11 @@ test('renderSessionLine without a width check renders the usage row unchanged', 
   assert.equal(renderSessionLine(ctx), renderSessionLine(ctx, {}));
 });
 
-test('renderSessionLine drops reset times last so a Fable window still fits 47 columns', () => {
+test('renderSessionLine drops reset times last so a Fable window still fits', () => {
   const ctx = narrowUsageContext();
-  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(Date.now() + 5 * 86400_000) }];
-  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(47) }));
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: ctx.usageData.sevenDayResetAt }];
+  const compactWithResets = usageRowStyled(ctx, { usageCompact: true });
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(compactWithResets.length - 1) }));
   assert.equal(row, '5h: 2% | 7d: 2% · Fable: 0%');
 });
 
