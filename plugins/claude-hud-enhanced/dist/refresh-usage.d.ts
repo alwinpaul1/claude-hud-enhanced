@@ -1,5 +1,5 @@
 import { type UsageSnapshot } from './usage-snapshot.js';
-type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day'>;
+type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day' | 'model_scoped'>;
 /** Extract `claudeAiOauth.accessToken` from a credentials JSON blob. */
 export declare function parseAccessToken(rawJson: string): string | null;
 /**
@@ -11,6 +11,21 @@ export declare function parseAccessToken(rawJson: string): string | null;
  * what keeps profiles from silently mixing accounts in the usage snapshot.
  */
 export declare function keychainServiceForConfigDir(configDir: string, homeDir: string): string;
+/**
+ * Keychain account names Claude Code may have filed the login under, most likely
+ * first. Claude Code writes with `-a $USER`, but a Claude Code started without
+ * USER leaves a second item under the SAME service (seen live: account "unknown",
+ * holding only MCP tokens). A lookup without `-a` returns whichever item the
+ * Keychain lists first, and for 33 hours that was the orphan: no
+ * `claudeAiOauth`, so every poll failed as auth_expired while the real login sat
+ * one item over.
+ */
+export declare function keychainAccountCandidates(env?: NodeJS.ProcessEnv, username?: string | null): string[];
+/**
+ * First token found for `service`: each candidate account in order, then an
+ * account-less lookup (whatever item the Keychain lists first) as the last resort.
+ */
+export declare function readKeychainTokenForAccounts(service: string, accounts: string[], read: (service: string, account?: string) => string | null): string | null;
 /**
  * Read the OAuth token for THIS profile: macOS Keychain (profile-specific
  * service) first, credentials file otherwise. A custom profile intentionally

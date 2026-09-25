@@ -1,23 +1,49 @@
-import type { RenderContext } from "../../types.js";
+import type { RenderContext, ScopedUsageWindow } from "../../types.js";
 import { isLimitReached } from "../../types.js";
 import type { MessageKey } from "../../i18n/types.js";
 import { shouldHideUsage } from "../../stdin.js";
-import { critical, label, getQuotaColor, quotaBar, RESET } from "../colors.js";
+import { critical, label, getQuotaColor, quotaBar, warning, RESET } from "../colors.js";
 import { getAdaptiveBarWidth } from "../../utils/terminal.js";
 import { t } from "../../i18n/index.js";
 import {
   progressLabel,
   type ProgressLabelInput,
 } from "./label-align.js";
+import { formatRelativeTime } from "./session-time.js";
 import type { TimeFormatMode, UsageValueMode } from "../../config.js";
-import { formatResetTime, type WallClockOptions } from "../format-reset-time.js";
+import { formatResetTime, sameResetMinute, SHARED_RESET_JOINER, type WallClockOptions } from "../format-reset-time.js";
 
 const FIVE_HOUR_WINDOW_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * "⚠ stale (1d 9h ago)": says the usage numbers beside it are a last-known
+ * reading the OAuth poll has failed to refresh, and how old that reading is.
+ * Shared by the expanded usage line and the compact session line.
+ */
+export function formatStaleUsageMarker(
+  staleSince: Date,
+  colors?: RenderContext["config"]["colors"],
+  now: number = Date.now(),
+): string {
+  const age = formatRelativeTime(now - staleSince.getTime());
+  return warning(`⚠ ${t("status.stale")} (${age})`, colors);
+}
+
 export function renderUsageLine(
   ctx: RenderContext,
   labelOptions: ProgressLabelInput = {},
+): string | null {
+  const line = renderUsageBody(ctx, labelOptions);
+  const staleSince = ctx.usageData?.staleSince;
+  return line && staleSince
+    ? `${line} | ${formatStaleUsageMarker(staleSince, ctx.config?.colors)}`
+    : line;
+}
+
+function renderUsageBody(
+  ctx: RenderContext,
+  labelOptions: ProgressLabelInput,
 ): string | null {
   const display = ctx.config?.display;
   const colors = ctx.config?.colors;
@@ -55,29 +81,43 @@ export function renderUsageLine(
   const usageCompact = display?.usageCompact ?? false;
   const usageValueMode = display?.usageValue ?? 'percent';
   const barWidthForScoped = getAdaptiveBarWidth();
-  const scopedSuffix = scopedWindows.length
-    ? ' | ' + scopedWindows
-        .map((w) =>
-          usageCompact
-            ? formatCompactWindowPart(w.label, w.percent, w.resetAt, SEVEN_DAY_WINDOW_MS, timeFormat, colors, usageValueMode, wallClockOpts)
-            : formatUsageWindowPart({
-                label: w.label,
-                percent: w.percent,
-                resetAt: w.resetAt,
-                windowMs: SEVEN_DAY_WINDOW_MS,
-                colors,
-                usageBarEnabled: display?.usageBarEnabled ?? true,
-                barWidth: barWidthForScoped,
-                timeFormat,
-                showResetLabel,
-                forceLabel: true,
-                labelOptions,
-                usageValueMode,
-                wallClockOpts,
-              }),
-        )
-        .join(' | ')
-    : '';
+  const scopedPart = (w: ScopedUsageWindow, withReset = true): string =>
+    usageCompact
+      ? formatCompactWindowPart(w.label, w.percent, withReset ? w.resetAt : null, SEVEN_DAY_WINDOW_MS, timeFormat, colors, usageValueMode, wallClockOpts)
+      : formatUsageWindowPart({
+          label: w.label,
+          percent: w.percent,
+          resetAt: withReset ? w.resetAt : null,
+          windowMs: SEVEN_DAY_WINDOW_MS,
+          colors,
+          usageBarEnabled: display?.usageBarEnabled ?? true,
+          barWidth: barWidthForScoped,
+          timeFormat,
+          showResetLabel,
+          forceLabel: true,
+          labelOptions,
+          usageValueMode,
+          wallClockOpts,
+        });
+  const suffixOf = (windows: ScopedUsageWindow[]): string =>
+    windows.length ? ' | ' + windows.map((w) => scopedPart(w)).join(' | ') : '';
+  const scopedSuffix = suffixOf(scopedWindows);
+
+  // The weekly window plus every scoped window. Those that reset in the same
+  // minute as the weekly one (Fable does) join it as one " · " group that prints
+  // the shared reset once, at the end; the rest keep their own.
+  const withScoped = (renderWeekly: (withReset: boolean) => string): string => {
+    const weeklyResetAt = ctx.usageData?.sevenDayResetAt ?? null;
+    const shared = scopedWindows.filter((w) => sameResetMinute(w.resetAt, weeklyResetAt));
+    if (shared.length === 0) {
+      return `${renderWeekly(true)}${scopedSuffix}`;
+    }
+    const group = [
+      renderWeekly(false),
+      ...shared.map((w, index) => scopedPart(w, index === shared.length - 1)),
+    ].join(SHARED_RESET_JOINER);
+    return `${group}${suffixOf(scopedWindows.filter((w) => !shared.includes(w)))}`;
+  };
 
   if (isLimitReached(ctx.usageData)) {
     const limitTimeFormat = limitResetTimeFormat(timeFormat);
@@ -115,16 +155,19 @@ export function renderUsageLine(
     const fiveHourPart = fiveHour !== null
       ? formatCompactWindowPart("5h", fiveHour, ctx.usageData.fiveHourResetAt, FIVE_HOUR_WINDOW_MS, timeFormat, colors, usageValueMode, wallClockOpts)
       : null;
-    const sevenDayPart = (sevenDay !== null && (fiveHour === null || sevenDay >= sevenDayThreshold))
-      ? formatCompactWindowPart("7d", sevenDay, ctx.usageData.sevenDayResetAt, SEVEN_DAY_WINDOW_MS, timeFormat, colors, usageValueMode, wallClockOpts)
+    const sevenDayResetAt = ctx.usageData.sevenDayResetAt;
+    const sevenDayWithScoped = (sevenDay !== null && (fiveHour === null || sevenDay >= sevenDayThreshold))
+      ? withScoped((withReset) => formatCompactWindowPart("7d", sevenDay, withReset ? sevenDayResetAt : null, SEVEN_DAY_WINDOW_MS, timeFormat, colors, usageValueMode, wallClockOpts))
       : null;
 
-    if (fiveHourPart && sevenDayPart) {
-      return appendBalance(`${fiveHourPart} | ${sevenDayPart}${scopedSuffix}`, balanceLabel);
+    if (fiveHourPart && sevenDayWithScoped) {
+      return appendBalance(`${fiveHourPart} | ${sevenDayWithScoped}`, balanceLabel);
     }
-    const compactLine = fiveHourPart ?? sevenDayPart;
-    if (compactLine) {
-      return appendBalance(`${compactLine}${scopedSuffix}`, balanceLabel);
+    if (sevenDayWithScoped) {
+      return appendBalance(sevenDayWithScoped, balanceLabel);
+    }
+    if (fiveHourPart) {
+      return appendBalance(`${fiveHourPart}${scopedSuffix}`, balanceLabel);
     }
     return scopedSuffix ? appendBalance(scopedSuffix.slice(3), balanceLabel) : null;
   }
@@ -141,11 +184,12 @@ export function renderUsageLine(
   }
 
   if (fiveHour === null && sevenDay !== null) {
-    const weeklyOnlyPart = formatUsageWindowPart({
+    const sevenDayResetAt = ctx.usageData.sevenDayResetAt;
+    const weeklyOnlyPart = (withReset: boolean) => formatUsageWindowPart({
       label: t("label.weekly"),
       labelKey: "label.weekly",
       percent: sevenDay,
-      resetAt: ctx.usageData.sevenDayResetAt,
+      resetAt: withReset ? sevenDayResetAt : null,
       windowMs: SEVEN_DAY_WINDOW_MS,
       colors,
       usageBarEnabled,
@@ -157,7 +201,7 @@ export function renderUsageLine(
       usageValueMode,
       wallClockOpts,
     });
-    return appendBalance(`${usageLabel} ${weeklyOnlyPart}${scopedSuffix}`, balanceLabel);
+    return appendBalance(`${usageLabel} ${withScoped(weeklyOnlyPart)}`, balanceLabel);
   }
 
   const fiveHourPart = formatUsageWindowPart({
@@ -175,11 +219,12 @@ export function renderUsageLine(
   });
 
   if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
-    const sevenDayPart = formatUsageWindowPart({
+    const sevenDayResetAt = ctx.usageData.sevenDayResetAt;
+    const sevenDayPart = (withReset: boolean) => formatUsageWindowPart({
       label: t("label.weekly"),
       labelKey: "label.weekly",
       percent: sevenDay,
-      resetAt: ctx.usageData.sevenDayResetAt,
+      resetAt: withReset ? sevenDayResetAt : null,
       windowMs: SEVEN_DAY_WINDOW_MS,
       colors,
       usageBarEnabled,
@@ -191,7 +236,7 @@ export function renderUsageLine(
       usageValueMode,
       wallClockOpts,
     });
-    return appendBalance(`${usageLabel} ${fiveHourPart} | ${sevenDayPart}${scopedSuffix}`, balanceLabel);
+    return appendBalance(`${usageLabel} ${fiveHourPart} | ${withScoped(sevenDayPart)}`, balanceLabel);
   }
 
   return appendBalance(`${usageLabel} ${fiveHourPart}${scopedSuffix}`, balanceLabel);

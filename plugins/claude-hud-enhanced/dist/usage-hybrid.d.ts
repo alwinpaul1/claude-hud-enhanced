@@ -37,16 +37,24 @@ export declare const BACKOFF_ERROR_MS: number;
  * backoff a server explicitly asked for.
  */
 export declare const BACKOFF_RATE_LIMIT_MS: number;
+/**
+ * How long a snapshot may go unconfirmed, while its OAuth poll is failing, before
+ * the HUD flags the numbers as stale. Without this a poll that broke (an expired
+ * token, a network outage) kept rendering the last good reading as if it were
+ * live: one profile showed "Weekly 92%" for 33 hours while Claude Code was
+ * refusing requests because the weekly limit had been hit.
+ */
+export declare const USAGE_STALE_MS: number;
 /** +1 if stdin is newer than the snapshot, -1 if the snapshot is newer, 0 if equal. */
 export declare function compareStdinSnapshot(stdin: UsageData, snap: UsageSnapshot): number;
 /** True when stdin is strictly newer than the snapshot (write-back decision). */
 export declare function isStrictlyNewer(stdin: UsageData, snap: UsageSnapshot): boolean;
-/** Snapshot → UsageData. Note: snapshots only carry the 5h/7d windows. */
+/** Snapshot → UsageData: the 5h/7d windows plus any model-scoped ones. */
 export declare function snapshotToUsage(snap: UsageSnapshot): UsageData;
 /**
- * Serve the snapshot's 5h/7d windows while keeping the stdin-only extras
- * (model-scoped windows, balance label) the snapshot doesn't carry — so a newer
- * snapshot never makes the Fable weekly bar or balance segment vanish.
+ * Serve the snapshot's windows while keeping the stdin extras the snapshot lacks
+ * (model-scoped windows it has none of, the balance label), so a newer snapshot
+ * never makes the Fable weekly bar or balance segment vanish.
  */
 export declare function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: UsageData): UsageData;
 /**
@@ -56,6 +64,14 @@ export declare function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: Usage
  * set, nor forges a LIVE read that never happened.
  */
 export declare function usageToSnapshot(usage: UsageData, source: UsageSnapshot['source'], now: number, prev: UsageSnapshot | null): UsageSnapshot;
+/**
+ * When the snapshot's numbers can no longer be presented as current, the time they
+ * were last confirmed (by a stdin advance or a successful OAuth read); null while
+ * they are fresh. Only a FAILING poll makes a snapshot stale: with a working one
+ * the refresher replaces an aged snapshot within seconds, and flagging it in that
+ * gap would flicker a warning after every laptop wake.
+ */
+export declare function snapshotStaleSince(snap: UsageSnapshot, now: number): Date | null;
 /**
  * The single decision point for "should a refresher run now?", shared by the parent
  * (resolveUsage, which spawns) and the child (refresh-usage, which re-checks before

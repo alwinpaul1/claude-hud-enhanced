@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.8.0] - 2026-09-25
+
+### Added
+
+- **Fable weekly usage.** The OAuth usage API has no top-level Fable bucket.
+  Fable arrives only in the `limits` array, as a `weekly_scoped` entry scoped
+  to the model. The background poll now reads it and stores it in the
+  snapshot in Claude Code's own `model_scoped` shape, so the existing Fable
+  rendering picks it up. Claude Code does not forward `model_scoped` on stdin
+  today, so the resolver fills the poll's Fable window into any reading that
+  lacks one, and a stdin snapshot write keeps it instead of erasing it.
+- **One reset for windows that share it.** Weekly and Fable reset at the same
+  boundary, which the API stamps `16:59:59.631` and `17:00:00`. Windows whose
+  resets fall in the same minute render as one group, joined by ` · `, with
+  the reset printed once at the end:
+  `Weekly 3% · Fable 0% (resets Wed 7:00 PM)`. Both layouts do this.
+- **The usage row fits narrow panes.** With `compactSingleRow`, an overflowing
+  usage row was cut at a segment boundary, and in a 47-column split pane the
+  segment it cut was the weekly window. The row now narrows itself before
+  anything is cut: bars go first, then the "resets" wording, then it switches
+  to the compact `5h:`/`7d:` form, and last the reset times go. At 47 columns
+  that renders `5h: 3% | 7d: 3% · Fable: 0%`. The compact renderer rebuilds
+  only its usage parts, because a second full render would reset the speed
+  tracker's cache.
+- **A stale marker.** When the OAuth poll has been failing for more than 15
+  minutes, the usage row ends in `⚠ stale (1d 7h ago)`. Before, a broken
+  poll kept showing its last good reading as if it were live.
+
+### Fixed
+
+- **A work profile's usage froze for 33 hours.** Two Keychain items can share
+  one service name, told apart only by their account: a Claude Code started
+  without `$USER` leaves an orphan under account `unknown` holding MCP tokens
+  only. The refresher queried without `-a`, got the orphan, found no
+  `claudeAiOauth`, and logged `auth_expired` every 30 minutes while the real
+  login sat in the next item. It now asks for `$USER`, then the OS username,
+  and only then falls back to the account-less lookup.
+- **The poll never started without a snapshot.** With no snapshot and no stdin
+  `rate_limits`, `resolveUsage` returned before starting the refresher, so an
+  account whose stdin carries no usage could never show any. It now starts
+  the poll in that case too.
+
 ## [0.7.8] - 2026-09-14
 
 ### Fixed — daemon mode no longer leaks a bun process a minute on a loaded machine

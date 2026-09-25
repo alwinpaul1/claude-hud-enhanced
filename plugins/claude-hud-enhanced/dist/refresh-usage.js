@@ -49,9 +49,9 @@ export function keychainServiceForConfigDir(configDir, homeDir) {
     const suffix = createHash('sha256').update(configDir).digest('hex').slice(0, 8);
     return `${KEYCHAIN_SERVICE}-${suffix}`;
 }
-function readKeychainToken(service) {
+function readKeychainToken(service, account) {
     try {
-        const secret = execFileSync('security', ['find-generic-password', '-s', service, '-w'], { encoding: 'utf8', timeout: FETCH_TIMEOUT_MS, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true }).trim();
+        const secret = execFileSync('security', ['find-generic-password', '-s', service, ...(account ? ['-a', account] : []), '-w'], { encoding: 'utf8', timeout: FETCH_TIMEOUT_MS, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true }).trim();
         return secret ? parseAccessToken(secret) : null;
     }
     catch {
@@ -67,6 +67,39 @@ function readCredentialsFileToken(configDir) {
     }
 }
 /**
+ * Keychain account names Claude Code may have filed the login under, most likely
+ * first. Claude Code writes with `-a $USER`, but a Claude Code started without
+ * USER leaves a second item under the SAME service (seen live: account "unknown",
+ * holding only MCP tokens). A lookup without `-a` returns whichever item the
+ * Keychain lists first, and for 33 hours that was the orphan: no
+ * `claudeAiOauth`, so every poll failed as auth_expired while the real login sat
+ * one item over.
+ */
+export function keychainAccountCandidates(env = process.env, username = currentUsername()) {
+    const names = [env.USER, username].filter((name) => typeof name === 'string' && name.trim() !== '');
+    return [...new Set(names)];
+}
+function currentUsername() {
+    try {
+        return os.userInfo().username;
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * First token found for `service`: each candidate account in order, then an
+ * account-less lookup (whatever item the Keychain lists first) as the last resort.
+ */
+export function readKeychainTokenForAccounts(service, accounts, read) {
+    for (const account of accounts) {
+        const token = read(service, account);
+        if (token)
+            return token;
+    }
+    return read(service);
+}
+/**
  * Read the OAuth token for THIS profile: macOS Keychain (profile-specific
  * service) first, credentials file otherwise. A custom profile intentionally
  * has no bare-service fallback — serving the default account's token to a
@@ -75,7 +108,8 @@ function readCredentialsFileToken(configDir) {
 export function readOauthToken(configDir, homeDir = os.homedir()) {
     if (process.platform === 'darwin') {
         const service = keychainServiceForConfigDir(configDir, homeDir);
-        return readKeychainToken(service) ?? readCredentialsFileToken(configDir);
+        return readKeychainTokenForAccounts(service, keychainAccountCandidates(), readKeychainToken)
+            ?? readCredentialsFileToken(configDir);
     }
     return readCredentialsFileToken(configDir);
 }
@@ -94,6 +128,30 @@ function parseWindow(v) {
         resets_at: typeof w.resets_at === 'string' ? w.resets_at : null,
     };
 }
+/**
+ * Model-scoped weekly windows from the `limits` array. The API has no top-level
+ * bucket for them: Fable arrives as
+ * `{ kind: "weekly_scoped", percent, resets_at, scope: { model: { display_name } } }`.
+ * Entries scoped to anything other than a named model are skipped. Undefined when
+ * the body has no `limits` array at all, so older API shapes add no key.
+ */
+function parseScopedLimits(limits) {
+    if (!Array.isArray(limits))
+        return undefined;
+    const windows = [];
+    for (const raw of limits) {
+        const limit = raw;
+        const name = limit?.scope?.model?.display_name;
+        if (limit?.kind !== 'weekly_scoped' || typeof name !== 'string' || name.trim() === '')
+            continue;
+        windows.push({
+            display_name: name,
+            utilization: typeof limit.percent === 'number' ? limit.percent : null,
+            resets_at: typeof limit.resets_at === 'string' ? limit.resets_at : null,
+        });
+    }
+    return windows;
+}
 /** Parse the usage API body; null when it carries no usable window at all. */
 export function parseUsageResponse(body) {
     try {
@@ -104,9 +162,11 @@ export function parseUsageResponse(body) {
         const seven = parseWindow(parsed.seven_day);
         if (five === undefined && seven === undefined)
             return null;
+        const scoped = parseScopedLimits(parsed.limits);
         return {
             five_hour: five ?? { used_percentage: null, resets_at: null },
             seven_day: seven ?? { used_percentage: null, resets_at: null },
+            ...(scoped !== undefined && { model_scoped: scoped }),
         };
     }
     catch {
@@ -155,6 +215,7 @@ export function failureSnapshot(prev, status, now, retryAfterMs = null) {
         source: prev?.source ?? 'oauth',
         five_hour: prev?.five_hour ?? { used_percentage: null, resets_at: null },
         seven_day: prev?.seven_day ?? { used_percentage: null, resets_at: null },
+        ...(prev?.model_scoped !== undefined && { model_scoped: prev.model_scoped }),
         status,
         next_attempt_at: new Date(now + backoffMs).toISOString(),
     };

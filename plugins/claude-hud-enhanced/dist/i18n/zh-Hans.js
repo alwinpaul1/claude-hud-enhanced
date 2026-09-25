@@ -18,6 +18,7 @@ export const zhHans = {
     "status.limitReached": "已达上限",
     "status.allTodosComplete": "全部完成",
     "status.expired": "已过期",
+    "status.stale": "未更新",
     // Format
     "format.resets": "重置于",
     "format.resetsIn": "重置剩余",

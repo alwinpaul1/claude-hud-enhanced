@@ -90,6 +90,12 @@ export interface UsageData {
     balanceLabel?: string | null;
     /** Model-scoped weekly windows (e.g. Fable) from stdin rate_limits.model_scoped. */
     scopedWindows?: ScopedUsageWindow[];
+    /**
+     * Set when these numbers are a last-known snapshot the OAuth poll has failed to
+     * refresh (see snapshotStaleSince): the time they were last confirmed. Absent
+     * when the values are current.
+     */
+    staleSince?: Date;
 }
 /** One model-scoped weekly quota window (e.g. label "Fable", used percent 0-100). */
 export interface ScopedUsageWindow {

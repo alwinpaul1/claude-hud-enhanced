@@ -11,7 +11,7 @@ function formatStartDate(date) {
     const min = pad(date.getMinutes());
     return `${y}-${m}-${d} ${h}:${min}`;
 }
-function formatRelativeTime(ms) {
+export function formatRelativeTime(ms) {
     if (ms < 0) {
         return t('format.justNow');
     }

@@ -8,6 +8,8 @@ import {
   successSnapshot,
   failureSnapshot,
   keychainServiceForConfigDir,
+  keychainAccountCandidates,
+  readKeychainTokenForAccounts,
 } from '../dist/refresh-usage.js';
 import { USAGE_TTL_MS, BACKOFF_RATE_LIMIT_MS } from '../dist/usage-hybrid.js';
 
@@ -188,4 +190,85 @@ test('failureSnapshot preserves the LIVE-read clock (a failed poll is not a read
 
 test('failureSnapshot with no previous snapshot leaves the LIVE clock unset', () => {
   assert.equal(failureSnapshot(null, 'error', NOW).oauth_updated_at, null);
+});
+
+// --- model-scoped windows (Fable) from the `limits` array ---
+// Trimmed from a live 2026-09-25 response: Fable has no top-level bucket, only a
+// `weekly_scoped` limit entry scoped to the model.
+const LIVE_LIMITS = [
+  { kind: 'session', group: 'session', percent: 3, resets_at: '2026-09-25T20:59:59.631316+00:00', scope: null },
+  { kind: 'weekly_all', group: 'weekly', percent: 3, resets_at: '2026-09-30T16:59:59.631337+00:00', scope: null },
+  { kind: 'weekly_scoped', group: 'weekly', percent: 0, resets_at: '2026-09-30T17:00:00+00:00',
+    scope: { model: { id: null, display_name: 'Fable' }, surface: null } },
+];
+
+test('parseUsageResponse reads Fable from a weekly_scoped limit', () => {
+  const body = JSON.stringify({
+    five_hour: { utilization: 3.0, resets_at: '2026-09-25T20:59:59.631316+00:00' },
+    seven_day: { utilization: 3.0, resets_at: '2026-09-30T16:59:59.631337+00:00' },
+    limits: LIVE_LIMITS,
+  });
+  assert.deepEqual(parseUsageResponse(body).model_scoped, [
+    { display_name: 'Fable', utilization: 0, resets_at: '2026-09-30T17:00:00+00:00' },
+  ]);
+});
+
+test('parseUsageResponse skips scoped limits without a named model', () => {
+  const body = JSON.stringify({
+    five_hour: { utilization: 1, resets_at: null },
+    limits: [
+      { kind: 'weekly_scoped', percent: 9, resets_at: null, scope: { model: null, surface: { display_name: 'Cowork' } } },
+      { kind: 'weekly_scoped', percent: 9, resets_at: null, scope: { model: { display_name: '  ' } } },
+      { kind: 'weekly_all', percent: 9, resets_at: null, scope: { model: { display_name: 'Fable' } } },
+      null,
+      'junk',
+    ],
+  });
+  assert.deepEqual(parseUsageResponse(body).model_scoped, []);
+});
+
+test('parseUsageResponse adds no model_scoped key when the body has no limits array', () => {
+  const body = JSON.stringify({ five_hour: { utilization: 1, resets_at: null } });
+  assert.equal('model_scoped' in parseUsageResponse(body), false);
+});
+
+test('failureSnapshot keeps the last-good Fable window', () => {
+  const prev = successSnapshot({
+    five_hour: { used_percentage: 3, resets_at: null },
+    seven_day: { used_percentage: 3, resets_at: null },
+    model_scoped: [{ display_name: 'Fable', utilization: 40, resets_at: null }],
+  }, NOW - 60_000);
+  assert.deepEqual(failureSnapshot(prev, 'error', NOW).model_scoped, prev.model_scoped);
+});
+
+// --- Keychain account selection ---
+// Live case (2026-09-25): two items under one service. Account "unknown"
+// (an orphan with MCP tokens only, listed first) and account "<user>" (the real
+// login). The account-less lookup read the orphan and failed for 33 hours.
+
+test('keychainAccountCandidates: $USER first, then the OS username, deduplicated', () => {
+  assert.deepEqual(keychainAccountCandidates({ USER: 'alwinpaul' }, 'alwinpaul'), ['alwinpaul']);
+  assert.deepEqual(keychainAccountCandidates({ USER: 'envname' }, 'osname'), ['envname', 'osname']);
+  assert.deepEqual(keychainAccountCandidates({}, 'osname'), ['osname']);
+  assert.deepEqual(keychainAccountCandidates({ USER: ' ' }, null), []);
+});
+
+test('readKeychainTokenForAccounts reads the user\'s item, not the orphan listed first', () => {
+  const items = { alwinpaul: 'live-token', unknown: null };
+  const calls = [];
+  const read = (service, account) => {
+    calls.push(account ?? '<none>');
+    return account === undefined ? items.unknown : (items[account] ?? null);
+  };
+  assert.equal(readKeychainTokenForAccounts('svc', ['alwinpaul'], read), 'live-token');
+  assert.deepEqual(calls, ['alwinpaul'], 'no account-less lookup once the account hit');
+});
+
+test('readKeychainTokenForAccounts falls back to the account-less lookup', () => {
+  const read = (service, account) => (account === undefined ? 'legacy-token' : null);
+  assert.equal(readKeychainTokenForAccounts('svc', ['someone'], read), 'legacy-token');
+});
+
+test('readKeychainTokenForAccounts returns null when no item carries a token', () => {
+  assert.equal(readKeychainTokenForAccounts('svc', ['a', 'b'], () => null), null);
 });

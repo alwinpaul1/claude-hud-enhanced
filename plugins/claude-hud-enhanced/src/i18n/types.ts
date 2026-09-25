@@ -18,6 +18,7 @@ export type MessageKey =
   | "status.limitReached"
   | "status.allTodosComplete"
   | "status.expired"
+  | "status.stale"
   // Format
   | "format.resets"
   | "format.resetsIn"

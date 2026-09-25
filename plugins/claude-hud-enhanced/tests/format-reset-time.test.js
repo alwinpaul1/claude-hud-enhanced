@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatResetTime } from '../dist/render/format-reset-time.js';
+import { formatResetTime, sameResetMinute } from '../dist/render/format-reset-time.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -242,4 +242,14 @@ test('mergeConfig accepts showClockSeconds true', async () => {
   const { mergeConfig } = await import('../dist/config.js');
   const config = mergeConfig({ display: { showClockSeconds: true } });
   assert.equal(config.display.showClockSeconds, true);
+});
+
+test('sameResetMinute matches the API\'s weekly and Fable stamps for one boundary', () => {
+  assert.equal(sameResetMinute(new Date('2026-09-30T16:59:59.631Z'), new Date('2026-09-30T17:00:00Z')), true);
+});
+
+test('sameResetMinute rejects resets a minute or more apart, and unknown resets', () => {
+  assert.equal(sameResetMinute(new Date('2026-09-30T17:00:00Z'), new Date('2026-09-30T17:01:00Z')), false);
+  assert.equal(sameResetMinute(null, new Date('2026-09-30T17:00:00Z')), false);
+  assert.equal(sameResetMinute(null, null), false);
 });

@@ -371,9 +371,9 @@ function renderElementLine(ctx, element, labelOptions = {}) {
             return renderSessionTimeLine(ctx);
     }
 }
-function renderCompact(ctx) {
+function renderCompact(ctx, fitsRow) {
     const lines = [];
-    const sessionLine = renderSessionLine(ctx);
+    const sessionLine = renderSessionLine(ctx, { fitsRow });
     if (sessionLine) {
         lines.push(sessionLine);
     }
@@ -525,11 +525,16 @@ write = (line) => console.log(line)) {
         // wrapping onto a third row. Activity lines below always wrap normally.
         const singleRow = ctx.config?.display?.compactSingleRow === true;
         const compactWidth = terminalWidth !== UNKNOWN_TERMINAL_WIDTH ? (terminalWidth ?? 0) : 0;
+        // A usage row that would overflow narrows itself (bars go first) rather than
+        // losing its weekly window to the cut or wrapping onto another row.
+        const fitsRow = compactWidth > 0
+            ? (row) => visualLength(row) <= compactWidth
+            : undefined;
         const headerLines = singleRow
-            ? renderCompact(ctx)
+            ? renderCompact(ctx, fitsRow)
                 .flatMap(line => line.split('\n'))
                 .map(line => wrapLineToWidth(line, compactWidth)[0] ?? line)
-            : renderCompact(ctx);
+            : renderCompact(ctx, fitsRow);
         const activityLines = collectActivityLines(ctx);
         lines = [...headerLines];
         if (showSeparators && activityLines.length > 0) {

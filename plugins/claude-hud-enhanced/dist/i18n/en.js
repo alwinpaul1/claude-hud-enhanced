@@ -18,6 +18,7 @@ export const en = {
     "status.limitReached": "Limit reached",
     "status.allTodosComplete": "All todos complete",
     "status.expired": "expired",
+    "status.stale": "stale",
     // Format
     "format.resets": "resets",
     "format.resetsIn": "resets in",

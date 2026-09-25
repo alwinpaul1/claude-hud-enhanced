@@ -15,7 +15,7 @@ function formatStartDate(date: Date): string {
   return `${y}-${m}-${d} ${h}:${min}`;
 }
 
-function formatRelativeTime(ms: number): string {
+export function formatRelativeTime(ms: number): string {
   if (ms < 0) {
     return t('format.justNow');
   }

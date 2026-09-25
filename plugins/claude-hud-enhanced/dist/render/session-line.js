@@ -6,9 +6,10 @@ import { getAdaptiveBarWidth } from '../utils/terminal.js';
 import { renderCostEstimate } from './lines/cost.js';
 import { renderPromptCacheLine } from './lines/prompt-cache.js';
 import { renderSessionTimeLine } from './lines/session-time.js';
+import { formatStaleUsageMarker } from './lines/usage.js';
 import { renderAdvisorLine } from './lines/advisor.js';
 import { t } from '../i18n/index.js';
-import { formatResetTime } from './format-reset-time.js';
+import { formatResetTime, sameResetMinute, SHARED_RESET_JOINER } from './format-reset-time.js';
 import { formatTokens, formatContextValue } from '../utils/format.js';
 import { formatAuthSegment } from '../auth.js';
 import { createDebug } from '../debug.js';
@@ -19,11 +20,7 @@ import { DEFAULT_PROJECT_LINE_ORDER } from '../config.js';
 import { orderFirstLineParts } from './first-line-order.js';
 import { getVcsDisplayState } from './vcs-status.js';
 const debug = createDebug('session-line');
-/**
- * Renders the full session line (model + context bar + project + git + counts + usage + duration).
- * Used for compact layout mode.
- */
-export function renderSessionLine(ctx) {
+export function renderSessionLine(ctx, options = {}) {
     const model = formatModelName(resolveModelName(ctx.stdin, ctx.transcript, ctx.config?.display?.modelSource), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
     const autoCompactWindow = ctx.config?.display?.autoCompactWindow ?? null;
     const rawPercent = getContextPercent(ctx.stdin, autoCompactWindow);
@@ -159,142 +156,14 @@ export function renderSessionLine(ctx) {
     // Usage limits display (shown when enabled in config, respects usageThreshold).
     // Snapshot where usage parts begin so `usageOnNewLine` can peel them onto row 2.
     const usageStartIndex = parts.length;
-    if (display?.showUsage !== false && ctx.usageData && !shouldHideUsage(ctx.stdin)) {
-        const usageCompact = display?.usageCompact ?? false;
-        const showResetLabel = display?.showResetLabel ?? true;
-        const usageValueMode = display?.usageValue ?? 'percent';
-        const scopedWindows = ctx.usageData.scopedWindows ?? [];
-        const hasGenericWindowData = ctx.usageData.fiveHour !== null || ctx.usageData.sevenDay !== null;
-        const hasWindowData = hasGenericWindowData || scopedWindows.length > 0;
-        const scopedParts = scopedWindows.map((window) => usageCompact
-            ? formatCompactWindowPart(window.label, window.percent, window.resetAt, timeFormat, colors, usageValueMode, wallClockOpts)
-            : formatUsageWindowPart({
-                label: window.label,
-                percent: window.percent,
-                resetAt: window.resetAt,
-                colors,
-                usageBarEnabled: display?.usageBarEnabled ?? true,
-                barWidth,
-                timeFormat,
-                showResetLabel,
-                forceLabel: true,
-                usageValueMode,
-                windowDurationLabel: '7d',
-                wallClockOpts,
-            }));
-        if (isLimitReached(ctx.usageData)) {
-            const resetTime = ctx.usageData.fiveHour === 100
-                ? formatResetTime(ctx.usageData.fiveHourResetAt, timeFormat, 'short', wallClockOpts)
-                : formatResetTime(ctx.usageData.sevenDayResetAt, timeFormat, 'long', wallClockOpts);
-            if (usageCompact) {
-                push(critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ''}`, colors));
-            }
-            else {
-                const resetSuffix = resetTime
-                    ? showResetLabel
-                        ? ` (${t(resetsKey)} ${resetTime})`
-                        : ` (${resetTime})`
-                    : '';
-                push(critical(`⚠ ${t('status.limitReached')}${resetSuffix}`, colors));
-            }
-            scopedParts.forEach((part) => push(part));
-        }
-        else {
-            const usageThreshold = display?.usageThreshold ?? 0;
-            const fiveHour = ctx.usageData.fiveHour;
-            const sevenDay = ctx.usageData.sevenDay;
-            const effectiveUsage = Math.max(fiveHour ?? 0, sevenDay ?? 0, ...scopedWindows.map((window) => window.percent ?? 0));
-            if ((hasWindowData || !ctx.usageData.balanceLabel) && effectiveUsage >= usageThreshold) {
-                const usageBarEnabled = display?.usageBarEnabled ?? true;
-                if (usageCompact) {
-                    const fiveHourPart = fiveHour !== null
-                        ? formatCompactWindowPart('5h', fiveHour, ctx.usageData.fiveHourResetAt, timeFormat, colors, usageValueMode, wallClockOpts)
-                        : null;
-                    const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
-                    const sevenDayPart = (sevenDay !== null && (fiveHour === null || sevenDay >= sevenDayThreshold))
-                        ? formatCompactWindowPart('7d', sevenDay, ctx.usageData.sevenDayResetAt, timeFormat, colors, usageValueMode, wallClockOpts)
-                        : null;
-                    if (fiveHourPart && sevenDayPart) {
-                        push(fiveHourPart);
-                        push(sevenDayPart);
-                    }
-                    else if (fiveHourPart) {
-                        push(fiveHourPart);
-                    }
-                    else if (sevenDayPart) {
-                        push(sevenDayPart);
-                    }
-                    scopedParts.forEach((part) => push(part));
-                }
-                else if (fiveHour === null && sevenDay !== null) {
-                    const weeklyOnlyPart = formatUsageWindowPart({
-                        label: t('label.weekly'),
-                        percent: sevenDay,
-                        resetAt: ctx.usageData.sevenDayResetAt,
-                        colors,
-                        usageBarEnabled,
-                        barWidth,
-                        timeFormat,
-                        showResetLabel,
-                        forceLabel: true,
-                        usageValueMode,
-                        wallClockOpts,
-                    });
-                    push(weeklyOnlyPart);
-                    scopedParts.forEach((part) => push(part));
-                }
-                else if (hasGenericWindowData || !hasWindowData) {
-                    const fiveHourPart = formatUsageWindowPart({
-                        label: '5h',
-                        percent: fiveHour,
-                        resetAt: ctx.usageData.fiveHourResetAt,
-                        colors,
-                        usageBarEnabled,
-                        barWidth,
-                        timeFormat,
-                        showResetLabel,
-                        usageValueMode,
-                        wallClockOpts,
-                    });
-                    const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
-                    if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
-                        const sevenDayPart = formatUsageWindowPart({
-                            label: t('label.weekly'),
-                            percent: sevenDay,
-                            resetAt: ctx.usageData.sevenDayResetAt,
-                            colors,
-                            usageBarEnabled,
-                            barWidth,
-                            timeFormat,
-                            showResetLabel,
-                            forceLabel: true,
-                            usageValueMode,
-                            wallClockOpts,
-                        });
-                        push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
-                        push(sevenDayPart);
-                    }
-                    else {
-                        push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
-                    }
-                    scopedParts.forEach((part) => push(part));
-                }
-                else if (scopedParts.length > 0) {
-                    const [firstScopedPart, ...remainingScopedParts] = scopedParts;
-                    push(`${label(t('label.usage'), colors)} ${firstScopedPart}`);
-                    remainingScopedParts.forEach((part) => push(part));
-                }
-            }
-        }
-        if (ctx.usageData.balanceLabel) {
-            if (!hasWindowData) {
-                push(`${label(t('label.usage'), colors)} ${ctx.usageData.balanceLabel}`);
-            }
-            else {
-                push(ctx.usageData.balanceLabel);
-            }
-        }
-    }
+    const usageStyle = {
+        bars: display?.usageBarEnabled ?? true,
+        resetLabel: display?.showResetLabel ?? true,
+        compact: display?.usageCompact ?? false,
+        resetTimes: true,
+    };
+    const usageTexts = renderUsageParts(ctx, usageStyle, barWidth);
+    usageTexts.forEach((text) => push(text));
     // Session token usage (cumulative)
     if (display?.showSessionTokens && ctx.transcript.sessionTokens) {
         const summary = formatSessionTokenSummary(ctx.transcript.sessionTokens, `${t('format.tok')}:`);
@@ -314,7 +183,7 @@ export function renderSessionLine(ctx) {
     // row 1 so they render as a deterministic second row (row 1 keeps
     // identity/project/counts/duration; row 2 starts with the usage windows).
     const usageParts = display?.usageOnNewLine
-        ? parts.splice(usageStartIndex).map((part) => part.text)
+        ? fitUsageRow(ctx, parts.splice(usageStartIndex).map((part) => part.text), usageTexts.length, usageStyle, barWidth, options.fitsRow)
         : [];
     // Advisor model (when `/advisor` is configured for the session)
     if (display?.showAdvisor) {
@@ -370,6 +239,202 @@ export function renderSessionLine(ctx) {
         line = line.length > 0 ? `${line}\n${usageLine}` : usageLine;
     }
     return line;
+}
+/**
+ * The usage/weekly parts of the session line, in order. Writes no caches, so the
+ * caller can rebuild it in a narrower style when the row does not fit.
+ */
+function renderUsageParts(ctx, style, barWidth) {
+    const display = ctx.config?.display;
+    const colors = ctx.config?.colors;
+    if (display?.showUsage === false || !ctx.usageData || shouldHideUsage(ctx.stdin)) {
+        return [];
+    }
+    const parts = [];
+    const push = (text) => parts.push(text);
+    const timeFormat = display?.timeFormat ?? 'relative';
+    const wallClockOpts = {
+        hourCycle: display?.hourCycle ?? 'auto',
+        showSeconds: display?.showClockSeconds ?? false,
+    };
+    const resetsKey = timeFormat === 'absolute' ? 'format.resets' : 'format.resetsIn';
+    const usageCompact = style.compact;
+    const showResetLabel = style.resetLabel;
+    const resetAtOf = (resetAt) => (style.resetTimes ? resetAt : null);
+    const usageValueMode = display?.usageValue ?? 'percent';
+    const scopedWindows = ctx.usageData.scopedWindows ?? [];
+    const hasGenericWindowData = ctx.usageData.fiveHour !== null || ctx.usageData.sevenDay !== null;
+    const hasWindowData = hasGenericWindowData || scopedWindows.length > 0;
+    const scopedPart = (window, withReset = true) => usageCompact
+        ? formatCompactWindowPart(window.label, window.percent, withReset ? resetAtOf(window.resetAt) : null, timeFormat, colors, usageValueMode, wallClockOpts)
+        : formatUsageWindowPart({
+            label: window.label,
+            percent: window.percent,
+            resetAt: withReset ? window.resetAt : null,
+            colors,
+            usageBarEnabled: style.bars,
+            barWidth,
+            timeFormat,
+            showResetLabel,
+            forceLabel: true,
+            usageValueMode,
+            windowDurationLabel: '7d',
+            wallClockOpts,
+        });
+    const scopedParts = scopedWindows.map((window) => scopedPart(window));
+    // The weekly window followed by the scoped windows. Those that reset in the
+    // same minute as the weekly one (Fable does) join it as one " · " group that
+    // prints the shared reset once, at the end; the rest keep their own.
+    const weeklyGroup = (renderWeekly) => {
+        const weeklyResetAt = ctx.usageData?.sevenDayResetAt ?? null;
+        const shared = scopedWindows.filter((window) => sameResetMinute(window.resetAt, weeklyResetAt));
+        const separate = scopedWindows.filter((window) => !shared.includes(window));
+        if (shared.length === 0) {
+            return [renderWeekly(true), ...scopedParts];
+        }
+        const group = [
+            renderWeekly(false),
+            ...shared.map((window, index) => scopedPart(window, index === shared.length - 1)),
+        ].join(SHARED_RESET_JOINER);
+        return [group, ...separate.map((window) => scopedPart(window))];
+    };
+    if (isLimitReached(ctx.usageData)) {
+        const resetTime = ctx.usageData.fiveHour === 100
+            ? formatResetTime(resetAtOf(ctx.usageData.fiveHourResetAt), timeFormat, 'short', wallClockOpts)
+            : formatResetTime(resetAtOf(ctx.usageData.sevenDayResetAt), timeFormat, 'long', wallClockOpts);
+        if (usageCompact) {
+            push(critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ''}`, colors));
+        }
+        else {
+            const resetSuffix = resetTime
+                ? showResetLabel
+                    ? ` (${t(resetsKey)} ${resetTime})`
+                    : ` (${resetTime})`
+                : '';
+            push(critical(`⚠ ${t('status.limitReached')}${resetSuffix}`, colors));
+        }
+        scopedParts.forEach((part) => push(part));
+    }
+    else {
+        const usageThreshold = display?.usageThreshold ?? 0;
+        const fiveHour = ctx.usageData.fiveHour;
+        const sevenDay = ctx.usageData.sevenDay;
+        const effectiveUsage = Math.max(fiveHour ?? 0, sevenDay ?? 0, ...scopedWindows.map((window) => window.percent ?? 0));
+        if ((hasWindowData || !ctx.usageData.balanceLabel) && effectiveUsage >= usageThreshold) {
+            const usageBarEnabled = style.bars;
+            if (usageCompact) {
+                const fiveHourPart = fiveHour !== null
+                    ? formatCompactWindowPart('5h', fiveHour, resetAtOf(ctx.usageData.fiveHourResetAt), timeFormat, colors, usageValueMode, wallClockOpts)
+                    : null;
+                const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
+                const showSevenDay = sevenDay !== null && (fiveHour === null || sevenDay >= sevenDayThreshold);
+                const sevenDayResetAt = ctx.usageData.sevenDayResetAt;
+                const sevenDayPart = (withReset) => formatCompactWindowPart('7d', sevenDay, withReset ? resetAtOf(sevenDayResetAt) : null, timeFormat, colors, usageValueMode, wallClockOpts);
+                if (fiveHourPart) {
+                    push(fiveHourPart);
+                }
+                (showSevenDay ? weeklyGroup(sevenDayPart) : scopedParts).forEach((part) => push(part));
+            }
+            else if (fiveHour === null && sevenDay !== null) {
+                const sevenDayResetAt = ctx.usageData.sevenDayResetAt;
+                const weeklyOnlyPart = (withReset) => formatUsageWindowPart({
+                    label: t('label.weekly'),
+                    percent: sevenDay,
+                    resetAt: withReset ? sevenDayResetAt : null,
+                    colors,
+                    usageBarEnabled,
+                    barWidth,
+                    timeFormat,
+                    showResetLabel,
+                    forceLabel: true,
+                    usageValueMode,
+                    wallClockOpts,
+                });
+                weeklyGroup(weeklyOnlyPart).forEach((part) => push(part));
+            }
+            else if (hasGenericWindowData || !hasWindowData) {
+                const fiveHourPart = formatUsageWindowPart({
+                    label: '5h',
+                    percent: fiveHour,
+                    resetAt: ctx.usageData.fiveHourResetAt,
+                    colors,
+                    usageBarEnabled,
+                    barWidth,
+                    timeFormat,
+                    showResetLabel,
+                    usageValueMode,
+                    wallClockOpts,
+                });
+                const sevenDayThreshold = display?.sevenDayThreshold ?? 0;
+                if (sevenDay !== null && sevenDay >= sevenDayThreshold) {
+                    const sevenDayResetAt = ctx.usageData.sevenDayResetAt;
+                    const sevenDayPart = (withReset) => formatUsageWindowPart({
+                        label: t('label.weekly'),
+                        percent: sevenDay,
+                        resetAt: withReset ? sevenDayResetAt : null,
+                        colors,
+                        usageBarEnabled,
+                        barWidth,
+                        timeFormat,
+                        showResetLabel,
+                        forceLabel: true,
+                        usageValueMode,
+                        wallClockOpts,
+                    });
+                    push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+                    weeklyGroup(sevenDayPart).forEach((part) => push(part));
+                }
+                else {
+                    push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+                    scopedParts.forEach((part) => push(part));
+                }
+            }
+            else if (scopedParts.length > 0) {
+                const [firstScopedPart, ...remainingScopedParts] = scopedParts;
+                push(`${label(t('label.usage'), colors)} ${firstScopedPart}`);
+                remainingScopedParts.forEach((part) => push(part));
+            }
+        }
+    }
+    if (ctx.usageData.balanceLabel) {
+        if (!hasWindowData) {
+            push(`${label(t('label.usage'), colors)} ${ctx.usageData.balanceLabel}`);
+        }
+        else {
+            push(ctx.usageData.balanceLabel);
+        }
+    }
+    if (ctx.usageData.staleSince && parts.length > 0) {
+        push(formatStaleUsageMarker(ctx.usageData.staleSince, colors));
+    }
+    return parts;
+}
+/**
+ * Narrower usage styles, tried in order when the usage row is wider than the
+ * terminal: drop the bars, then the "resets" wording, then fall back to the
+ * compact "5h:/7d:" form, and last drop the reset times so a third window
+ * (e.g. Fable) still fits. Without this, compactSingleRow cut the row at a
+ * segment boundary, and the segment it cut was the weekly window.
+ */
+function fitUsageRow(ctx, row, usageCount, style, barWidth, fitsRow) {
+    if (!fitsRow || usageCount === 0 || fitsRow(row.join(' | '))) {
+        return row;
+    }
+    const extras = row.slice(usageCount);
+    const steps = [
+        { ...style, bars: false },
+        { ...style, bars: false, resetLabel: false },
+        { bars: false, resetLabel: false, compact: true, resetTimes: true },
+        { bars: false, resetLabel: false, compact: true, resetTimes: false },
+    ];
+    let fitted = row;
+    for (const step of steps) {
+        fitted = [...renderUsageParts(ctx, step, barWidth), ...extras];
+        if (fitsRow(fitted.join(' | '))) {
+            break;
+        }
+    }
+    return fitted;
 }
 function formatCompactWindowPart(windowLabel, percent, resetAt, timeFormat, colors, usageValueMode = 'percent', wallClockOpts) {
     const usageDisplay = formatUsagePercent(percent, colors, usageValueMode);

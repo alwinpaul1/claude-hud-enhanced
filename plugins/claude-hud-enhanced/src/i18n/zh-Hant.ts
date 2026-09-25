@@ -21,6 +21,7 @@ export const zhHant: Messages = {
   "status.limitReached": "已達上限",
   "status.allTodosComplete": "全部完成",
   "status.expired": "已過期",
+  "status.stale": "未更新",
 
   // Format
   "format.resets": "重置於",

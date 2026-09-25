@@ -9,7 +9,9 @@ import {
   tryTakeLock,
   resolveUsage,
   shouldRefresh,
+  snapshotStaleSince,
   USAGE_TTL_MS,
+  USAGE_STALE_MS,
   OAUTH_MAX_AGE_MS,
   LOCK_STALE_MS,
 } from '../dist/usage-hybrid.js';
@@ -249,9 +251,22 @@ test('resolveUsage idle + stale but in backoff: no refresher', () => {
   assert.equal(spawned, 0, 'backoff suppresses the refresh');
 });
 
-test('resolveUsage idle + no snapshot: returns null', () => {
-  const out = resolveUsage(null, true, { now: () => NOW, homeDir: HOME, fs: makeFs(), spawnRefresher: () => {} });
-  assert.equal(out, null);
+test('resolveUsage idle + no snapshot: returns null and starts the poll', () => {
+  let spawned = 0;
+  const fs = makeFs();
+  const deps = { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
+  assert.equal(resolveUsage(null, true, deps), null);
+  assert.equal(spawned, 1, 'with no stdin and no snapshot, the poll is the only source');
+  resolveUsage(null, true, deps);
+  assert.equal(spawned, 1, 'the single-flight lock holds back a second spawn');
+});
+
+test('resolveUsage idle + no snapshot + canRefresh false: no spawn, no lock', () => {
+  let spawned = 0;
+  const fs = makeFs();
+  resolveUsage(null, true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++, canRefresh: () => false });
+  assert.equal(spawned, 0);
+  assert.equal(fs.existsSync(LOCK_PATH), false);
 });
 
 // The real-world idle shape: Claude Code keeps RE-SENDING the last frozen
@@ -526,4 +541,103 @@ test('a landed OAuth read closes the active gate (the loop terminates)', () => {
   resolveUsage(stdin({ fiveHour: 61 }), true, deps(NOW + LOCK_STALE_MS + 1_000));
   resolveUsage(stdin({ fiveHour: 62 }), true, deps(NOW + LOCK_STALE_MS + 2_000));
   assert.equal(spawned, 1, 'a fresh LIVE clock — not the lock — suppresses the next poll');
+});
+
+// Staleness: a poll that keeps failing must not let the last good reading pass
+// for a live one. Real case: a work profile's token read failed for 33 hours
+// and the HUD kept showing "Weekly 92%" while Claude Code refused requests.
+const failingOld = (overrides = {}) => snap({
+  updated_at: ISO(NOW - USAGE_STALE_MS - 1000),
+  oauth_updated_at: ISO(NOW - USAGE_STALE_MS - 1000),
+  status: 'auth_expired',
+  next_attempt_at: ISO(NOW + 60_000),
+  ...overrides,
+});
+
+test('snapshotStaleSince: a failing poll past the budget returns the last confirmed time', () => {
+  const since = snapshotStaleSince(failingOld(), NOW);
+  assert.equal(since?.getTime(), NOW - USAGE_STALE_MS - 1000);
+});
+
+test('snapshotStaleSince: a failing poll inside the budget is not stale yet', () => {
+  assert.equal(snapshotStaleSince(failingOld({ updated_at: ISO(NOW - USAGE_STALE_MS + 1000) }), NOW), null);
+});
+
+test('snapshotStaleSince: an old snapshot with a working poll is not stale (refresh lands in seconds)', () => {
+  assert.equal(snapshotStaleSince(snap({ updated_at: ISO(NOW - DAY) }), NOW), null);
+});
+
+test('snapshotStaleSince: every failure status counts', () => {
+  for (const status of ['auth_expired', 'rate_limited', 'error']) {
+    assert.ok(snapshotStaleSince(failingOld({ status }), NOW), status);
+  }
+});
+
+test('resolveUsage no stdin + failing old snapshot: serves it tagged stale', () => {
+  const out = resolveUsage(null, true, { now: () => NOW, homeDir: HOME, fs: makeFs(failingOld()), spawnRefresher: () => {} });
+  assert.equal(out.sevenDay, 20, 'still shows the last known value');
+  assert.equal(out.staleSince?.getTime(), NOW - USAGE_STALE_MS - 1000);
+});
+
+test('resolveUsage frozen stdin + failing old snapshot: tagged stale', () => {
+  const out = resolveUsage(stdin(), true, { now: () => NOW, homeDir: HOME, fs: makeFs(failingOld()), spawnRefresher: () => {} });
+  assert.ok(out.staleSince, 'stdin that never advanced past the snapshot is just as old');
+});
+
+test('resolveUsage newer snapshot over stdin + failing poll: tagged stale', () => {
+  const fs = makeFs(failingOld({ five_hour: { used_percentage: 95, resets_at: ISO(NOW + 3 * 3600_000) } }));
+  const out = resolveUsage(stdin({ fiveHour: 40 }), true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => {} });
+  assert.equal(out.fiveHour, 95);
+  assert.ok(out.staleSince);
+});
+
+test('resolveUsage advancing stdin + failing poll: fresh, returned untouched', () => {
+  const s = stdin({ fiveHour: 77 });
+  const out = resolveUsage(s, true, { now: () => NOW, homeDir: HOME, fs: makeFs(failingOld()), spawnRefresher: () => {} });
+  assert.equal(out, s, 'a live stdin reading is current whatever the poll says');
+  assert.equal(out.staleSince, undefined);
+});
+
+test('resolveUsage working poll: never tagged stale', () => {
+  const out = resolveUsage(null, true, { now: () => NOW, homeDir: HOME, fs: makeFs(snap({ updated_at: ISO(NOW - DAY) })), spawnRefresher: () => {} });
+  assert.equal(out.staleSince, undefined);
+});
+
+// Fable: only the OAuth poll sees it, so it must survive every stdin path.
+const FABLE = [{ display_name: 'Fable', utilization: 40, resets_at: ISO(NOW + 3 * DAY) }];
+
+test('snapshotToUsage turns model_scoped into scoped windows', () => {
+  const out = snapshotToUsage(snap({ model_scoped: FABLE }));
+  assert.equal(out.scopedWindows?.[0]?.label, 'Fable');
+  assert.equal(out.scopedWindows?.[0]?.percent, 40);
+});
+
+test('snapshotToUsage tolerates a malformed model_scoped', () => {
+  assert.equal(snapshotToUsage(snap({ model_scoped: 'junk' })).scopedWindows, undefined);
+});
+
+test('resolveUsage no stdin: serves the poll\'s Fable window', () => {
+  const out = resolveUsage(null, true, { now: () => NOW, homeDir: HOME, fs: makeFs(snap({ model_scoped: FABLE })), spawnRefresher: () => {} });
+  assert.equal(out.scopedWindows?.[0]?.label, 'Fable');
+});
+
+test('resolveUsage advancing stdin without scoped windows keeps the poll\'s Fable, on screen and on disk', () => {
+  const fs = makeFs(snap({ model_scoped: FABLE }));
+  const out = resolveUsage(stdin({ fiveHour: 77 }), true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => {} });
+  assert.equal(out.fiveHour, 77);
+  assert.equal(out.scopedWindows?.[0]?.label, 'Fable');
+  assert.deepEqual(readSnapshot(SNAP_PATH, fs).model_scoped, FABLE, 'the stdin write must not erase it');
+});
+
+test('resolveUsage frozen stdin without scoped windows shows the poll\'s Fable', () => {
+  const out = resolveUsage(stdin(), true, { now: () => NOW, homeDir: HOME, fs: makeFs(snap({ model_scoped: FABLE })), spawnRefresher: () => {} });
+  assert.equal(out.scopedWindows?.[0]?.percent, 40);
+});
+
+test('resolveUsage stdin that carries its own scoped windows wins', () => {
+  const own = [{ label: 'Fable', percent: 55, resetAt: new Date(NOW + 3 * DAY) }];
+  const fs = makeFs(snap({ model_scoped: FABLE }));
+  const out = resolveUsage(stdin({ fiveHour: 77, scopedWindows: own }), true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => {} });
+  assert.equal(out.scopedWindows?.[0]?.percent, 55);
+  assert.equal(readSnapshot(SNAP_PATH, fs).model_scoped?.[0]?.utilization, 55);
 });

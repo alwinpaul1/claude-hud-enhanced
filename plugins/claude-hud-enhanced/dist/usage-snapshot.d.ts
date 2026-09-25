@@ -25,6 +25,17 @@ export interface UsageSnapshot {
         used_percentage: number | null;
         resets_at: string | null;
     };
+    /**
+     * Model-scoped weekly windows (e.g. Fable), in Claude Code's own stdin
+     * `rate_limits.model_scoped` shape so both writers share one parser
+     * (parseScopedWindows). Absent on snapshots written before this field existed.
+     * Read tolerantly: a malformed value parses to no windows, never a corrupt file.
+     */
+    model_scoped?: Array<{
+        display_name: string;
+        utilization: number | null;
+        resets_at: string | null;
+    }>;
     /** Refresher-owned: outcome of the last OAuth attempt. */
     status: 'ok' | 'rate_limited' | 'auth_expired' | 'error';
     /** Refresher-owned: earliest time the poller should try again (backoff), or null. */

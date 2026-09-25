@@ -4476,3 +4476,110 @@ test('render expanded layout still stacks a right-aligned group that does not fi
   assert.equal(combined, undefined, 'narrow terminals should stack instead of combining');
   assert.ok(contextLine, 'expected a standalone context line');
 });
+
+test('renderSessionLine marks stale usage after the usage parts', () => {
+  const ctx = baseContext();
+  ctx.usageData = {
+    fiveHour: 0,
+    sevenDay: 92,
+    fiveHourResetAt: null,
+    sevenDayResetAt: new Date(Date.now() + 3 * 3600_000),
+    staleSince: new Date(Date.now() - (33 * 60 + 5) * 60 * 1000),
+  };
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('92%'), line);
+  assert.ok(line.includes('⚠ stale (1d 9h ago)'), line);
+  assert.ok(line.indexOf('92%') < line.indexOf('stale'), 'marker follows the numbers it qualifies');
+});
+
+test('renderSessionLine adds no stale marker when usage is hidden', () => {
+  const ctx = baseContext();
+  ctx.config.display.showUsage = false;
+  ctx.usageData = { fiveHour: 10, sevenDay: null, fiveHourResetAt: null, sevenDayResetAt: null, staleSince: new Date(0) };
+  assert.ok(!stripAnsi(renderSessionLine(ctx)).includes('stale'));
+});
+
+// Narrow panes: the usage row narrows itself before compactSingleRow cuts it,
+// because the segment the cut used to drop was the weekly window.
+function narrowUsageContext() {
+  const ctx = baseContext();
+  ctx.config.display.usageOnNewLine = true;
+  ctx.config.display.usageBarEnabled = true;
+  ctx.config.display.sevenDayThreshold = 0;
+  ctx.config.display.timeFormat = 'absolute';
+  ctx.usageData = {
+    fiveHour: 2,
+    sevenDay: 2,
+    fiveHourResetAt: new Date(Date.now() + 40 * 60 * 1000),
+    sevenDayResetAt: new Date(Date.now() + 5 * 86400_000),
+  };
+  return ctx;
+}
+const usageRow = (line) => stripAnsi(line).split('\n')[1] ?? '';
+const fitsWithin = (width) => (row) => stripAnsi(row).length <= width;
+
+test('renderSessionLine keeps bars on a usage row that fits', () => {
+  const row = usageRow(renderSessionLine(narrowUsageContext(), { fitsRow: fitsWithin(200) }));
+  assert.ok(row.includes('░'), row);
+  assert.ok(row.includes('Weekly'), row);
+});
+
+test('renderSessionLine drops the bars first when the usage row is too wide', () => {
+  const ctx = narrowUsageContext();
+  const full = usageRow(renderSessionLine(ctx));
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(full.length - 1) }));
+  assert.ok(!row.includes('░') && !row.includes('█'), row);
+  assert.ok(row.includes('Weekly') && row.includes('resets'), 'only the bars went');
+});
+
+test('renderSessionLine falls back to the compact 5h/7d form before losing the weekly window', () => {
+  const row = usageRow(renderSessionLine(narrowUsageContext(), { fitsRow: fitsWithin(47) }));
+  assert.ok(row.startsWith('5h:') && row.includes('| 7d:'), row);
+  assert.ok(row.length <= 47, `${row.length} > 47`);
+});
+
+test('renderSessionLine keeps non-usage parts of the usage row while narrowing it', () => {
+  const ctx = narrowUsageContext();
+  ctx.config.display.showSessionTokens = true;
+  ctx.transcript.sessionTokens = { inputTokens: 1000, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0 };
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(60) }));
+  assert.ok(row.includes('tok:'), row);
+});
+
+test('renderSessionLine without a width check renders the usage row unchanged', () => {
+  const ctx = narrowUsageContext();
+  assert.equal(renderSessionLine(ctx), renderSessionLine(ctx, {}));
+});
+
+test('renderSessionLine drops reset times last so a Fable window still fits 47 columns', () => {
+  const ctx = narrowUsageContext();
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(Date.now() + 5 * 86400_000) }];
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(47) }));
+  assert.equal(row, '5h: 2% | 7d: 2% · Fable: 0%');
+});
+
+// Weekly and Fable reset at the same boundary (the API stamps them 16:59:59.631
+// and 17:00:00), so the reset prints once, after the group.
+test('renderSessionLine groups Fable with Weekly when they share a reset', () => {
+  const ctx = narrowUsageContext();
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(ctx.usageData.sevenDayResetAt.getTime() + 400) }];
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(200) }));
+  assert.match(row, /Weekly ░+ 2% · Fable ░+ 0% \(resets [^)]+\)$/, row);
+  assert.equal(row.match(/resets/g)?.length, 2, 'one reset for 5h, one for the group');
+});
+
+test('renderSessionLine keeps a scoped window with a different reset separate', () => {
+  const ctx = narrowUsageContext();
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(Date.now() + 2 * 86400_000) }];
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(200) }));
+  assert.ok(!row.includes('·'), row);
+  assert.equal(row.match(/resets/g)?.length, 3, row);
+});
+
+test('renderSessionLine groups in the compact form too', () => {
+  const ctx = narrowUsageContext();
+  ctx.config.display.usageCompact = true;
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: ctx.usageData.sevenDayResetAt }];
+  const row = usageRow(renderSessionLine(ctx));
+  assert.match(row, /^5h: 2% \([^)]+\) \| 7d: 2% · Fable: 0% \([^)]+\)$/, row);
+});

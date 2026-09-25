@@ -4,6 +4,14 @@ export interface WallClockOptions {
     hourCycle: HourCycleMode;
     showSeconds: boolean;
 }
+/** Joins windows that share one reset, which is then printed once at the group's end. */
+export declare const SHARED_RESET_JOINER = " \u00B7 ";
+/**
+ * True when two windows reset in the same minute, so they would print the same
+ * reset time. The API stamps the weekly window 16:59:59.631 and the Fable window
+ * 17:00:00 for the same boundary, so exact equality would never match.
+ */
+export declare function sameResetMinute(a: Date | null, b: Date | null): boolean;
 /**
  * Formats a usage-window reset timestamp for display in the HUD.
  *

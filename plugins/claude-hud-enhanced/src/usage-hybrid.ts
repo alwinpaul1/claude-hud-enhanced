@@ -1,4 +1,5 @@
-import type { UsageData } from './types.js';
+import type { ScopedUsageWindow, UsageData } from './types.js';
+import { parseScopedWindows } from './stdin.js';
 import {
   type SnapshotFsDeps,
   type UsageSnapshot,
@@ -51,6 +52,14 @@ export const BACKOFF_ERROR_MS = 5 * 60_000;
  * backoff a server explicitly asked for.
  */
 export const BACKOFF_RATE_LIMIT_MS = 6 * 60_000;
+/**
+ * How long a snapshot may go unconfirmed, while its OAuth poll is failing, before
+ * the HUD flags the numbers as stale. Without this a poll that broke (an expired
+ * token, a network outage) kept rendering the last good reading as if it were
+ * live: one profile showed "Weekly 92%" for 33 hours while Claude Code was
+ * refusing requests because the weekly limit had been hit.
+ */
+export const USAGE_STALE_MS = 15 * 60_000;
 
 function toMs(d: Date | null | undefined): number | null {
   return d instanceof Date && Number.isFinite(d.getTime()) ? d.getTime() : null;
@@ -109,29 +118,50 @@ export function isStrictlyNewer(stdin: UsageData, snap: UsageSnapshot): boolean 
   return compareStdinSnapshot(stdin, snap) > 0;
 }
 
-/** Snapshot → UsageData. Note: snapshots only carry the 5h/7d windows. */
+/** The snapshot's model-scoped windows (e.g. Fable), or null when it has none. */
+function snapshotScopedWindows(snap: UsageSnapshot): ScopedUsageWindow[] | null {
+  const windows = parseScopedWindows(snap.model_scoped);
+  return windows.length > 0 ? windows : null;
+}
+
+/** Snapshot → UsageData: the 5h/7d windows plus any model-scoped ones. */
 export function snapshotToUsage(snap: UsageSnapshot): UsageData {
   const fiveReset = parseMs(snap.five_hour.resets_at);
   const sevenReset = parseMs(snap.seven_day.resets_at);
+  const scoped = snapshotScopedWindows(snap);
   return {
     fiveHour: snap.five_hour.used_percentage,
     sevenDay: snap.seven_day.used_percentage,
     fiveHourResetAt: fiveReset != null ? new Date(fiveReset) : null,
     sevenDayResetAt: sevenReset != null ? new Date(sevenReset) : null,
+    ...(scoped != null && { scopedWindows: scoped }),
   };
 }
 
 /**
- * Serve the snapshot's 5h/7d windows while keeping the stdin-only extras
- * (model-scoped windows, balance label) the snapshot doesn't carry — so a newer
- * snapshot never makes the Fable weekly bar or balance segment vanish.
+ * Serve the snapshot's windows while keeping the stdin extras the snapshot lacks
+ * (model-scoped windows it has none of, the balance label), so a newer snapshot
+ * never makes the Fable weekly bar or balance segment vanish.
  */
 export function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: UsageData): UsageData {
+  const usage = snapshotToUsage(snap);
   return {
-    ...snapshotToUsage(snap),
-    ...(stdinUsage.scopedWindows != null && { scopedWindows: stdinUsage.scopedWindows }),
+    ...usage,
+    ...(usage.scopedWindows == null && stdinUsage.scopedWindows != null && { scopedWindows: stdinUsage.scopedWindows }),
     ...(stdinUsage.balanceLabel != null && { balanceLabel: stdinUsage.balanceLabel }),
   };
+}
+
+/**
+ * Fill in the snapshot's model-scoped windows when `usage` carries none of its
+ * own. Claude Code has not been forwarding `rate_limits.model_scoped` on stdin
+ * (see index.ts), so without this the Fable window the OAuth poll found would
+ * disappear the moment a live stdin reading won the comparison.
+ */
+function withSnapshotScoped(usage: UsageData, snap: UsageSnapshot): UsageData {
+  if (usage.scopedWindows != null) return usage;
+  const scoped = snapshotScopedWindows(snap);
+  return scoped != null ? { ...usage, scopedWindows: scoped } : usage;
 }
 
 /**
@@ -146,6 +176,15 @@ export function usageToSnapshot(
   now: number,
   prev: UsageSnapshot | null,
 ): UsageSnapshot {
+  // stdin's own scoped windows when it has them; otherwise keep the poll's, so a
+  // stdin write never erases the Fable window only the OAuth poll can see.
+  const modelScoped = usage.scopedWindows != null
+    ? usage.scopedWindows.map((w) => ({
+        display_name: w.label,
+        utilization: w.percent,
+        resets_at: isoOrNull(w.resetAt),
+      }))
+    : prev?.model_scoped;
   return {
     updated_at: new Date(now).toISOString(),
     // Carried, never stamped: only a real OAuth read may move this clock. Resetting
@@ -160,9 +199,23 @@ export function usageToSnapshot(
       used_percentage: usage.sevenDay,
       resets_at: isoOrNull(usage.sevenDayResetAt),
     },
+    ...(modelScoped !== undefined && { model_scoped: modelScoped }),
     status: prev?.status ?? 'ok',
     next_attempt_at: prev?.next_attempt_at ?? null,
   };
+}
+
+/**
+ * When the snapshot's numbers can no longer be presented as current, the time they
+ * were last confirmed (by a stdin advance or a successful OAuth read); null while
+ * they are fresh. Only a FAILING poll makes a snapshot stale: with a working one
+ * the refresher replaces an aged snapshot within seconds, and flagging it in that
+ * gap would flicker a warning after every laptop wake.
+ */
+export function snapshotStaleSince(snap: UsageSnapshot, now: number): Date | null {
+  if (snap.status === 'ok') return null;
+  const confirmedAt = parseMs(snap.updated_at) ?? 0;
+  return now - confirmedAt > USAGE_STALE_MS ? new Date(confirmedAt) : null;
 }
 
 /**
@@ -261,11 +314,11 @@ export function resolveUsage(
   const snap = readSnapshot(snapshotPath, deps.fs);
   const now = deps.now();
 
-  // Spawn the detached refresher iff shouldRefresh() says so. Throttled by the
-  // single-flight lock; never blocks or throws.
-  const maybeRefresh = (s: UsageSnapshot): void => {
+  // Spawn the detached refresher iff shouldRefresh() says so, or when there is no
+  // snapshot at all to judge. Throttled by the single-flight lock; never blocks or throws.
+  const maybeRefresh = (s: UsageSnapshot | null): void => {
     if (deps.canRefresh?.() === false) return; // refresher not installed — no lock churn
-    if (shouldRefresh(s, now) && tryTakeLock(lockPath, now, deps.fs)) {
+    if ((s == null || shouldRefresh(s, now)) && tryTakeLock(lockPath, now, deps.fs)) {
       try {
         deps.spawnRefresher(deps.homeDir);
       } catch {
@@ -287,21 +340,31 @@ export function resolveUsage(
       const written = usageToSnapshot(stdinUsage, 'stdin', now, snap);
       writeSnapshotAtomic(snapshotPath, written, now, deps.fs);
       maybeRefresh(written);
-      return stdinUsage;
+      return withSnapshotScoped(stdinUsage, written);
     }
     // stdin did NOT advance (cmp <= 0) → frozen stdin, i.e. idle. The snapshot's
     // updated_at keeps aging, so refresh when it goes stale. When the snapshot is
     // strictly newer (another terminal/device advanced it), serve its windows while
-    // keeping stdin-only extras (scoped windows, balance label).
+    // keeping stdin-only extras (scoped windows, balance label). Either way nothing
+    // newer than the snapshot has been seen, so its age is the age of these numbers.
     maybeRefresh(snap);
-    return cmp < 0 ? snapshotOverStdin(snap, stdinUsage) : stdinUsage;
+    const served = cmp < 0 ? snapshotOverStdin(snap, stdinUsage) : withSnapshotScoped(stdinUsage, snap);
+    return withStaleness(served, snap, now);
   }
 
   // No stdin usage at all this render (e.g. rate_limits absent). Serve the
-  // snapshot and refresh it when stale.
-  if (snap == null) return null;
+  // snapshot and refresh it when stale. With no snapshot either, the poll is the
+  // only way a number can ever appear, so start it: returning early here left an
+  // account whose stdin never carries rate_limits without usage forever.
   maybeRefresh(snap);
-  return snapshotToUsage(snap);
+  if (snap == null) return null;
+  return withStaleness(snapshotToUsage(snap), snap, now);
+}
+
+/** Tag `usage` with the snapshot's staleness; returns it unchanged while fresh. */
+function withStaleness(usage: UsageData, snap: UsageSnapshot, now: number): UsageData {
+  const staleSince = snapshotStaleSince(snap, now);
+  return staleSince ? { ...usage, staleSince } : usage;
 }
 
 export { defaultSnapshotFs };

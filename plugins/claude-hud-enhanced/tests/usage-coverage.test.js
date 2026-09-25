@@ -309,3 +309,50 @@ test('renderUsageLine elapsedAndAbsolute format for limit uses absolute', () => 
   assert.ok(line.includes('Limit reached'));
   assert.ok(line.includes('resets') && !line.includes('resets at'));
 });
+
+test('renderUsageLine appends a stale marker with the reading\'s age', () => {
+  const ctx = baseContext();
+  ctx.usageData.staleSince = new Date(Date.now() - (33 * 60 + 5) * 60 * 1000);
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(line.endsWith('| ⚠ stale (1d 9h ago)'), line);
+});
+
+test('renderUsageLine marks a stale limit-reached line too', () => {
+  const ctx = baseContext();
+  ctx.usageData.fiveHour = 100;
+  ctx.usageData.staleSince = new Date(Date.now() - 20 * 60 * 1000);
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(line.includes('Limit reached') && line.includes('⚠ stale (20m ago)'), line);
+});
+
+test('renderUsageLine adds no marker to fresh usage', () => {
+  const line = stripAnsi(renderUsageLine(baseContext()) ?? '');
+  assert.ok(!line.includes('stale'), line);
+});
+
+test('renderUsageLine hidden by threshold stays hidden even when stale', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageThreshold = 90;
+  ctx.usageData.staleSince = new Date(Date.now() - 20 * 60 * 1000);
+  assert.equal(renderUsageLine(ctx), null);
+});
+
+test('renderUsageLine groups Fable with Weekly when they share a reset', () => {
+  const ctx = baseContext();
+  ctx.config.display.sevenDayThreshold = 0;
+  ctx.usageData.sevenDay = 3;
+  ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(ctx.usageData.sevenDayResetAt.getTime() + 400) }];
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.match(line, /Weekly 3% · Fable 0% \(resets in [^)]+\)$/, line);
+});
+
+test('renderUsageLine keeps a scoped window with a different reset separate', () => {
+  const ctx = baseContext();
+  ctx.config.display.sevenDayThreshold = 0;
+  ctx.usageData.sevenDay = 3;
+  ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(Date.now() + 2 * 86400_000) }];
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(!line.includes('·') && line.includes('| Fable'), line);
+});
