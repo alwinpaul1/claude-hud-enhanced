@@ -106,14 +106,17 @@ function renderUsageBody(
   // The weekly window plus every scoped window. Those that reset in the same
   // minute as the weekly one (Fable does) join it as one " · " group that prints
   // the shared reset once, at the end; the rest keep their own.
-  const withScoped = (renderWeekly: (withReset: boolean) => string): string => {
-    const weeklyResetAt = ctx.usageData?.sevenDayResetAt ?? null;
-    const shared = scopedWindows.filter((w) => sameResetMinute(w.resetAt, weeklyResetAt));
+  // `anchor` is the weekly window, or the limit warning when a limit is hit.
+  const withScoped = (
+    renderAnchor: (withReset: boolean) => string,
+    anchorResetAt: Date | null = ctx.usageData?.sevenDayResetAt ?? null,
+  ): string => {
+    const shared = scopedWindows.filter((w) => sameResetMinute(w.resetAt, anchorResetAt));
     if (shared.length === 0) {
-      return `${renderWeekly(true)}${scopedSuffix}`;
+      return `${renderAnchor(true)}${scopedSuffix}`;
     }
     const group = [
-      renderWeekly(false),
+      renderAnchor(false),
       ...shared.map((w, index) => scopedPart(w, index === shared.length - 1)),
     ].join(SHARED_RESET_JOINER);
     return `${group}${suffixOf(scopedWindows.filter((w) => !shared.includes(w)))}`;
@@ -121,19 +124,24 @@ function renderUsageBody(
 
   if (isLimitReached(ctx.usageData)) {
     const limitTimeFormat = limitResetTimeFormat(timeFormat);
-    const resetTime =
-      ctx.usageData.fiveHour === 100
-        ? formatResetTime(ctx.usageData.fiveHourResetAt, limitTimeFormat, 'short', wallClockOpts)
-        : formatResetTime(ctx.usageData.sevenDayResetAt, limitTimeFormat, 'long', wallClockOpts);
-    if (usageCompact) {
-      return appendBalance(`${critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ""}`, colors)}${scopedSuffix}`, balanceLabel);
-    }
-    const resetSuffix = resetTime
-      ? showResetLabel
-        ? ` (${t(resetsKey)} ${resetTime})`
-        : ` (${resetTime})`
-      : "";
-    return appendBalance(`${usageLabel} ${critical(`⚠ ${t("status.limitReached")}${resetSuffix}`, colors)}${scopedSuffix}`, balanceLabel);
+    const fiveHourLimit = ctx.usageData.fiveHour === 100;
+    const limitResetAt = fiveHourLimit ? ctx.usageData.fiveHourResetAt : ctx.usageData.sevenDayResetAt;
+    const limitPart = (withReset: boolean): string => {
+      const resetTime = withReset
+        ? formatResetTime(limitResetAt, limitTimeFormat, fiveHourLimit ? 'short' : 'long', wallClockOpts)
+        : "";
+      if (usageCompact) {
+        return critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ""}`, colors);
+      }
+      const resetSuffix = resetTime
+        ? showResetLabel
+          ? ` (${t(resetsKey)} ${resetTime})`
+          : ` (${resetTime})`
+        : "";
+      return critical(`⚠ ${t("status.limitReached")}${resetSuffix}`, colors);
+    };
+    const limitLine = withScoped(limitPart, limitResetAt);
+    return appendBalance(usageCompact ? limitLine : `${usageLabel} ${limitLine}`, balanceLabel);
   }
 
   const threshold = display?.usageThreshold ?? 0;

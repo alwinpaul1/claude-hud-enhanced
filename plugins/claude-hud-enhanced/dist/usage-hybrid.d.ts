@@ -29,6 +29,12 @@ export declare const USAGE_TTL_MS = 60000;
  */
 export declare const OAUTH_MAX_AGE_MS = 120000;
 export declare const LOCK_STALE_MS = 60000;
+/**
+ * Auth failures retry on the error cadence, not a long one: the usual cure is
+ * the user signing in again, and a 30-minute wait kept the HUD stale for up to
+ * half an hour after a successful /login. A failed read costs one local Keychain
+ * lookup (plus one 401 when a token was found), which is cheap at this rate.
+ */
 export declare const BACKOFF_AUTH_MS: number;
 export declare const BACKOFF_ERROR_MS: number;
 /**

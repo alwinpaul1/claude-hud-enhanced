@@ -4596,3 +4596,20 @@ test('renderSessionLine groups in the compact form too', () => {
   const row = usageRow(renderSessionLine(ctx));
   assert.match(row, /^5h: 2% \([^)]+\) \| 7d: 2% · Fable: 0% \([^)]+\)$/, row);
 });
+
+test('renderSessionLine groups Fable with a weekly limit warning that shares its reset', () => {
+  const ctx = narrowUsageContext();
+  ctx.usageData.sevenDay = 100;
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: new Date(ctx.usageData.sevenDayResetAt.getTime() + 400) }];
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(300) }));
+  assert.match(row, /^⚠ Limit reached · Fable ░*█*░* 29% \(resets [^)]+\)$|^⚠ Limit reached · Fable [█░]+ 29% \(resets [^)]+\)$/, row);
+  assert.equal(row.match(/resets/g)?.length, 1, row);
+});
+
+test('renderSessionLine keeps Fable separate from a 5h limit (different reset)', () => {
+  const ctx = narrowUsageContext();
+  ctx.usageData.fiveHour = 100;
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: ctx.usageData.sevenDayResetAt }];
+  const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(300) }));
+  assert.ok(row.startsWith('⚠ Limit reached (resets') && row.includes(' | Fable'), row);
+});

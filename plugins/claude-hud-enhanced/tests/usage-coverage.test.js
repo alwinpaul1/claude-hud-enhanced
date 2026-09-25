@@ -356,3 +356,22 @@ test('renderUsageLine keeps a scoped window with a different reset separate', ()
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
   assert.ok(!line.includes('·') && line.includes('| Fable'), line);
 });
+
+test('renderUsageLine groups Fable with a weekly limit warning that shares its reset', () => {
+  const ctx = baseContext();
+  ctx.usageData.sevenDay = 100;
+  ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: ctx.usageData.sevenDayResetAt }];
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.match(line, /⚠ Limit reached · Fable 29% \(resets in [^)]+\)$/, line);
+});
+
+test('renderUsageLine compact limit groups Fable too', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageCompact = true;
+  ctx.usageData.sevenDay = 100;
+  ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: ctx.usageData.sevenDayResetAt }];
+  const line = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.match(line, /^⚠ Limit · Fable: 29% \([^)]+\)$/, line);
+});

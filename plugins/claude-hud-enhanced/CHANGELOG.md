@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.2] - 2026-09-25
+
+### Fixed
+
+- **A weekly limit printed its reset twice.** At 100% weekly the row read
+  `⚠ Limit reached (resets Sat 3:00 AM) | Fable 29% (resets Sat 3:00 AM)`.
+  The limit warning now joins the windows that share its reset, the same way
+  Weekly does: `⚠ Limit reached · Fable 29% (resets Sat 3:00 AM)`. A 5h limit
+  resets at a different time, so Fable stays separate there. Both layouts.
+- **A fresh login took up to 30 minutes to show.** Auth failures backed off for
+  30 minutes, so after `/login` the HUD kept its stale reading until the wait
+  ran out. They now retry every 5 minutes, the same as network errors. A failed
+  attempt costs one local Keychain lookup, plus one 401 when a token was found.
+
 ## [0.8.1] - 2026-09-25
 
 ### Fixed

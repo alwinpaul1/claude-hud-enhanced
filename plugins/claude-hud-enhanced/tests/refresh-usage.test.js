@@ -150,9 +150,9 @@ test('failureSnapshot preserves last-good values and does NOT bump updated_at', 
   assert.equal(snap.status, 'error');
 });
 
-test('failureSnapshot backoff: error ~5min, auth_expired ~30min', () => {
+test('failureSnapshot backoff: error and auth_expired both ~5min', () => {
   assert.equal(failureSnapshot(PREV, 'error', NOW).next_attempt_at, ISO(NOW + 5 * 60_000));
-  assert.equal(failureSnapshot(PREV, 'auth_expired', NOW).next_attempt_at, ISO(NOW + 30 * 60_000));
+  assert.equal(failureSnapshot(PREV, 'auth_expired', NOW).next_attempt_at, ISO(NOW + 5 * 60_000));
 });
 
 test('failureSnapshot backoff: 429 honors Retry-After, else its own constant', () => {

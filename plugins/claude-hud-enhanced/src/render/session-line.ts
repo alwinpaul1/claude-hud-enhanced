@@ -360,35 +360,40 @@ function renderUsageParts(ctx: RenderContext, style: UsageRowStyle, barWidth: nu
   // The weekly window followed by the scoped windows. Those that reset in the
   // same minute as the weekly one (Fable does) join it as one " · " group that
   // prints the shared reset once, at the end; the rest keep their own.
-  const weeklyGroup = (renderWeekly: (withReset: boolean) => string): string[] => {
-    const weeklyResetAt = ctx.usageData?.sevenDayResetAt ?? null;
-    const shared = scopedWindows.filter((window) => sameResetMinute(window.resetAt, weeklyResetAt));
+  // `anchor` is the weekly window, or the limit warning when a limit is hit.
+  const resetGroup = (renderAnchor: (withReset: boolean) => string, anchorResetAt: Date | null): string[] => {
+    const shared = scopedWindows.filter((window) => sameResetMinute(window.resetAt, anchorResetAt));
     const separate = scopedWindows.filter((window) => !shared.includes(window));
     if (shared.length === 0) {
-      return [renderWeekly(true), ...scopedParts];
+      return [renderAnchor(true), ...scopedParts];
     }
     const group = [
-      renderWeekly(false),
+      renderAnchor(false),
       ...shared.map((window, index) => scopedPart(window, index === shared.length - 1)),
     ].join(SHARED_RESET_JOINER);
     return [group, ...separate.map((window) => scopedPart(window))];
   };
+  const weeklyGroup = (renderWeekly: (withReset: boolean) => string): string[] =>
+    resetGroup(renderWeekly, ctx.usageData?.sevenDayResetAt ?? null);
 
   if (isLimitReached(ctx.usageData)) {
-    const resetTime = ctx.usageData.fiveHour === 100
-      ? formatResetTime(resetAtOf(ctx.usageData.fiveHourResetAt), timeFormat, 'short', wallClockOpts)
-      : formatResetTime(resetAtOf(ctx.usageData.sevenDayResetAt), timeFormat, 'long', wallClockOpts);
-    if (usageCompact) {
-      push(critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ''}`, colors));
-    } else {
+    const fiveHourLimit = ctx.usageData.fiveHour === 100;
+    const limitResetAt = fiveHourLimit ? ctx.usageData.fiveHourResetAt : ctx.usageData.sevenDayResetAt;
+    const limitPart = (withReset: boolean): string => {
+      const resetTime = withReset
+        ? formatResetTime(resetAtOf(limitResetAt), timeFormat, fiveHourLimit ? 'short' : 'long', wallClockOpts)
+        : '';
+      if (usageCompact) {
+        return critical(`⚠ Limit${resetTime ? ` (${resetTime})` : ''}`, colors);
+      }
       const resetSuffix = resetTime
         ? showResetLabel
           ? ` (${t(resetsKey)} ${resetTime})`
           : ` (${resetTime})`
         : '';
-      push(critical(`⚠ ${t('status.limitReached')}${resetSuffix}`, colors));
-    }
-    scopedParts.forEach((part) => push(part));
+      return critical(`⚠ ${t('status.limitReached')}${resetSuffix}`, colors);
+    };
+    resetGroup(limitPart, limitResetAt).forEach((part) => push(part));
   } else {
     const usageThreshold = display?.usageThreshold ?? 0;
     const fiveHour = ctx.usageData.fiveHour;

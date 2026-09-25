@@ -34,7 +34,13 @@ export const LOCK_STALE_MS = 60_000; // a refresher lock older than this is aban
 // be respawned on nearly every stale render — the retry-storm shape this
 // feature exists to prevent (ccstatusline #204). tests/usage-hybrid.test.js
 // asserts the margin so a future gate cut cannot quietly erase it.
-export const BACKOFF_AUTH_MS = 30 * 60_000;
+/**
+ * Auth failures retry on the error cadence, not a long one: the usual cure is
+ * the user signing in again, and a 30-minute wait kept the HUD stale for up to
+ * half an hour after a successful /login. A failed read costs one local Keychain
+ * lookup (plus one 401 when a token was found), which is cheap at this rate.
+ */
+export const BACKOFF_AUTH_MS = 5 * 60_000;
 export const BACKOFF_ERROR_MS = 5 * 60_000;
 /**
  * 429 fallback when the server sent no Retry-After. Its own constant rather than
