@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.3] - 2026-09-27
+
+### Changed
+
+- **The effort level and the Fable meter show out of the box.** A fresh install
+  has no `config.json`, so the defaults are what a new user sees, and they hid
+  both segments the README screenshot shows. Reported on Windows 11 with 0.8.2:
+  the HUD ran but read `[Opus 5.5 | Max 5x]` with no effort and no Fable. The
+  new defaults are the three settings that fixed it there:
+  - `display.showEffortLevel: true`, with `display.effortFormat: "text"`, so the
+    model reads `[Opus 5.5 xhigh | Max 5x]` as in the screenshot.
+  - `display.oauthUsagePoll: true`. Fable arrives only through the OAuth usage
+    API, because Claude Code sends no model-scoped windows on stdin, so with
+    the poll off the Fable meter could never render. The poll reads the Claude
+    Code OAuth token read-only and calls Anthropic's usage endpoint at most once
+    a minute. Set `display.oauthUsagePoll: false` to stay fully local.
+- Existing `config.json` values win over these defaults, so a profile that set
+  either flag keeps its choice.
+
 ## [0.8.2] - 2026-09-25
 
 ### Fixed

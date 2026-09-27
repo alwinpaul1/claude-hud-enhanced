@@ -53,7 +53,8 @@ test('main: explicit negative CLAUDE_HUD_DISABLE value still runs the HUD', asyn
   try {
     await main({
       readStdin: async () => null,
-      loadConfig: async () => DEFAULT_CONFIG,
+      // Poll off: this runs main() against the real home directory.
+      loadConfig: async () => ({ ...DEFAULT_CONFIG, display: { ...DEFAULT_CONFIG.display, oauthUsagePoll: false } }),
       log: (...args) => {
         logged.push(args.join(' '));
       },

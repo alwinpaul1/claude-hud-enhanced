@@ -30,6 +30,10 @@ function makeConfig(overrides = {}) {
     },
     display: {
       ...DEFAULT_CONFIG.display,
+      // main() runs in-process against the real home directory; with the poll
+      // on it would write the developer's live usage snapshot and start a real
+      // OAuth refresher. Tests opt back in explicitly when they need it.
+      oauthUsagePoll: false,
       ...(overrides.display ?? {}),
     },
     colors: {

@@ -117,8 +117,11 @@ test('flagship layout is the default on every platform (0.5.1)', () => {
   assert.equal(DEFAULT_CONFIG.display.usageOnNewLine, true);
   assert.equal(DEFAULT_CONFIG.display.showAuthInModel, true);
   assert.equal(DEFAULT_CONFIG.display.timeFormat, 'absolute');
-  // Behavior flags stay OPT-IN (network/idle semantics, not layout).
-  assert.equal(DEFAULT_CONFIG.display.oauthUsagePoll, false);
+  // The OAuth poll is ON by default since 0.8.3: without it the Fable meter
+  // never renders (Claude Code sends no model_scoped windows on stdin), and a
+  // fresh install has no config.json to turn it on. The other behavior flags
+  // stay opt-in.
+  assert.equal(DEFAULT_CONFIG.display.oauthUsagePoll, true);
   assert.equal(DEFAULT_CONFIG.display.idleUsageReset, false);
   assert.equal(DEFAULT_CONFIG.daemon.enabled, false);
 });
@@ -381,10 +384,10 @@ test('mergeConfig falls back to full for invalid modelFormat', () => {
   assert.equal(mergeConfig({ display: { modelFormat: null } }).display.modelFormat, 'full');
 });
 
-test('mergeConfig defaults effortFormat to full', () => {
+test('mergeConfig defaults effortFormat to text', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.effortFormat, 'full');
-  assert.equal(DEFAULT_CONFIG.display.effortFormat, 'full');
+  assert.equal(config.display.effortFormat, 'text');
+  assert.equal(DEFAULT_CONFIG.display.effortFormat, 'text');
 });
 
 test('mergeConfig preserves valid effortFormat values', () => {
@@ -393,10 +396,10 @@ test('mergeConfig preserves valid effortFormat values', () => {
   assert.equal(mergeConfig({ display: { effortFormat: 'full' } }).display.effortFormat, 'full');
 });
 
-test('mergeConfig falls back to full for invalid effortFormat', () => {
-  assert.equal(mergeConfig({ display: { effortFormat: 'invalid' } }).display.effortFormat, 'full');
-  assert.equal(mergeConfig({ display: { effortFormat: 123 } }).display.effortFormat, 'full');
-  assert.equal(mergeConfig({ display: { effortFormat: null } }).display.effortFormat, 'full');
+test('mergeConfig falls back to the text default for invalid effortFormat', () => {
+  assert.equal(mergeConfig({ display: { effortFormat: 'invalid' } }).display.effortFormat, 'text');
+  assert.equal(mergeConfig({ display: { effortFormat: 123 } }).display.effortFormat, 'text');
+  assert.equal(mergeConfig({ display: { effortFormat: null } }).display.effortFormat, 'text');
 });
 
 test('mergeConfig defaults modelOverride to empty string', () => {
@@ -1379,4 +1382,17 @@ test('mergeConfig accepts valid rightAlign entries and filters invalid ones', ()
 test('mergeConfig falls back to empty rightAlign when value is not an array', () => {
   assert.deepEqual(mergeConfig({ display: { rightAlign: 'context' } }).display.rightAlign, []);
   assert.deepEqual(mergeConfig({ display: { rightAlign: null } }).display.rightAlign, []);
+});
+
+// A fresh install has no config.json, so these defaults ARE what a new user
+// sees; the README screenshot shows the effort level (reported 2026-09-27).
+test('effort level shows by default, as text', () => {
+  const config = mergeConfig({});
+  assert.equal(config.display.showEffortLevel, true);
+  assert.equal(DEFAULT_CONFIG.display.showEffortLevel, true);
+  assert.equal(config.display.effortFormat, 'text');
+});
+
+test('an explicit showEffortLevel: false still turns it off', () => {
+  assert.equal(mergeConfig({ display: { showEffortLevel: false } }).display.showEffortLevel, false);
 });

@@ -375,8 +375,8 @@ export const DEFAULT_CONFIG: HudConfig = {
     showAuthUser: false,
     authUserLength: 8,
     showClaudeCodeVersion: false,
-    showEffortLevel: false,
-    effortFormat: 'full',
+    showEffortLevel: true,
+    effortFormat: 'text',
     showMemoryUsage: false,
     showPromptCache: false,
     promptCacheTtlSeconds: 300,
@@ -409,7 +409,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     // boundary instead of wrapping to a third row).
     compactSingleRow: true,
     idleUsageReset: false,
-    oauthUsagePoll: false,
+    oauthUsagePoll: true,
     customLine: '',
     customLinePosition: 'last',
     timeFormat: 'absolute', // enhanced: absolute reset clock times ("resets at 11:00 PM")
