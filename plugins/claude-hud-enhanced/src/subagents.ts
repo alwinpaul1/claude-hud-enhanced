@@ -5,6 +5,7 @@ import type { AgentEntry } from './types.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
 
 export interface SubagentSeen {
+  id?: string;
   type: string;
   model: string;
   modelId: string;
@@ -193,6 +194,7 @@ export async function readRunningSubagents(
     const fed = meta ? feed[meta.id] : undefined;
     const modelId = fed?.modelId ?? tail?.modelId ?? meta?.model ?? agent.model ?? '';
     const entry: SubagentSeen = {
+      id: agent.id,
       type: meta?.agentType ?? clean(agent.type) ?? 'agent',
       model: modelId || '?',
       modelId,

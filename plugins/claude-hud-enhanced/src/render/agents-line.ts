@@ -2,18 +2,24 @@ import type { RenderContext, AgentEntry } from '../types.js';
 import { yellow, green, magenta, label } from './colors.js';
 import { truncateString } from '../utils/truncate.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
+import { formatTokens } from '../utils/format.js';
+import { knownWindows, type SubagentSeen } from '../subagents.js';
+import { getVcsDisplayState, vcsLabel } from './vcs-status.js';
+import { git as gitColor, gitBranch as gitBranchColor } from './colors.js';
+import { firstFitting, type Fits } from './visual.js';
 
 const MAX_RECENT_COMPLETED = 2;
 const MAX_AGENTS_SHOWN = 3;
 const COMPLETED_RETENTION_MS = 60_000;
 const AGENT_TYPE_MAX_LEN = 24;
 const AGENT_DESCRIPTION_MAX_LEN = 40;
+const AGENT_DESCRIPTION_SHORT_LEN = 20;
 
 function takeLast<T>(entries: readonly T[], count: number): T[] {
   return count > 0 ? entries.slice(-count) : [];
 }
 
-export function renderAgentsLine(ctx: RenderContext): string | null {
+export function renderAgentsLine(ctx: RenderContext, fits?: Fits): string | null {
   const { agents } = ctx.transcript;
   const colors = ctx.config?.colors;
   const now = Date.now();
@@ -58,11 +64,15 @@ export function renderAgentsLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  const lines: string[] = [];
-  for (const agent of toShow) {
-    lines.push(formatAgent(agent, colors, now));
-  }
-  return lines.join('\n');
+  const seenById = new Map((ctx.pillAgents ?? []).flatMap((entry) => (entry.id ? [[entry.id, entry] as const] : [])));
+
+  return toShow
+    .map((agent) => {
+      const seen = agent.status === 'running' ? seenById.get(agent.id) : undefined;
+      const details: AgentDetail[] = ['full', 'noGit', 'shortText', 'noText', 'bare'];
+      return firstFitting(details.map((detail) => () => formatAgent(agent, seen, ctx, now, detail)), fits);
+    })
+    .join('\n');
 }
 
 /**
@@ -118,21 +128,48 @@ function getStatusIcon(
   }
 }
 
+type AgentDetail = 'full' | 'noGit' | 'shortText' | 'noText' | 'bare';
+
+function agentContext(seen: SubagentSeen): string | null {
+  if (seen.tokens === null) return null;
+  const window = seen.window ?? knownWindows.get(seen.modelId) ?? null;
+  return window !== null && window > 0
+    ? `${Math.round((seen.tokens / window) * 100)}%`
+    : formatTokens(seen.tokens);
+}
+
+function agentGit(seen: SubagentSeen | undefined, ctx: RenderContext): string {
+  const vcs = seen?.git ? getVcsDisplayState({ ...seen.git, isLinked: true }, ctx.config) : null;
+  if (!vcs) return '';
+  const colors = ctx.config?.colors;
+  return ` ${gitColor(vcsLabel(vcs), colors)}${gitBranchColor(`${vcs.branch}${vcs.dirty ? '*' : ''}`, colors)}${gitColor(')', colors)}`;
+}
+
 function formatAgent(
   agent: AgentEntry,
-  colors: RenderContext['config']['colors'] | undefined,
+  seen: SubagentSeen | undefined,
+  ctx: RenderContext,
   now: number,
+  detail: AgentDetail,
 ): string {
+  const colors = ctx.config?.colors;
   const statusIcon = getStatusIcon(agent.status);
-  const typeLabel = sanitizeAgentText(agent.type, AGENT_TYPE_MAX_LEN) || 'agent';
+  const typeLabel = sanitizeAgentText(seen?.type ?? agent.type, AGENT_TYPE_MAX_LEN) || 'agent';
   const type = magenta(typeLabel);
-  const modelLabel = formatAgentModel(agent.model);
-  const model = modelLabel ? label(`[${modelLabel}]`, colors) : '';
-  const description = sanitizeAgentText(agent.description, AGENT_DESCRIPTION_MAX_LEN);
+  const modelLabel = formatAgentModel(seen?.modelId || agent.model);
+  const extras = detail === 'bare' || !seen
+    ? []
+    : [seen.effort ? sanitizeAgentText(seen.effort, AGENT_TYPE_MAX_LEN) : '', agentContext(seen) ?? ''].filter(Boolean);
+  const badge = [modelLabel ?? '', ...extras].filter(Boolean).join(' ');
+  const model = badge ? label(`[${badge}]`, colors) : '';
+  const git = detail === 'full' ? agentGit(seen, ctx) : '';
+  const description = detail === 'noText' || detail === 'bare'
+    ? ''
+    : sanitizeAgentText(agent.description, detail === 'shortText' ? AGENT_DESCRIPTION_SHORT_LEN : AGENT_DESCRIPTION_MAX_LEN);
   const desc = description ? label(`: ${description}`, colors) : '';
   const elapsed = formatElapsed(agent, now);
 
-  return `${statusIcon} ${type}${model ? ` ${model}` : ''}${desc} ${label(`(${elapsed})`, colors)}`;
+  return `${statusIcon} ${type}${model ? ` ${model}` : ''}${git}${desc} ${label(`(${elapsed})`, colors)}`;
 }
 
 function sanitizeAgentText(value: unknown, maxLen: number): string {

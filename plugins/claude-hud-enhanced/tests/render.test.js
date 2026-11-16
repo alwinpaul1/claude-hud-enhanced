@@ -84,7 +84,7 @@ function baseContext() {
       elementOrder: ['project', 'context', 'usage', 'promptCache', 'memory', 'environment', 'tools', 'skills', 'mcp', 'agents', 'todos'],
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false, branchOverflow: 'truncate', pushWarningThreshold: 0, pushCriticalThreshold: 0 },
       jjStatus: { enabled: true, showDirty: true, showConflicts: true },
-      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageValue: 'percent', usageBarEnabled: false, showResetLabel: true, showTools: true, showSkills: false, showMcp: false, showAgents: true, showTodos: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showPromptCache: false, showOutputStyle: false, mergeGroups: [['context', 'usage']], autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
+      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageValue: 'percent', usageBarEnabled: false, showResetLabel: true, toolsLine: true, showSkills: false, showMcp: false, agentsLine: true, todosLine: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showPromptCache: false, showOutputStyle: false, mergeGroups: [['context', 'usage']], autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
       colors: {
         context: 'green',
         usage: 'brightBlue',
@@ -1792,7 +1792,7 @@ test('renderToolsLine renders running and completed tools', () => {
   assert.ok(line?.includes('.../authentication.ts'));
 });
 
-test('renderToolsLine keeps default tool cap and full names', () => {
+test('renderToolsLine keeps default tool cap and names MCP tools as server:tool', () => {
   const ctx = baseContext();
   ctx.transcript.tools = [
     { id: 'tool-1', name: 'mcp__plugin_context-mode_context-mode__ctx_batch_execute', status: 'completed', startTime: new Date(0), endTime: new Date(0) },
@@ -1803,7 +1803,8 @@ test('renderToolsLine keeps default tool cap and full names', () => {
   ];
 
   const line = stripAnsi(renderToolsLine(ctx) ?? '');
-  assert.ok(line.includes('mcp__plugin_context-mode_context-mode__ctx_batch_execute'));
+  assert.ok(line.includes('✓ context-mode:ctx_batch_execute ×1'), line);
+  assert.ok(!line.includes('mcp__'), line);
   assert.ok(!line.includes('Write ×1'));
 });
 
@@ -1856,7 +1857,7 @@ test('renderToolsLine respects toolsMaxVisible and preserves overflow indicator'
   assert.ok(line.includes('+2 more'));
 });
 
-test('render wraps all completed tools when toolsMaxVisible is unlimited', () => {
+test('render fits the tools line to a narrow pane and counts what it left out', () => {
   const ctx = baseContext();
   ctx.config.lineLayout = 'compact';
   ctx.config.display.toolsMaxVisible = 0;
@@ -1876,9 +1877,9 @@ test('render wraps all completed tools when toolsMaxVisible is unlimited', () =>
     lines = captureRenderLines(ctx);
   });
 
-  assert.ok(lines.length > 1, 'expected the tools line to wrap on a narrow terminal');
-  assert.ok(lines.some(line => line.includes('ToolSearch ×1')));
-  assert.ok(!lines.some(line => line.includes('more')));
+  const toolRows = lines.map(stripAnsi).filter(line => line.includes('×1'));
+  assert.equal(toolRows.length, 1, 'the tools line stays one row');
+  assert.match(toolRows[0], /^✓ Read ×1 \| \+4 more$/);
 });
 
 test('renderToolsLine preserves running targets and path truncation with shortened tool names', () => {
@@ -4569,22 +4570,22 @@ test('renderSessionLine without a width check renders the usage row unchanged', 
   assert.equal(renderSessionLine(ctx), renderSessionLine(ctx, {}));
 });
 
-test('renderSessionLine drops reset times last so a Fable window still fits', () => {
+test('renderSessionLine drops reset times so a Fable window still fits', () => {
   const ctx = narrowUsageContext();
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: ctx.usageData.sevenDayResetAt }];
   const compactWithResets = usageRowStyled(ctx, { usageCompact: true });
   const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(compactWithResets.length - 1) }));
-  assert.equal(row, '5h: 2% | 7d: 2% · Fable: 0%');
+  assert.equal(row, '5h: 2% | Fable: 0% | 7d: 2%');
 });
 
 // Weekly and Fable reset at the same boundary (the API stamps them 16:59:59.631
 // and 17:00:00), so the reset prints once, after the group.
-test('renderSessionLine groups Fable with Weekly when they share a reset', () => {
+test('renderSessionLine puts Fable between 5h and Weekly and prints a shared reset once', () => {
   const ctx = narrowUsageContext();
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(ctx.usageData.sevenDayResetAt.getTime() + 400) }];
   const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(200) }));
-  assert.match(row, /Weekly ░+ 2% · Fable ░+ 0% \(resets [^)]+\)$/, row);
-  assert.equal(row.match(/resets/g)?.length, 2, 'one reset for 5h, one for the group');
+  assert.match(row, /\| Fable ░+ 0% \| Weekly ░+ 2% \(resets [^)]+\)$/, row);
+  assert.equal(row.match(/resets/g)?.length, 2, 'one reset for 5h, one shared by Fable and Weekly');
 });
 
 test('renderSessionLine keeps a scoped window with a different reset separate', () => {
@@ -4595,20 +4596,20 @@ test('renderSessionLine keeps a scoped window with a different reset separate', 
   assert.equal(row.match(/resets/g)?.length, 3, row);
 });
 
-test('renderSessionLine groups in the compact form too', () => {
+test('renderSessionLine orders the compact form the same way', () => {
   const ctx = narrowUsageContext();
   ctx.config.display.usageCompact = true;
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: ctx.usageData.sevenDayResetAt }];
   const row = usageRow(renderSessionLine(ctx));
-  assert.match(row, /^5h: 2% \([^)]+\) \| 7d: 2% · Fable: 0% \([^)]+\)$/, row);
+  assert.match(row, /^5h: 2% \([^)]+\) \| Fable: 0% \| 7d: 2% \([^)]+\)$/, row);
 });
 
-test('renderSessionLine groups Fable with a weekly limit warning that shares its reset', () => {
+test('renderSessionLine keeps Fable beside a weekly limit warning and prints the shared reset once', () => {
   const ctx = narrowUsageContext();
   ctx.usageData.sevenDay = 100;
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: new Date(ctx.usageData.sevenDayResetAt.getTime() + 400) }];
   const row = usageRow(renderSessionLine(ctx, { fitsRow: fitsWithin(300) }));
-  assert.match(row, /^⚠ Limit reached · Fable ░*█*░* 29% \(resets [^)]+\)$|^⚠ Limit reached · Fable [█░]+ 29% \(resets [^)]+\)$/, row);
+  assert.match(row, /^⚠ Limit reached \(resets [^)]+\) \| Fable [█░]+ 29%$/, row);
   assert.equal(row.match(/resets/g)?.length, 1, row);
 });
 

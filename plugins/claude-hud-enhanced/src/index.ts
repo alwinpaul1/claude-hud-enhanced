@@ -8,7 +8,6 @@ import { findGitDir, getGitStatusCached } from "./git-cache.js";
 import { getJjStatus, isJjRepo } from "./jj.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
-import { extraSpend, extraSpendLabel } from "./extra-usage.js";
 import { getClaudeCodeVersion } from "./version.js";
 import { getMemoryUsage } from "./memory.js";
 import { readAuthInfo } from "./auth.js";
@@ -353,10 +352,6 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
         usageData = applyIdleUsageReset(usageData, deps.now());
       }
 
-      const spend = config.lineLayout === "pills" ? null : extraSpend(usageData);
-      if (usageData && spend && usageData.balanceLabel == null) {
-        usageData = { ...usageData, balanceLabel: `extra ${extraSpendLabel(spend)}` };
-      }
     }
 
     const extraCmd = deps.parseExtraCmdArg();
@@ -383,7 +378,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
 
     const isPills = config.lineLayout === "pills";
     const pillAgents =
-      isPills && config.display.showAgents !== false
+      isPills || config.display.agentsLine
         ? await deps.readRunningSubagents(
             transcriptPath,
             transcript.agents,
@@ -394,7 +389,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
           )
         : undefined;
     const prStatus =
-      isPills && config.display.pillPr && stdin.cwd && gitStatus && gitStatus.vcs !== "jj" && findGitDir(stdin.cwd) !== null
+      config.display.pillPr && stdin.cwd && gitStatus && gitStatus.vcs !== "jj" && findGitDir(stdin.cwd) !== null
         ? resolvePrStatus(
             {
               cwd: stdin.cwd,

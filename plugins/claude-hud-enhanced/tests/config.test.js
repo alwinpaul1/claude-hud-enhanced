@@ -114,7 +114,7 @@ test('flagship layout is the default on every platform (0.5.1)', () => {
   assert.equal(config.display.compactSingleRow, true);
   assert.equal(DEFAULT_CONFIG.display.compactSingleRow, true);
   // Visual defaults that complete the look (already on; pinned here).
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'pills');
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
   assert.equal(DEFAULT_CONFIG.display.usageOnNewLine, true);
   assert.equal(DEFAULT_CONFIG.display.showAuthInModel, true);
   assert.equal(DEFAULT_CONFIG.display.timeFormat, 'absolute');
@@ -1304,7 +1304,7 @@ test('mergeConfig defaults showAuth to true when neither showAuth nor showPlan s
 test('enhanced defaults lock (0.4.0 product surface)', () => {
   const d = DEFAULT_CONFIG.display;
   // 0.4.0: ship the rich compact look out of the box (matches the reference HUD)
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'pills');
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
   assert.equal(DEFAULT_CONFIG.showSeparators, true);
   assert.equal(d.contextValue, 'both');
   assert.equal(d.showConfigCounts, true);   // CLAUDE.md / MCPs / hooks
@@ -1312,9 +1312,11 @@ test('enhanced defaults lock (0.4.0 product surface)', () => {
   assert.equal(d.authShortLabel, true);      // "Max 20x" not "Claude Max 20x"
   assert.equal(d.usageOnNewLine, true);      // usage/weekly on their own row
   assert.equal(d.timeFormat, 'absolute');    // "resets at 11:00 PM"
-  assert.equal(d.showTools, true);
-  assert.equal(d.showAgents, true);
-  assert.equal(d.showTodos, true);
+  assert.equal(d.toolsLine, false);
+  assert.equal(d.agentsLine, false);
+  assert.equal(d.todosLine, false);
+  assert.equal(d.pillCaps, false);
+  assert.equal(DEFAULT_CONFIG.colors.modelUsage, 'cyan');
   assert.equal(d.showAuth, true);
   assert.equal(d.showDuration, true);
   assert.equal(d.showOutputStyle, true);
@@ -1398,4 +1400,32 @@ test('effort level shows by default, as text', () => {
 
 test('an explicit showEffortLevel: false still turns it off', () => {
   assert.equal(mergeConfig({ display: { showEffortLevel: false } }).display.showEffortLevel, false);
+});
+
+test('the activity lines are off until their new keys turn them on', () => {
+  const untouched = mergeConfig({});
+  assert.deepEqual(
+    [untouched.display.toolsLine, untouched.display.agentsLine, untouched.display.todosLine],
+    [false, false, false],
+  );
+  const older = mergeConfig({ display: { showTools: true, showAgents: true, showTodos: true } });
+  assert.deepEqual(
+    [older.display.toolsLine, older.display.agentsLine, older.display.todosLine],
+    [false, false, false],
+    'a true written by an older setup is not a choice made after the update',
+  );
+  assert.deepEqual([older.display.showTools, older.display.showAgents, older.display.showTodos], [true, true, true]);
+  const chosen = mergeConfig({ display: { toolsLine: true, agentsLine: true, todosLine: true } });
+  assert.deepEqual([chosen.display.toolsLine, chosen.display.agentsLine, chosen.display.todosLine], [true, true, true]);
+  const bad = mergeConfig({ display: { toolsLine: 'yes', agentsLine: 1, todosLine: null } });
+  assert.deepEqual([bad.display.toolsLine, bad.display.agentsLine, bad.display.todosLine], [false, false, false]);
+});
+
+test('the layout default is compact again and an explicit pills is kept', () => {
+  assert.equal(mergeConfig({}).lineLayout, 'compact');
+  assert.equal(mergeConfig({ display: { showTools: true } }).lineLayout, 'compact');
+  assert.equal(mergeConfig({ lineLayout: 'pills' }).lineLayout, 'pills');
+  assert.equal(mergeConfig({ lineLayout: 'expanded' }).lineLayout, 'expanded');
+  assert.equal(mergeConfig({ lineLayout: 'pills' }).display.pillCaps, false);
+  assert.equal(mergeConfig({ lineLayout: 'pills', display: { pillCaps: true } }).display.pillCaps, true);
 });

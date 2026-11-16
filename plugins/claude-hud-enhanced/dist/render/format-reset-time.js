@@ -1,6 +1,4 @@
 import { interpolate, t } from '../i18n/index.js';
-/** Joins windows that share one reset, which is then printed once at the group's end. */
-export const SHARED_RESET_JOINER = ' · ';
 /**
  * True when two windows reset in the same minute, so they would print the same
  * reset time. The API stamps the weekly window 16:59:59.631 and the Fable window

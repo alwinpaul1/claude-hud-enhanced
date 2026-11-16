@@ -134,7 +134,7 @@ function context(overrides = {}) {
       sevenDayResetAt: new Date(Date.now() + 4 * 24 * 3_600_000),
     },
     memoryUsage: null,
-    config: mergeConfig({}),
+    config: mergeConfig({ lineLayout: 'pills', display: { pillCaps: true } }),
     extraLabel: null,
     effortLevel: 'medium',
     ...overrides,
@@ -428,7 +428,7 @@ test('the context pill reads a dash without a figure and drops the lead without 
 });
 
 test('the git pill shows the worktree, branch and each count in the mod format', () => {
-  const text = (git) => gitSpec(git, DARK).full.map((s) => s.text).join('');
+  const text = (git) => gitSpec(git, DARK, true).full.map((s) => s.text).join('');
   assert.equal(text({ ...GIT, ahead: 0, staged: 0, modified: 6, untracked: 3 }), '  Thesis │  main ~6 ?3 ');
   assert.equal(text({ ...GIT, ahead: 0, staged: 0, modified: 0, untracked: 0 }), '  Thesis │  main ✓ ');
   assert.equal(
@@ -549,7 +549,7 @@ test('the badge says merged, closed, draft or whether an open PR can merge', () 
 
 test('the git pill carries the PR number, its state, the base and the tree status', () => {
   const pr = { number: 1040, state: 'OPEN', ready: 'blocked', base: 'main', checks: { failing: 0, pending: 2, passing: 1 } };
-  const spec = gitSpec({ ...GIT, ahead: 0, staged: 0, modified: 0, untracked: 0, pr, base: { name: 'main', behind: 17, ahead: 2 } }, DARK);
+  const spec = gitSpec({ ...GIT, ahead: 0, staged: 0, modified: 0, untracked: 0, pr, base: { name: 'main', behind: 17, ahead: 2 } }, DARK, true);
   assert.equal(
     spec.full.map((s) => s.text).join(''),
     '  Thesis │  main #1040 ● blocked ◷ 2 running ↓17 main │ ✓ ',
@@ -806,6 +806,7 @@ test('running subagents read their type, model, effort and tokens from their own
     });
     assert.deepEqual(asked, ['/x/wt-a']);
     assert.deepEqual(seen[0], {
+      id: 'toolu_1',
       type: 'general-purpose',
       model: 'claude-sonnet-5-5',
       modelId: 'claude-sonnet-5-5',
@@ -814,7 +815,7 @@ test('running subagents read their type, model, effort and tokens from their own
       worktree: '/x/wt-a',
       git: { branch: 'feat/a', isDirty: false, ahead: 1, behind: 0 },
     });
-    assert.deepEqual(seen[1], { type: 'Explore', model: 'haiku', modelId: 'haiku', effort: null, tokens: null });
+    assert.deepEqual(seen[1], { id: 'toolu_2', type: 'Explore', model: 'haiku', modelId: 'haiku', effort: null, tokens: null });
     assert.deepEqual(await readRunningSubagents(transcriptPath, [agents[0]], async () => null), []);
     assert.deepEqual(parseAgentTail('not json\n"effort":"max"'), { modelId: null, effort: 'max', tokens: null });
     const ctx = context({ pillAgents: seen });
@@ -868,12 +869,13 @@ test('the transcript yields the PR the session worked on', async () => {
   }
 });
 
-test('the pill row is the default layout and the old ones stay selectable', () => {
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'pills');
-  assert.equal(mergeConfig({}).lineLayout, 'pills');
-  assert.equal(mergeConfig({ lineLayout: 'compact' }).lineLayout, 'compact');
+test('the pill row is opt-in and the compact layout is the default', () => {
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
+  assert.equal(mergeConfig({}).lineLayout, 'compact');
+  assert.equal(mergeConfig({ lineLayout: 'pills' }).lineLayout, 'pills');
   assert.equal(mergeConfig({ lineLayout: 'expanded' }).lineLayout, 'expanded');
-  assert.equal(mergeConfig({ lineLayout: 'nope' }).lineLayout, 'pills');
+  assert.equal(mergeConfig({ lineLayout: 'nope' }).lineLayout, 'compact');
+  assert.equal(mergeConfig({}).display.pillCaps, false);
   assert.equal(mergeConfig({}).display.pillTheme, 'auto');
   assert.equal(mergeConfig({ display: { pillTheme: 'light' } }).display.pillTheme, 'light');
   assert.equal(mergeConfig({ display: { pillTheme: 'sepia' } }).display.pillTheme, 'auto');
@@ -883,7 +885,7 @@ test('the pill row is the default layout and the old ones stay selectable', () =
   assert.equal(pills.length, 1);
   assert.match(pills[0], /^ Opus 5\.5 medium │ ◔ ╸━━━━━━━ 7% 69\.0k\/1\.0M   ◷ 5h ━━━╸━━━━ 42% │ /);
   assert.match(pills[0], / ▦ 7d ╸━━━━━━━ 8% │ \w{3} \d{1,2}:\d{2} [AP]M    Thesis │  main ~6 \?3 $/);
-  const old = capture(context({ config: mergeConfig({ lineLayout: 'compact' }) }), 200).map(stripAnsi);
+  const old = capture(context({ config: mergeConfig({}) }), 200).map(stripAnsi);
   assert.match(old[0], /^\[Opus 5\.5/);
   assert.ok(!old.join('\n').includes(''));
 });
@@ -895,8 +897,8 @@ test('dark and light palettes both render, picked by setting or by the Claude Co
   assert.ok(blueBg(context({ claudeTheme: 'dark-ansi' })));
   assert.ok(lightBg(context({ claudeTheme: 'light' })));
   assert.ok(lightBg(context({ claudeTheme: 'light-daltonized' })));
-  assert.ok(lightBg(context({ config: mergeConfig({ display: { pillTheme: 'light' } }) })));
-  assert.ok(blueBg(context({ claudeTheme: 'light', config: mergeConfig({ display: { pillTheme: 'dark' } }) })));
+  assert.ok(lightBg(context({ config: mergeConfig({ lineLayout: 'pills', display: { pillTheme: 'light' } }) })));
+  assert.ok(blueBg(context({ claudeTheme: 'light', config: mergeConfig({ lineLayout: 'pills', display: { pillTheme: 'dark' } }) })));
   const light = capture(context({ claudeTheme: 'light' }), 200)[0];
   assert.ok(light.includes('\x1b[38;2;0;0;0m Opus 5.5 '));
   assert.ok(light.includes('\x1b[38;2;84;100;220mmedium '));
@@ -904,7 +906,7 @@ test('dark and light palettes both render, picked by setting or by the Claude Co
   assert.ok(dark.includes('\x1b[38;2;255;255;255m Opus 5.5 '));
   assert.ok(dark.includes('\x1b[38;2;146;164;255mmedium '));
   assert.ok(dark.includes('\x1b[38;2;40;46;80m'));
-  const flat = capture(context({ config: mergeConfig({ display: { pillCaps: false } }) }), 200)[0];
+  const flat = capture(context({ config: mergeConfig({ lineLayout: 'pills' }) }), 200)[0];
   assert.ok(!flat.includes('') && !flat.includes(''));
 });
 
@@ -948,7 +950,9 @@ test('missing data leaves its pill out and keeps the rest', () => {
 test('activity lines follow the pills and agent pills replace the agents line', () => {
   const tool = { id: 't1', name: 'Read', target: 'a.ts', status: 'completed', startTime: new Date(), endTime: new Date() };
   const agent = { id: 'a1', type: 'Explore', model: 'haiku', description: 'Finding code', status: 'running', startTime: new Date() };
-  const base = context();
+  const base = context({
+    config: mergeConfig({ lineLayout: 'pills', display: { pillCaps: true, toolsLine: true, agentsLine: true, todosLine: true } }),
+  });
   base.transcript = { ...base.transcript, tools: [tool], agents: [agent], todos: [{ content: 'Add tests', status: 'in_progress' }] };
   const plain = capture(base, 200).map(stripAnsi);
   assert.ok(plain.some((line) => line.includes('Read')));

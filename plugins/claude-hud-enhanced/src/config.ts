@@ -116,6 +116,7 @@ export interface HudColorOverrides {
   usage: HudColorValue;
   warning: HudColorValue;
   usageWarning: HudColorValue;
+  modelUsage: HudColorValue;
   critical: HudColorValue;
   model: HudColorValue;
   project: HudColorValue;
@@ -220,6 +221,9 @@ export interface HudConfig {
     pillPr: boolean;
     pillMaxRows: number | null;
     showTools: boolean;
+    toolsLine: boolean;
+    agentsLine: boolean;
+    todosLine: boolean;
     showSkills: boolean;
     showMcp: boolean;
     toolNameMaxLength: number;
@@ -326,7 +330,7 @@ export interface HudConfig {
 
 export const DEFAULT_CONFIG: HudConfig = {
   language: 'en',
-  lineLayout: 'pills',
+  lineLayout: 'compact',
   showSeparators: true,
   pathLevels: 1,
   maxWidth: null,
@@ -369,10 +373,13 @@ export const DEFAULT_CONFIG: HudConfig = {
     showResetLabel: true,
     usageCompact: false,
     pillTheme: 'auto',
-    pillCaps: true,
+    pillCaps: false,
     pillPr: true,
     pillMaxRows: null,
     showTools: true,
+    toolsLine: false,
+    agentsLine: false,
+    todosLine: false,
     showSkills: false,
     showMcp: false,
     toolNameMaxLength: 0,
@@ -433,6 +440,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     usage: 'green',
     warning: 'yellow',
     usageWarning: 'yellow',
+    modelUsage: 'cyan',
     critical: 'red',
     model: 'cyan',
     project: 'yellow',
@@ -902,6 +910,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     showTools: typeof migrated.display?.showTools === 'boolean'
       ? migrated.display.showTools
       : DEFAULT_CONFIG.display.showTools,
+    toolsLine: migrated.display?.toolsLine === true,
+    agentsLine: migrated.display?.agentsLine === true,
+    todosLine: migrated.display?.todosLine === true,
     showSkills: typeof migrated.display?.showSkills === 'boolean'
       ? migrated.display.showSkills
       : DEFAULT_CONFIG.display.showSkills,
@@ -1079,6 +1090,9 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     usageWarning: validateColorValue(migrated.colors?.usageWarning)
       ? migrated.colors.usageWarning
       : DEFAULT_CONFIG.colors.usageWarning,
+    modelUsage: validateColorValue(migrated.colors?.modelUsage)
+      ? migrated.colors.modelUsage
+      : DEFAULT_CONFIG.colors.modelUsage,
     critical: validateColorValue(migrated.colors?.critical)
       ? migrated.colors.critical
       : DEFAULT_CONFIG.colors.critical,

@@ -4,6 +4,8 @@ import { knownWindows } from '../subagents.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
 import { hasFigure } from '../usage-available.js';
 import { RESET } from './colors.js';
+import { agoLabel, STALE_AFTER, windowNote } from './usage-figure.js';
+export { agoLabel, STALE_AFTER, windowNote };
 import { formatProjectPath } from './project-path.js';
 import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
 const BAR = 8;
@@ -231,24 +233,7 @@ export const rolled = (w, now, span) => {
         at += span;
     return { percentUsed: 0, resetsAt: at, isRolled: true };
 };
-export const STALE_AFTER = 150_000;
 export const MAX_SCOPED_PILLS = 2;
-export const agoLabel = (ms) => {
-    const minutes = Math.max(1, Math.floor(ms / 60_000));
-    if (minutes < 60)
-        return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
-};
-export const windowNote = (w, now) => {
-    if (w.isRolled)
-        return 'reset';
-    if (w.seenAt === undefined)
-        return null;
-    if (w.seenAt === null)
-        return 'unconfirmed';
-    return now - w.seenAt > STALE_AFTER ? `${agoLabel(now - w.seenAt)} ago` : null;
-};
 export const windowSpec = (label, icon, seen, now, tone, p, span = SPAN[label] ?? 0, key = label) => {
     const w = rolled(seen, now, span);
     const at = w.resetsAt;
@@ -361,8 +346,11 @@ export const prBadge = (pr, p) => {
                 : [];
     return { state, checks };
 };
-const ICON = { worktree: '', repo: '', branch: '' };
-export const gitSpec = (r, p) => {
+const NERD_ICON = { worktree: '', repo: '', branch: '' };
+const PLAIN_ICON = { worktree: '◫', repo: '▣', branch: '◆' };
+const iconsFor = (isNerdFont) => (isNerdFont ? NERD_ICON : PLAIN_ICON);
+export const gitSpec = (r, p, isNerdFont = false) => {
+    const ICON = iconsFor(isNerdFont);
     const marks = [
         ['ahead', `↑${r.ahead}`, 'text'],
         ['behind', `↓${r.behind}`, 'text'],
@@ -412,7 +400,8 @@ export const gitSpec = (r, p) => {
         fit: (cells) => cut(where, cells) ?? cut([{ key: 'pad', text: ' ' }], cells),
     };
 };
-export const folderSpec = (name, p) => {
+export const folderSpec = (name, p, isNerdFont = false) => {
+    const ICON = iconsFor(isNerdFont);
     const segs = [
         { key: 'wt-icon', text: ` ${ICON.repo} `, color: p.tray.fg },
         { key: 'wt', text: name, color: 'text' },
@@ -420,17 +409,36 @@ export const folderSpec = (name, p) => {
     ];
     return { key: 'folder', tone: p.tray, full: segs, compact: segs, tight: segs };
 };
-const sgr = (kind, color) => {
+const CUBE = [0, 95, 135, 175, 215, 255];
+const nearest = (value, levels) => levels.reduce((best, level, index) => (Math.abs(level - value) < Math.abs((levels[best] ?? 0) - value) ? index : best), 0);
+export const to256 = (r, g, b) => {
+    const [ri, gi, bi] = [r, g, b].map((channel) => nearest(channel, CUBE));
+    const cube = [CUBE[ri] ?? 0, CUBE[gi] ?? 0, CUBE[bi] ?? 0];
+    const grayStep = Math.max(0, Math.min(23, Math.round(((r + g + b) / 3 - 8) / 10)));
+    const gray = 8 + grayStep * 10;
+    const distance = (x, y, z) => (r - x) ** 2 + (g - y) ** 2 + (b - z) ** 2;
+    return distance(gray, gray, gray) < distance(cube[0], cube[1], cube[2]) ? 232 + grayStep : 16 + 36 * ri + 6 * gi + bi;
+};
+export const colorDepthFor = (env = process.env) => {
+    if (/truecolor|24bit/i.test(env.COLORTERM ?? ''))
+        return 'truecolor';
+    return env.TERM_PROGRAM === 'Apple_Terminal' ? '256' : 'truecolor';
+};
+const sgr = (kind, color, depth = 'truecolor') => {
     const channels = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(color);
-    return channels ? `\x1b[${kind};2;${channels[1]};${channels[2]};${channels[3]}m` : '';
+    if (!channels)
+        return '';
+    const [r, g, b] = [channels[1], channels[2], channels[3]].map(Number);
+    return depth === '256' ? `\x1b[${kind};5;${to256(r, g, b)}m` : `\x1b[${kind};2;${r};${g};${b}m`;
 };
 const inkOf = (color, p) => color === undefined ? p.ink.text : color in p.ink ? p.ink[color] : color;
-export const drawPill = (spec, segs, p, caps) => {
+export const drawPill = (spec, segs, p, caps, depth = 'truecolor') => {
+    const background = sgr(48, spec.tone.bg, depth);
     const body = segs
-        .map((seg) => `${seg.bold || BOLD_PILLS.has(spec.key) ? BOLD : NORMAL}${sgr(38, inkOf(seg.color, p))}${seg.text}`)
+        .map((seg) => `${background}${seg.bold || BOLD_PILLS.has(spec.key) ? BOLD : NORMAL}${sgr(38, inkOf(seg.color, p), depth)}${seg.text}`)
         .join('');
-    const cap = (glyph) => (caps ? `${sgr(38, spec.tone.bg)}${glyph}${RESET}` : '');
-    return `${cap(CAP_LEFT)}${sgr(48, spec.tone.bg)}${body}${RESET}${cap(CAP_RIGHT)}`;
+    const cap = (glyph) => (caps ? `${sgr(38, spec.tone.bg, depth)}${glyph}${RESET}` : '');
+    return `${cap(CAP_LEFT)}${body}${RESET}${cap(CAP_RIGHT)}`;
 };
 export const pillRows = (band, columns, options) => {
     const { palette: p, now } = options;
@@ -438,18 +446,18 @@ export const pillRows = (band, columns, options) => {
     const pills = [
         contextSpec(band.context, band.model, p),
         ...usageSpecs(band, now, p),
-        ...(band.git ? [gitSpec(band.git, p)] : band.folder ? [folderSpec(band.folder, p)] : []),
+        ...(band.git ? [gitSpec(band.git, p, options.caps)] : band.folder ? [folderSpec(band.folder, p, options.caps)] : []),
     ];
     const maxRows = options.maxRows ?? null;
     let rows = layout(pills, columns, capWidth);
     if (maxRows !== null && rows.length > maxRows)
         rows = layout(pills, columns, capWidth, true);
     for (const agent of band.agents) {
-        rows.push(...layout([agentContextSpec(agent, band.model, band.context, p), ...(agent.git ? [gitSpec(agent.git, p)] : [])], columns, capWidth));
+        rows.push(...layout([agentContextSpec(agent, band.model, band.context, p), ...(agent.git ? [gitSpec(agent.git, p, options.caps)] : [])], columns, capWidth));
     }
     return rows;
 };
-export const renderPillBand = (band, columns, options) => pillRows(band, columns, options).map((row) => row.map(([spec, segs]) => drawPill(spec, segs, options.palette, options.caps)).join(' '));
+export const renderPillBand = (band, columns, options) => pillRows(band, columns, options).map((row) => row.map(([spec, segs]) => drawPill(spec, segs, options.palette, options.caps, options.depth)).join(' '));
 const safe = (text) => sanitizeDisplayText(text);
 export const gitFromStatus = (status, fallbackName, snapshot) => {
     const stats = status.fileStats;
@@ -527,9 +535,10 @@ export const renderPillLines = (ctx, columns, now = Date.now()) => {
     const mode = display?.pillTheme ?? 'auto';
     return renderPillBand(bandFromContext(ctx), columns !== null && columns > 0 ? columns : Number.POSITIVE_INFINITY, {
         palette: paletteFor(mode === 'auto' ? ctx.claudeTheme : mode),
-        caps: display?.pillCaps !== false,
+        caps: display?.pillCaps === true,
         now,
         maxRows: display?.pillMaxRows ?? null,
+        depth: colorDepthFor(),
     });
 };
 //# sourceMappingURL=pills.js.map

@@ -1,11 +1,11 @@
 # Claude HUD Enhanced
 
-An enhanced Claude Code plugin that shows what's happening — context usage, active tools, running agents, todo progress, **and detailed usage limits with time-to-reset countdowns**. Always visible below your input.
+An enhanced Claude Code plugin that shows what's happening — context usage, git status, **and detailed usage limits with time-to-reset countdowns** (5-hour, weekly, per-model weekly such as Fable, and extra usage while it is being spent). Active tools, running agents and todo progress are available as optional lines. Always visible below your input, and fitted to the width of your pane.
 
 [![License](https://img.shields.io/github/license/alwinpaul1/claude-hud-enhanced?v=2)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/alwinpaul1/claude-hud-enhanced)](https://github.com/alwinpaul1/claude-hud-enhanced/stargazers)
 
-![Claude HUD in action](claude-hud-preview-5-2.png)
+![Claude HUD in action](claude-hud-preview.svg)
 
 ## Install
 
@@ -84,9 +84,9 @@ Claude HUD Enhanced gives you better insights into what's happening in your Clau
 |--------------|----------------|
 | **Project path** | Know which project you're in (configurable 1-3 directory levels) |
 | **Context health** | Know exactly how full your context window is before it's too late |
-| **Tool activity** | Watch Claude read, edit, and search files as it happens |
-| **Agent tracking** | See which subagents are running and what they're doing |
-| **Todo progress** | Track task completion in real-time |
+| **Tool activity** | Watch Claude read, edit, and search files as it happens (opt-in: `display.toolsLine`) |
+| **Agent tracking** | A running-agent count on the session line; the full line per subagent is opt-in (`display.agentsLine`) |
+| **Todo progress** | Track task completion in real-time (opt-in: `display.todosLine`) |
 | **5h & 7d usage** | Always see both rate limits with reset times |
 | **Model quotas** | Track Opus 4.5 and other compute-intensive model limits |
 | **Max tier info** | See Max5/Max20 tier with tokens-per-window |
@@ -198,10 +198,10 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `lineLayout` | string | `pills` | `pills` (one row of coloured pills, the default), `compact` (single session line) or `expanded` (multi-element) |
+| `lineLayout` | string | `compact` | `compact` (the session line and a usage line, the default), `expanded` (multi-element) or `pills` (one row of coloured pills, needs a truecolor or 256-colour terminal) |
 | `display.pillTheme` | string | `auto` | Pill palette: `auto` (light when Claude Code's `theme` setting starts with `light`, dark otherwise), `dark` or `light` |
-| `display.pillCaps` | boolean | true | Rounded pill ends (Powerline glyphs U+E0B6/U+E0B4, needs a Nerd Font); `false` draws square pills |
-| `display.pillPr` | boolean | true | Look up the branch's pull request, its checks and its base with `gh` in a detached background refresher |
+| `display.pillCaps` | boolean | false | **Needs a Nerd Font.** Rounded pill ends (Powerline glyphs U+E0B6/U+E0B4) and the Nerd Font folder, worktree and branch icons. Off, the pills are square and use plain Unicode icons (`▣` folder, `◫` linked worktree, `◆` branch) that every font has |
+| `display.pillPr` | boolean | true | Look up the branch's pull request, its checks and its base with `gh` in a detached background refresher. Every layout shows the result: the compact and expanded layouts print `#1971 ● ready ◷ 2 running` after the git segment |
 | `display.pillMaxRows` | number \| null | null | Most rows the main pill band may take. When the pills would wrap past it they share one row without their bars; `null` lets them wrap freely |
 | `showSeparators` | boolean | true | Separator between session and activity lines |
 | `pathLevels` | 1-3 | 1 | Directory levels to show in project path |
@@ -218,9 +218,12 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 | `display.oauthUsagePoll` | boolean | true | Hybrid usage sync (required for the Fable weekly meter): idle terminals pick up usage from active ones via a shared per-profile snapshot (local), and a detached OAuth refresher keeps usage live across devices — while idle **and** during long conversations (reads your Claude Code OAuth token read-only, calls Anthropic's `oauth/usage` endpoint; 60s idle gate, 120s live-read gate, single-flight, backoff) |
 | `daemon.enabled` | boolean | false | **Experimental, macOS/Linux only.** Warm daemon: a long-lived per-profile process serves renders over a local socket so each repaint skips the per-process work (transcript parse, config load, git). Any daemon failure falls back to the normal inline render — it can only make repaints faster, never break them. See `docs/daemon-mode-design.md` |
 | `display.sevenDayThreshold` | number | 0 | Min 7d % before weekly shows (0 = always) |
-| `display.showTools` | boolean | true | Show tools activity line |
-| `display.showAgents` | boolean | true | Show agents activity line |
-| `display.showTodos` | boolean | true | Show todos progress line |
+| `display.toolsLine` | boolean | false | Show the tools activity line. MCP tools read `server:tool` (`chrome:browser_batch ×16`), and the line keeps to one row: the least used tools fold into `+N more` |
+| `display.agentsLine` | boolean | false | Show one line per subagent, with its model, effort, context use and worktree branch. Off, running agents are a count on the session line (`2 agents`) |
+| `display.todosLine` | boolean | false | Show the todos progress line |
+| `colors.modelUsage` | color | `cyan` | Colour of a model's weekly window (`Fable 38%`), so it reads apart from the 5h and weekly windows |
+
+> **Turned off on update.** The tools, agents and todos lines were on by default up to 0.9.1 under `display.showTools`, `display.showAgents` and `display.showTodos`. Those three keys are still accepted but no longer read, so a `true` an older setup wrote does not bring a line back. Turn a line on with `display.toolsLine`, `display.agentsLine` or `display.todosLine` set to `true`, or run `/claude-hud-enhanced:configure`.
 
 ### Usage Limits (Pro/Max/Team)
 
@@ -266,24 +269,29 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 
 ### Layout Options
 
-**Pills** (default, `lineLayout: "pills"`) — the usage-band row: model, effort and context, the 5h and 7d windows, then the worktree and branch. Each pill has its own background. On a narrow pane the git pill moves to its own row, then the bars drop, then the pills stack:
+**Compact** (default, `lineLayout: "compact"`) — the session line, then the usage line:
+```
+[Fable 5.2 medium | Max 20x] ███░░░░░░░ 30% (300k/1.0M) | my-project git:(main* ↑2 !3 ?1) #1971 ● ready
+Usage ███░░░░░░░ 25% (resets 9:10 PM) | Fable ████░░░░░░ 38% | Weekly ██░░░░░░░░ ~21% · 4m ago (resets Sat 4:00 AM) | extra $12.40/$50
+```
+Only the windows the account has are drawn (a plan with no 5h window shows none). A model's weekly window sits between 5h and weekly, in its own colour, and prints a reset time only when it differs from the weekly one. A figure nobody has confirmed for 150 seconds is dimmed and dated (`~21% · 4m ago`), a window past its reset reads `~0% · reset`, and `extra $12.40/$50` appears only while extra usage is being spent. A linked worktree reads `wt:(branch)` instead of `git:(branch)`. Both rows follow the pane width and never wrap: trailing segments drop first, then the token count, the bars and the reset wording go, then the usage row falls back to `Fable: 38% | 7d: ~21%`, the plan label leaves the model badge, and a long branch is cut with `…`:
+```
+[Fable 5.2 medium] ██░░░░ 30% | my-project git:(chore/desig…*)
+Fable: 38% | 7d: ~21% · 4m ago | extra $12.40/$50
+```
+
+**Pills** (`lineLayout: "pills"`) — the usage-band row: model, effort and context, the 5h and 7d windows, then the worktree and branch. Each pill has its own background. On a narrow pane the git pill moves to its own row, then the bars drop, then the pills stack:
 ```
  Opus 5.5 medium │ ◔ ╸━━━━━━━ 7% 69.0k/1.0M    ◷ 5h ━━━╸━━━━ 42% │ 2:10 PM    ▦ 7d ╸━━━━━━━ 8% │ Sat 2:00 AM     claude-hud-enhanced │  main ~6 ?3
 ```
-The folder and branch icons are Nerd Font glyphs. Git marks: `↑` ahead, `↓` behind, `+` staged, `~` modified, `?` untracked, `!` conflicts, `✓` clean. A running subagent gets a row of its own (`↳ type · model effort`).
-
-**Compact** (`lineLayout: "compact"`) — single session line:
-```
-[Opus] ████░░░░░░ 42% (45k/200k) | my-project git:(main) | ⏱️ 5m
-```
+The pills have square ends and plain Unicode icons unless `display.pillCaps` is on, which needs a Nerd Font (without one the caps and icons show as empty boxes). Pill colours are 24-bit; Apple Terminal without `COLORTERM=truecolor` gets the nearest 256-colour shades. Git marks: `↑` ahead, `↓` behind, `+` staged, `~` modified, `?` untracked, `!` conflicts, `✓` clean. A running subagent gets a row of its own (`↳ type · model effort`).
 
 **Expanded** (`lineLayout: "expanded"`) — multi-element layout with separators:
 ```
 [Opus] │ my-project
-Context ████░░░░░░ 42% (45k/200k)
-─────────────────────────────────
-✓ Read ×3 | ✓ Edit ×1
+Context ████░░░░░░ 42% (45k/200k) │ Usage ███░░░░░░░ 25% (resets 9:10 PM) | Weekly ██░░░░░░░░ 21% (resets Sat 4:00 AM)
 ```
+The expanded layout carries the same usage readings, PR badge and worktree label. On a narrow pane it stacks its segments on rows of their own instead of shortening them to one row.
 
 ### Example Configuration
 
@@ -305,9 +313,9 @@ Context ████░░░░░░ 42% (45k/200k)
     "showDuration": true,
     "showUsage": true,
     "sevenDayThreshold": 0,
-    "showTools": true,
-    "showAgents": true,
-    "showTodos": true
+    "toolsLine": true,
+    "agentsLine": true,
+    "todosLine": true
   }
 }
 ```
@@ -338,8 +346,8 @@ Context ████░░░░░░ 42% (45k/200k)
 - Check `gitStatus.enabled` is not `false` in config
 
 **Tool/agent/todo lines missing?**
-- These only appear when there's activity to show
-- Check `display.showTools`, `display.showAgents`, `display.showTodos` in config
+- They are off by default. Turn them on with `display.toolsLine`, `display.agentsLine`, `display.todosLine` (the older `showTools`, `showAgents`, `showTodos` keys are no longer read)
+- Once on, they only appear when there's activity to show
 
 ---
 

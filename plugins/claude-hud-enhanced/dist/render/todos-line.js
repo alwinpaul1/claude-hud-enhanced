@@ -1,7 +1,9 @@
 import { yellow, green, label } from "./colors.js";
 import { t } from "../i18n/index.js";
 import { truncateString } from "../utils/truncate.js";
-export function renderTodosLine(ctx) {
+import { firstFitting } from "./visual.js";
+const CONTENT_LENGTHS = [50, 36, 24, 14];
+export function renderTodosLine(ctx, fits) {
     const { todos } = ctx.transcript;
     const colors = ctx.config?.colors;
     if (!todos || todos.length === 0) {
@@ -16,8 +18,10 @@ export function renderTodosLine(ctx) {
         }
         return null;
     }
-    const content = truncateString(inProgress.content, 50);
     const progress = label(`(${completed}/${total})`, colors);
-    return `${yellow("▸")} ${content} ${progress}`;
+    return firstFitting([
+        ...CONTENT_LENGTHS.map((length) => () => `${yellow("▸")} ${truncateString(inProgress.content, length)} ${progress}`),
+        () => `${yellow("▸")} ${progress}`,
+    ], fits);
 }
 //# sourceMappingURL=todos-line.js.map

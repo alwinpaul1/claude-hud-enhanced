@@ -1,6 +1,7 @@
 import type { GitStatus } from './git.js';
 import type { AgentEntry } from './types.js';
 export interface SubagentSeen {
+    id?: string;
     type: string;
     model: string;
     modelId: string;

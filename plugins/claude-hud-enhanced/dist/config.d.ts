@@ -62,6 +62,7 @@ export interface HudColorOverrides {
     usage: HudColorValue;
     warning: HudColorValue;
     usageWarning: HudColorValue;
+    modelUsage: HudColorValue;
     critical: HudColorValue;
     model: HudColorValue;
     project: HudColorValue;
@@ -124,6 +125,9 @@ export interface HudConfig {
         pillPr: boolean;
         pillMaxRows: number | null;
         showTools: boolean;
+        toolsLine: boolean;
+        agentsLine: boolean;
+        todosLine: boolean;
         showSkills: boolean;
         showMcp: boolean;
         toolNameMaxLength: number;

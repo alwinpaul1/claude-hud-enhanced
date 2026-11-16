@@ -59,6 +59,19 @@ function freshInstall(label, themes = { default: 'light', work: 'dark-ansi' }, i
   return { world, repo };
 }
 
+const PILLS = { lineLayout: 'pills', display: { pillCaps: true } };
+
+function writeHudConfig(profile, config) {
+  mkdirSync(profile.dataDir, { recursive: true });
+  writeFileSync(path.join(profile.dataDir, 'config.json'), JSON.stringify(config));
+}
+
+function pillsInstall(label, themes, install) {
+  const made = freshInstall(label, themes, install);
+  for (const profile of Object.values(made.world.profiles)) writeHudConfig(profile, PILLS);
+  return made;
+}
+
 const prSnapshotFiles = (profile) =>
   listDir(path.join(profile.dataDir, 'pr-cache')).filter((name) => /^pr-[0-9a-f]+\.json$/.test(name));
 
@@ -82,7 +95,7 @@ test('setup verification passes on a machine with no HUD data at all', { skip },
   }
 });
 
-test('a fresh install renders the pill row for the default and the CLAUDE_CONFIG_DIR profile', { skip }, () => {
+test('a fresh install renders the compact layout for the default and the CLAUDE_CONFIG_DIR profile', { skip }, () => {
   const { world, repo } = freshInstall('fresh', undefined, { copy: true });
   const transcript = writeTranscript(world);
   const stdin = stdinFor({ cwd: repo.repo, transcriptPath: transcript.transcriptPath });
@@ -92,15 +105,14 @@ test('a fresh install renders the pill row for the default and the CLAUDE_CONFIG
   const first = runStatusline(world, main, stdin, { columns: 220 });
   assert.equal(first.status, 0);
   assert.equal(first.stderr, '');
-  assert.equal(first.pillLines.length, 1, first.plain);
-  const row = first.plainLines[0];
-  for (const piece of [' Opus 5.5 medium │ ◔ ', ' 7% 69.0k/1.0M ', ' ◷ 5h ', ' 42% │ ', ' ▦ 7d ', ' 8% │ ', 'acme-app │ ', 'main ↑2 ↓1 +1 ~1 ?2 ']) {
-    assert.ok(row.includes(piece), `${JSON.stringify(piece)} missing from ${JSON.stringify(row)}`);
-  }
-  assert.ok(first.stdout.includes(LIGHT_BLUE_BG), 'the light Claude Code theme picks the light palette');
-  assert.ok(!first.stdout.includes(DARK_BLUE_BG));
-  assert.ok(first.stdout.includes(CAP_LEFT) && first.stdout.includes(CAP_RIGHT));
-  assert.match(first.plain, /✓ Read/);
+  assert.equal(first.pillLines.length, 0, 'no pill backgrounds in the default layout');
+  assert.equal(first.plainLines.length, 2, first.plain);
+  const [row, usage] = first.plainLines;
+  assert.match(row, /^\[Opus 5\.5 \(1M context\) medium \| Max 20x\] █░+ 7% \(69k\/1\.0M\) \| acme-app git:\(main\* ↑2 ↓1 !1 \+1 \?2\)/);
+  assert.match(usage, /^Usage █+░+ 42% \(resets [^)]+\) \| Weekly █+░+ 8% \(resets [^)]+\)$/);
+  assert.doesNotMatch(first.stdout, /\x1b\[[34]8;2;/, 'the old layouts use the terminal\'s own colours');
+  assert.doesNotMatch(first.stdout, /[\ue000-\uf8ff]/u, 'no private-use glyphs');
+  assert.doesNotMatch(first.plain, /✓ Read|◐|▸|─{5}/, 'the activity lines and their separator are off');
   assert.doesNotMatch(first.stdout, /STALE BUILD/);
 
   assert.equal(statSync(main.dataDir).mode & 0o077, 0, 'the HUD data dir is private');
@@ -113,10 +125,35 @@ test('a fresh install renders the pill row for the default and the CLAUDE_CONFIG
   assert.equal(second.status, 0);
   assert.equal(second.stderr, '');
   assert.equal(second.plainLines[0], row, 'both profiles render the same row');
-  assert.ok(second.stdout.includes(DARK_BLUE_BG), 'dark-ansi picks the dark palette');
-  assert.ok(!second.stdout.includes(LIGHT_BLUE_BG));
+  assert.equal(second.stdout, first.stdout, 'a light and a dark Claude Code theme get the same ANSI colours');
   assert.ok(existsSync(work.dataDir));
   assert.equal(existsSync(path.join(world.home, '.claude', 'plugins', 'claude-hud')), false);
+});
+
+test('choosing pills renders the pill row in the theme\'s palette, with caps only when asked', { skip }, () => {
+  const { world, repo } = freshInstall('pills-opt-in');
+  const stdin = stdinFor({ cwd: repo.repo, transcriptPath: writeTranscript(world).transcriptPath });
+  const { default: main, work } = world.profiles;
+  writeHudConfig(main, { lineLayout: 'pills' });
+  writeHudConfig(work, PILLS);
+
+  const plainFont = runStatusline(world, main, stdin, { columns: 220 });
+  assert.equal(plainFont.status, 0);
+  assert.equal(plainFont.stderr, '');
+  assert.equal(plainFont.pillLines.length, 1, plainFont.plain);
+  assert.doesNotMatch(plainFont.stdout, /[\ue000-\uf8ff]/u, 'without pillCaps no glyph needs a Nerd Font');
+  for (const piece of [' Opus 5.5 medium │ ◔ ', ' 7% 69.0k/1.0M ', ' ◷ 5h ', ' 42% │ ', ' ▦ 7d ', ' 8% │ ', ' ▣ acme-app │ ◆ main ↑2 ↓1 +1 ~1 ?2 ']) {
+    assert.ok(plainFont.plainLines[0].includes(piece), `${JSON.stringify(piece)} missing from ${JSON.stringify(plainFont.plainLines[0])}`);
+  }
+  assert.ok(plainFont.stdout.includes(LIGHT_BLUE_BG), 'the light Claude Code theme picks the light palette');
+  assert.ok(!plainFont.stdout.includes(DARK_BLUE_BG));
+  assert.doesNotMatch(plainFont.plain, /✓ Read/, 'the tools line stays off under the pills too');
+
+  const nerdFont = runStatusline(world, work, stdin, { columns: 220 });
+  assert.equal(nerdFont.stderr, '');
+  assert.ok(nerdFont.stdout.includes(CAP_LEFT) && nerdFont.stdout.includes(CAP_RIGHT));
+  assert.ok(nerdFont.stdout.includes(DARK_BLUE_BG), 'dark-ansi picks the dark palette');
+  assert.ok(!nerdFont.stdout.includes(LIGHT_BLUE_BG));
 });
 
 test('the bun launcher renders the same row from src/index.ts', { skip: skip || (bunPath ? false : 'bun is not installed') }, () => {
@@ -134,7 +171,7 @@ test('the bun launcher renders the same row from src/index.ts', { skip: skip || 
 });
 
 test('every pill row fits the pane at each width in both palettes', { skip }, () => {
-  const { world, repo } = freshInstall('widths');
+  const { world, repo } = pillsInstall('widths');
   const stdin = stdinFor({ cwd: repo.repo, transcriptPath: writeTranscript(world).transcriptPath });
   for (const profile of Object.values(world.profiles)) {
     for (const columns of [240, 160, 120, 100, 80, 60, 44, 30, 16]) {
@@ -158,7 +195,7 @@ test('every pill row fits the pane at each width in both palettes', { skip }, ()
 });
 
 test('a single pill on a narrow pane is clipped, never dropped', { skip }, () => {
-  const { world } = freshInstall('narrow');
+  const { world } = pillsInstall('narrow');
   const run = runStatusline(world, world.profiles.default, { model: { display_name: 'Opus' } }, { columns: 14 });
 
   assert.equal(run.status, 0);
@@ -168,7 +205,7 @@ test('a single pill on a narrow pane is clipped, never dropped', { skip }, () =>
 });
 
 test('stdin without rate limits, effort or context still renders a sane row', { skip }, () => {
-  const { world } = freshInstall('sparse');
+  const { world } = pillsInstall('sparse');
   const profile = world.profiles.work;
   const plainDir = path.join(world.root, 'plain-dir');
   mkdirSync(plainDir, { recursive: true });
@@ -208,7 +245,7 @@ test('stdin without rate limits, effort or context still renders a sane row', { 
 });
 
 test('the PR badge arrives from gh in the background and never delays the row', { skip }, async () => {
-  const { world, repo } = freshInstall('pr');
+  const { world, repo } = pillsInstall('pr');
   const profile = world.profiles.work;
   const gh = writeGhStub(world, {
     view: { number: 1234, state: 'OPEN', isDraft: false, headRefName: 'main', baseRefName: 'main' },
@@ -255,7 +292,7 @@ test('a branch without a PR is asked about once a minute, not on every repaint',
 });
 
 test('a hanging gh never holds up the statusline', { skip }, () => {
-  const { world, repo } = freshInstall('slow-gh');
+  const { world, repo } = pillsInstall('slow-gh');
   const profile = world.profiles.default;
   const dir = path.join(world.root, 'slow-gh');
   mkdirSync(dir, { recursive: true });
@@ -272,7 +309,7 @@ test('a hanging gh never holds up the statusline', { skip }, () => {
 });
 
 test('without gh or outside git the row still renders with no stderr', { skip }, async () => {
-  const { world, repo } = freshInstall('no-gh');
+  const { world, repo } = pillsInstall('no-gh');
   const profile = world.profiles.default;
   const bin = toolBin(world, [...LAUNCHER_TOOLS, 'git']);
   assert.notEqual(spawnSync('sh', ['-c', 'command -v gh'], { env: { PATH: bin } }).status, 0, 'gh is unreachable');
@@ -298,7 +335,7 @@ test('without gh or outside git the row still renders with no stderr', { skip },
 });
 
 test('a linked worktree shows its own folder, branch and counts', { skip }, () => {
-  const { world, repo } = freshInstall('worktree');
+  const { world, repo } = pillsInstall('worktree');
   const stdin = stdinFor({ cwd: repo.worktree, transcriptPath: writeTranscript(world).transcriptPath });
   const run = runStatusline(world, world.profiles.work, stdin, { columns: 220 });
 
@@ -309,10 +346,10 @@ test('a linked worktree shows its own folder, branch and counts', { skip }, () =
 });
 
 test('pillCaps and pillTheme are honoured from a hand-written config', { skip }, () => {
-  const { world, repo } = freshInstall('options');
+  const { world, repo } = pillsInstall('options');
   const profile = world.profiles.work;
   mkdirSync(profile.dataDir, { recursive: true });
-  writeFileSync(path.join(profile.dataDir, 'config.json'), JSON.stringify({ display: { pillCaps: false, pillTheme: 'light', pillPr: false } }));
+  writeFileSync(path.join(profile.dataDir, 'config.json'), JSON.stringify({ lineLayout: 'pills', display: { pillCaps: false, pillTheme: 'light', pillPr: false } }));
   const stdin = stdinFor({ cwd: repo.repo, transcriptPath: writeTranscript(world).transcriptPath });
   const run = runStatusline(world, profile, stdin, { columns: 220 });
 
@@ -323,7 +360,7 @@ test('pillCaps and pillTheme are honoured from a hand-written config', { skip },
 });
 
 test('a theme that is neither light nor dark falls back to the dark palette', { skip }, () => {
-  const { world, repo } = freshInstall('themes', { default: 'custom:orca', work: 'light-daltonized' });
+  const { world, repo } = pillsInstall('themes', { default: 'custom:orca', work: 'light-daltonized' });
   const stdin = stdinFor({ cwd: repo.repo, transcriptPath: writeTranscript(world).transcriptPath });
 
   assert.ok(runStatusline(world, world.profiles.default, stdin, { columns: 220 }).stdout.includes(DARK_BLUE_BG));
@@ -331,7 +368,7 @@ test('a theme that is neither light nor dark falls back to the dark palette', { 
 });
 
 test('a running subagent gets its own row, from its transcript and from the subagentStatusLine feed', { skip }, () => {
-  const { world, repo } = freshInstall('agents');
+  const { world, repo } = pillsInstall('agents');
   const profile = world.profiles.work;
   const bridge = path.join(world.root, 'subagent-bridge.sh');
   writeFileSync(
@@ -419,6 +456,7 @@ test('the latest installed version wins across marketplaces and non-version fold
   const real = path.join(profile.cacheDir, 'another-marketplace', 'claude-hud-enhanced', '0.9.10', 'dist', 'index.js');
   writeFileSync(real, "console.log('STALE BUILD 0.9.10');\n");
   applySetup(profile, setupCommand('node', process.execPath));
+  writeHudConfig(profile, PILLS);
   const run = runStatusline(world, profile, { model: { display_name: 'Opus' } }, { columns: 120 });
 
   assert.equal(run.status, 0);
@@ -434,7 +472,8 @@ test('the launcher falls back to 120 columns when Claude Code passes none', { sk
 
   assert.equal(run.status, 0);
   assert.equal(run.stderr, '');
-  for (const line of run.pillLines) assert.ok(visibleWidth(line) <= 116, `${visibleWidth(line)} cells`);
+  assert.ok(run.lines.length >= 2);
+  for (const line of run.lines) assert.ok(visibleWidth(line) <= 116, `${visibleWidth(line)} cells`);
 });
 
 const usageFiles = (profile) => listDir(profile.dataDir).filter((name) => name.includes('usage-snapshot'));
@@ -450,7 +489,7 @@ function seedUsage(profile, snapshot) {
 }
 
 test('every session of a profile shows the newest usage reading, never an idle session\'s old one', { skip }, () => {
-  const { world, repo } = freshInstall('fresh-usage');
+  const { world, repo } = pillsInstall('fresh-usage');
   for (const profile of Object.values(world.profiles)) {
     const active = writeTranscript(world, { sessionId: '11111111-2222-4333-8444-aaaaaaaaaaaa', project: `${profile.name}-a` });
     const idle = writeTranscript(world, { sessionId: '11111111-2222-4333-8444-bbbbbbbbbbbb', project: `${profile.name}-b` });
@@ -489,7 +528,7 @@ test('every session of a profile shows the newest usage reading, never an idle s
 });
 
 test('the windows the usage API reported are shown as they are: no invented 5h, extra usage while in use', { skip }, () => {
-  const { world, repo } = freshInstall('api-usage');
+  const { world, repo } = pillsInstall('api-usage');
   const { default: personal, work: team } = world.profiles;
   const weekAhead = new Date(Date.now() + 3 * 24 * 3_600_000).toISOString();
   seedUsage(personal, (seenAt) => ({
@@ -541,7 +580,7 @@ test('the windows the usage API reported are shown as they are: no invented 5h, 
 });
 
 test('API-key sessions are never polled, and a signed-out profile keeps its stdin bars', { skip }, async () => {
-  const { world, repo } = freshInstall('no-oauth');
+  const { world, repo } = pillsInstall('no-oauth');
   const { default: keyed, work: signedOut } = world.profiles;
   const stdin = stdinFor({ cwd: repo.repo, transcriptPath: writeTranscript(world).transcriptPath });
 
@@ -572,7 +611,7 @@ test('API-key sessions are never polled, and a signed-out profile keeps its stdi
 });
 
 test('a reading the poll has not confirmed for minutes is dimmed with its age, and a passed reset reads 0%', { skip }, () => {
-  const { world, repo } = freshInstall('aged-usage');
+  const { world, repo } = pillsInstall('aged-usage');
   const profile = world.profiles.work;
   const now = Date.now();
   const iso = (ms) => new Date(ms).toISOString();
@@ -605,7 +644,7 @@ test('a reading the poll has not confirmed for minutes is dimmed with its age, a
 });
 
 test('a crowded row through the real launcher keeps every pill whole at each pane width', { skip }, async () => {
-  const { world, repo } = freshInstall('crowded');
+  const { world, repo } = pillsInstall('crowded');
   const profile = world.profiles.work;
   const gh = writeGhStub(world, {
     view: { number: 1971, state: 'OPEN', isDraft: false, headRefName: 'feature/pills', baseRefName: 'main' },
@@ -649,4 +688,68 @@ test('a crowded row through the real launcher keeps every pill whole at each pan
     if (columns >= 200) assert.ok(lines.length <= 2, `${label}: ${lines.length} rows`);
     if (columns >= 80) assert.ok(text.includes('1 running'), `${label}: running checks`);
   }
+});
+
+test('the default layout through the real launcher shows every new reading and fits each pane width', { skip }, async () => {
+  const { world, repo } = freshInstall('compact-crowded');
+  const profile = world.profiles.work;
+  const gh = writeGhStub(world, {
+    view: { number: 1971, state: 'OPEN', isDraft: false, headRefName: 'feature/pills', baseRefName: 'main' },
+    pull: { number: 1971, state: 'open', merged: false, draft: false, mergeable_state: 'unstable', head: { ref: 'feature/pills', sha: 'abc123' }, base: { ref: 'main' } },
+    checks: { check_runs: [{ status: 'completed', conclusion: 'success' }, { status: 'in_progress', conclusion: null }] },
+  });
+  const weekAhead = new Date(Date.now() + 3 * 24 * 3_600_000).toISOString();
+  const seenLongAgo = new Date(Date.now() - 4 * 60_000).toISOString();
+  seedUsage(profile, (seenAt) => ({
+    status: 'rate_limited',
+    next_attempt_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    five_hour: { used_percentage: null, resets_at: null, seen_at: seenAt },
+    seven_day: { used_percentage: 58, resets_at: weekAhead, seen_at: seenLongAgo },
+    model_scoped: [{ display_name: 'Fable', utilization: 30, resets_at: weekAhead }],
+    extra_usage: { enabled: true, utilization: 24.8, used: 1240, limit: 5000, currency: 'USD', decimals: 2 },
+  }));
+  const stdin = stdinFor({ cwd: repo.worktree, transcriptPath: writeTranscript(world).transcriptPath, extra: { rate_limits: null } });
+  runStatusline(world, profile, stdin, { columns: 204, ghDir: gh.dir });
+  await settlePr(profile);
+
+  const wide = runStatusline(world, profile, stdin, { columns: 204, ghDir: gh.dir, settled: (r) => r.plain.includes('#1971') });
+  assert.equal(wide.stderr, '');
+  assert.equal(existsSync(path.join(profile.dataDir, 'config.json')), false, 'this is the layout with no config at all');
+  assert.match(wide.plainLines[0], /^\[Opus 5\.5 \(1M context\) medium \| Max 20x\] █░+ 7% \(69k\/1\.0M\) \| acme-app-feature wt:\(feature\/pills\* \?1\) #1971 ◷ 1 running/);
+  assert.match(wide.plainLines[1], /^Fable ███░+ 30% \| Weekly ██████░+ ~58% · 4m ago \(resets [^)]+\) \| extra \$12\.40\/\$50$/);
+
+  for (const columns of [40, 60, 80, 100, 120, 200]) {
+    const run = runStatusline(world, profile, stdin, { columns: columns + 4, ghDir: gh.dir, settled: (r) => r.plain.includes('acme-app-feature') });
+    const label = `${columns} columns: ${JSON.stringify(run.plainLines)}`;
+
+    assert.equal(run.status, 0, label);
+    assert.equal(run.stderr, '', label);
+    assert.equal(run.plainLines.length, 2, label);
+    for (const line of run.lines) assert.ok(visibleWidth(line) <= columns, `${visibleWidth(line)} cells at ${label}`);
+    assert.doesNotMatch(run.stdout, /\x1b\[[34]8;2;|[\ue000-\uf8ff]/u, label);
+    assert.doesNotMatch(run.plain, /5h|--|✓ Read|\.\.\./, label);
+    for (const piece of ['Opus 5.5', '7%', 'acme-app-feature', 'Fable', '30%', '~58%', '$12.40']) assert.ok(run.plain.includes(piece), `${piece} at ${label}`);
+    assert.ok(run.plainLines[1].indexOf('Fable') < run.plainLines[1].search(/Weekly|7d:/), label);
+    if (columns >= 80) assert.ok(run.plain.includes('· 4m ago'), label);
+    if (columns >= 120) assert.ok(run.plain.includes('wt:(feature/pills*') && run.plain.includes('#1971'), label);
+  }
+});
+
+test('the activity lines stay off for a config written before the update and come back with the new keys', { skip }, () => {
+  const { world, repo } = freshInstall('activity-keys');
+  const profile = world.profiles.work;
+  const stdin = stdinFor({ cwd: repo.repo, transcriptPath: writeTranscript(world).transcriptPath });
+  const render = (config) => {
+    if (config) writeHudConfig(profile, config);
+    const run = runStatusline(world, profile, stdin, { columns: 200 });
+    assert.equal(run.stderr, '');
+    return run.plain;
+  };
+
+  assert.doesNotMatch(render(null), /✓ Read/, 'no config');
+  assert.doesNotMatch(render({ display: { showTools: true, showAgents: true, showTodos: true } }), /✓ Read/, 'the old keys no longer turn the lines on');
+  assert.doesNotMatch(render({ lineLayout: 'expanded', display: { showTools: true } }), /✓ Read/);
+  assert.match(render({ display: { toolsLine: true } }), /✓ Read/);
+  assert.match(render({ lineLayout: 'expanded', display: { toolsLine: true } }), /✓ Read/);
+  assert.doesNotMatch(render({ display: { toolsLine: false, showTools: true } }), /✓ Read/);
 });

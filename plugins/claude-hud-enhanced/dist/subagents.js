@@ -167,6 +167,7 @@ export async function readRunningSubagents(transcriptPath, agents, getGit, feedP
         const fed = meta ? feed[meta.id] : undefined;
         const modelId = fed?.modelId ?? tail?.modelId ?? meta?.model ?? agent.model ?? '';
         const entry = {
+            id: agent.id,
             type: meta?.agentType ?? clean(agent.type) ?? 'agent',
             model: modelId || '?',
             modelId,

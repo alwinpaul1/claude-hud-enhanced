@@ -133,18 +133,25 @@ export function getContextColor(
   return resolveAnsi(colors?.context, GREEN);
 }
 
-export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string {
+export type QuotaTone = 'usage' | 'model';
+
+export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>, tone: QuotaTone = 'usage'): string {
   if (percent >= 90) return resolveAnsi(colors?.critical, RED);
   if (percent >= 75) return resolveAnsi(colors?.usageWarning, BRIGHT_MAGENTA);
-  return resolveAnsi(colors?.usage, BRIGHT_BLUE);
+  return tone === 'model' ? resolveAnsi(colors?.modelUsage, CYAN) : resolveAnsi(colors?.usage, BRIGHT_BLUE);
 }
 
-export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
+export function quotaBar(
+  percent: number,
+  width: number = 10,
+  colors?: Partial<HudColorOverrides>,
+  tone: QuotaTone = 'usage',
+): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
   const filled = Math.round((safePercent / 100) * safeWidth);
   const empty = safeWidth - filled;
-  const color = getQuotaColor(safePercent, colors);
+  const color = getQuotaColor(safePercent, colors, tone);
   const filledChar = colors?.barFilled ?? '█';
   const emptyChar = colors?.barEmpty ?? '░';
   return `${color}${filledChar.repeat(filled)}${DIM}${emptyChar.repeat(empty)}${RESET}`;

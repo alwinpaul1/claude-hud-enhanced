@@ -1,5 +1,6 @@
 import type { RenderContext } from '../types.js';
-export declare function renderAgentsLine(ctx: RenderContext): string | null;
+import { type Fits } from './visual.js';
+export declare function renderAgentsLine(ctx: RenderContext, fits?: Fits): string | null;
 /**
  * Compacts an agent model into a statusline-sized label.
  *

@@ -277,13 +277,25 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 
 ---
 
+## Activity Lines (off by default)
+
+The tools, agents and todos lines are OFF unless the user turns them on. Write
+`display.toolsLine`, `display.agentsLine` and `display.todosLine` (`true` to
+show a line, `false` or absent to hide it). Never write `display.showTools`,
+`display.showAgents` or `display.showTodos`: those older keys are still parsed
+but no longer read, and a `true` left in an existing config does NOT mean the
+line is on. When reading the current state, treat a line as ON only when its
+new key is `true`.
+
+---
+
 ## Layout Mapping
 
 | Option | Config |
 |--------|--------|
-| Pills (default) | `lineLayout: "pills"` |
+| Compact (default) | `lineLayout: "compact", showSeparators: false` |
 | Expanded | `lineLayout: "expanded", showSeparators: false` |
-| Compact | `lineLayout: "compact", showSeparators: false` |
+| Pills | `lineLayout: "pills"` (square pills with plain icons; add `display.pillCaps: true` only when the user confirms their terminal font is a Nerd Font) |
 | Compact + Separators | `lineLayout: "compact", showSeparators: true` |
 
 ---
@@ -315,11 +327,11 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 |---------|------------|
 | Model name | `display.showModel` |
 | Context bar | `display.showContextBar` |
-| Tools activity | `display.showTools` |
+| Tools activity | `display.toolsLine` |
 | Skills activity | `display.showSkills` |
 | MCP status | `display.showMcp` |
-| Agents status | `display.showAgents` |
-| Todo progress | `display.showTodos` |
+| Agents status | `display.agentsLine` |
+| Todo progress | `display.todosLine` |
 | Project name | `display.showProject` |
 | Added directories | `display.showAddedDirs` (layout via `display.addedDirsLayout`) |
 | Git status | `gitStatus.enabled` |

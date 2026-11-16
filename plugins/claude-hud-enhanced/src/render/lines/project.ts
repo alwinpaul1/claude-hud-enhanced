@@ -16,7 +16,8 @@ import { DEFAULT_CONFIG, DEFAULT_PROJECT_LINE_ORDER } from '../../config.js';
 import type { FirstLineSegment } from '../../config.js';
 import { orderFirstLineParts } from '../first-line-order.js';
 import type { FirstLinePart } from '../first-line-order.js';
-import { getVcsDisplayState } from '../vcs-status.js';
+import { clipBranch, currentPr, formatPrBadge, getVcsDisplayState, MIN_BRANCH_CELLS, vcsLabel, type GitDetail } from '../vcs-status.js';
+import { visualLength } from '../visual.js';
 
 function resolvePathWithinCwd(cwd: string, candidatePath: string): string | null {
   const resolvedCwd = path.resolve(cwd);
@@ -28,7 +29,7 @@ function resolvePathWithinCwd(cwd: string, candidatePath: string): string | null
   return null;
 }
 
-export function renderProjectLine(ctx: RenderContext): string | null {
+export function renderProjectLine(ctx: RenderContext, maxWidth: number | null = null): string | null {
   const display = ctx.config?.display;
   const colors = ctx.config?.colors;
   const parts: FirstLinePart[] = [];
@@ -71,23 +72,26 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     addedDirsPart = rendered.join(' ');
   }
 
-  let gitPart = '';
   const vcs = getVcsDisplayState(ctx.gitStatus, ctx.config);
   const gitConfig = ctx.config.gitStatus ?? DEFAULT_CONFIG.gitStatus;
   const branchOverflow = vcs?.branchOverflow ?? gitConfig.branchOverflow;
+  const pr = vcs?.kind === 'git' ? currentPr(ctx.prStatus) : null;
 
-  if (vcs) {
-    const branchText = vcs.branch + (vcs.dirty ? '*' : '');
+  const gitPartOf = (detail: GitDetail, branchCells: number | null): string => {
+    if (!vcs || detail === 'none') return '';
+    const isClipped = detail === 'clipped';
+    const branchName = isClipped && branchCells !== null ? clipBranch(vcs.branch, branchCells) : vcs.branch;
+    const branchText = branchName + (vcs.dirty ? '*' : '');
     const coloredBranch = gitBranchColor(branchText, colors);
     const linkedBranch = safeHyperlink(vcs.branchUrl, coloredBranch);
     const gitInner: string[] = [linkedBranch];
 
-    if (vcs.ahead > 0) {
+    if (!isClipped && vcs.ahead > 0) {
       gitInner.push(formatAheadCount(vcs.ahead, gitConfig, colors));
     }
-    if (vcs.behind > 0) gitInner.push(gitBranchColor(`↓${vcs.behind}`, colors));
+    if (!isClipped && vcs.behind > 0) gitInner.push(gitBranchColor(`↓${vcs.behind}`, colors));
 
-    if (vcs.lineDiff) {
+    if (detail === 'full' && vcs.lineDiff) {
       const { added, deleted } = vcs.lineDiff;
       const diffParts: string[] = [];
       if (added > 0) diffParts.push(green(`+${added}`));
@@ -101,13 +105,27 @@ export function renderProjectLine(ctx: RenderContext): string | null {
       gitInner.push(criticalColor('!conflict', colors));
     }
 
-    const vcsLabel = vcs.kind === 'jj' ? 'jj:(' : 'git:(';
-    gitPart = `${gitColor(vcsLabel, colors)}${gitInner.join(' ')}${gitColor(')', colors)}`;
-  }
+    const prPart = pr ? ` ${formatPrBadge(pr, colors, detail)}` : '';
+    return `${gitColor(vcsLabel(vcs), colors)}${gitInner.join(' ')}${gitColor(')', colors)}${prPart}`;
+  };
 
   const projectWithDirs = projectPart && addedDirsPart
     ? `${projectPart} ${addedDirsPart}`
     : projectPart ?? addedDirsPart;
+  const isJoined = branchOverflow !== 'wrap' && Boolean(projectWithDirs);
+  const segmentOf = (gitText: string): string => (isJoined && gitText ? `${projectWithDirs} ${gitText}` : gitText || (projectWithDirs ?? ''));
+  const fitsSegment = (gitText: string): boolean => maxWidth === null || maxWidth <= 0 || visualLength(segmentOf(gitText)) <= maxWidth;
+
+  let gitPart = gitPartOf('full', null);
+  if (vcs && !fitsSegment(gitPart)) {
+    gitPart = gitPartOf('brief', null);
+    if (!fitsSegment(gitPart) && maxWidth !== null) {
+      const branchCells = visualLength(vcs.branch);
+      const wide = gitPartOf('clipped', branchCells);
+      const room = branchCells - (visualLength(segmentOf(wide)) - maxWidth);
+      gitPart = room >= MIN_BRANCH_CELLS ? gitPartOf('clipped', room) : isJoined ? '' : gitPartOf('clipped', MIN_BRANCH_CELLS);
+    }
+  }
 
   if (projectWithDirs && gitPart) {
     if (branchOverflow === 'wrap') {
@@ -120,6 +138,13 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     push(projectWithDirs, 'project');
   } else if (gitPart) {
     push(gitPart, 'project');
+  }
+
+  if (display?.agentsLine !== true) {
+    const running = ctx.transcript.agents.filter((agent) => agent.status === 'running').length;
+    if (running > 0) {
+      push(label(`${running} ${running === 1 ? 'agent' : 'agents'}`, colors));
+    }
   }
 
   // Advisor model sits inline with the model/project/git badge so the

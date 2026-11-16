@@ -8,156 +8,8 @@ import { renderIdentityLine, renderProjectLine, renderAddedDirsLine, renderGitFi
 import { dim, RESET } from './colors.js';
 import { renderPillLines } from './pills.js';
 import { getTerminalWidth, UNKNOWN_TERMINAL_WIDTH } from '../utils/terminal.js';
-import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
-// eslint-disable-next-line no-control-regex
-const ANSI_ESCAPE_PATTERN = /^(?:\x1b\[[0-9;]*m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))/;
-// eslint-disable-next-line no-control-regex
-const ANSI_ESCAPE_GLOBAL = /(?:\x1b\[[0-9;]*m|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))/g;
-const GRAPHEME_SEGMENTER = typeof Intl.Segmenter === 'function'
-    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-    : null;
-function stripAnsi(str) {
-    return str.replace(ANSI_ESCAPE_GLOBAL, '');
-}
-function splitAnsiTokens(str) {
-    const tokens = [];
-    let i = 0;
-    while (i < str.length) {
-        const ansiMatch = ANSI_ESCAPE_PATTERN.exec(str.slice(i));
-        if (ansiMatch) {
-            tokens.push({ type: 'ansi', value: ansiMatch[0] });
-            i += ansiMatch[0].length;
-            continue;
-        }
-        let j = i;
-        while (j < str.length) {
-            const nextAnsi = ANSI_ESCAPE_PATTERN.exec(str.slice(j));
-            if (nextAnsi) {
-                break;
-            }
-            j += 1;
-        }
-        tokens.push({ type: 'text', value: str.slice(i, j) });
-        i = j;
-    }
-    return tokens;
-}
-function segmentGraphemes(text) {
-    if (!text) {
-        return [];
-    }
-    if (!GRAPHEME_SEGMENTER) {
-        return Array.from(text);
-    }
-    return Array.from(GRAPHEME_SEGMENTER.segment(text), segment => segment.segment);
-}
-function graphemeWidth(grapheme, ambiguousWide) {
-    if (!grapheme || /^\p{Control}$/u.test(grapheme)) {
-        return 0;
-    }
-    // Emoji glyphs and ZWJ sequences generally render as double-width.
-    if (/\p{Extended_Pictographic}/u.test(grapheme)) {
-        return 2;
-    }
-    let hasVisibleBase = false;
-    let width = 0;
-    for (const char of Array.from(grapheme)) {
-        if (/^\p{Mark}$/u.test(char) || char === '\u200D' || char === '\uFE0E' || char === '\uFE0F') {
-            continue;
-        }
-        hasVisibleBase = true;
-        const codePoint = char.codePointAt(0);
-        if (codePoint !== undefined) {
-            width = Math.max(width, codePointCellWidth(codePoint, ambiguousWide));
-        }
-        else {
-            width = Math.max(width, 1);
-        }
-    }
-    return hasVisibleBase ? width : 0;
-}
-function visualLength(str) {
-    const ambiguousWide = isCjkAmbiguousWide();
-    let width = 0;
-    for (const token of splitAnsiTokens(str)) {
-        if (token.type === 'ansi') {
-            continue;
-        }
-        for (const grapheme of segmentGraphemes(token.value)) {
-            width += graphemeWidth(grapheme, ambiguousWide);
-        }
-    }
-    return width;
-}
-function sliceVisible(str, maxVisible) {
-    if (maxVisible <= 0) {
-        return '';
-    }
-    const ambiguousWide = isCjkAmbiguousWide();
-    let result = '';
-    let visibleWidth = 0;
-    let done = false;
-    let i = 0;
-    while (i < str.length && !done) {
-        const ansiMatch = ANSI_ESCAPE_PATTERN.exec(str.slice(i));
-        if (ansiMatch) {
-            result += ansiMatch[0];
-            i += ansiMatch[0].length;
-            continue;
-        }
-        let j = i;
-        while (j < str.length) {
-            const nextAnsi = ANSI_ESCAPE_PATTERN.exec(str.slice(j));
-            if (nextAnsi) {
-                break;
-            }
-            j += 1;
-        }
-        const plainChunk = str.slice(i, j);
-        for (const grapheme of segmentGraphemes(plainChunk)) {
-            const graphemeCellWidth = graphemeWidth(grapheme, ambiguousWide);
-            if (visibleWidth + graphemeCellWidth > maxVisible) {
-                done = true;
-                break;
-            }
-            result += grapheme;
-            visibleWidth += graphemeCellWidth;
-        }
-        i = j;
-    }
-    return result;
-}
-// OSC 8 close sequence (`\x1b]8;;\x1b\\`) terminates the current hyperlink.
-// If truncation cuts inside an open OSC 8 hyperlink, emitting only an SGR
-// reset (`\x1b[0m`) is not enough — the terminal keeps treating subsequent
-// output as part of the link and renders its underline across the rest of
-// the line. This helper returns the close sequence iff the last OSC 8 in
-// `str` opened a hyperlink (non-empty URL) without being followed by a
-// closer (empty URL).
-const OSC8_OPEN_OR_CLOSE = /\x1b\]8;;([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
-const OSC8_CLOSE = '\x1b]8;;\x1b\\';
-function closeOpenHyperlink(str) {
-    let last = null;
-    let match;
-    OSC8_OPEN_OR_CLOSE.lastIndex = 0;
-    while ((match = OSC8_OPEN_OR_CLOSE.exec(str)) !== null) {
-        last = match;
-    }
-    return last && last[1].length > 0 ? OSC8_CLOSE : '';
-}
-function truncateToWidth(str, maxWidth) {
-    if (maxWidth <= 0 || visualLength(str) <= maxWidth) {
-        return str;
-    }
-    const suffix = maxWidth >= 3 ? '...' : '.'.repeat(maxWidth);
-    const keep = Math.max(0, maxWidth - suffix.length);
-    // A cut that lands right after a segment separator leaves a dangling "|"
-    // at the edge of the pane; drop trailing separators and spaces first.
-    const sliced = sliceVisible(str, keep).replace(/(?:\s|\||│)+(?:\x1b\[[0-9;]*m)*$/u, '');
-    // Close the hyperlink (if any) before the ellipsis so the suffix renders
-    // as plain text rather than as part of the truncated link.
-    return `${sliced}${closeOpenHyperlink(sliced)}${suffix}${RESET}`;
-}
+import { isCjkAmbiguousWide } from './width.js';
+import { ANSI_ESCAPE_PATTERN, clipToWidth, fitsWidth, stripAnsi, truncateToWidth, visualLength } from './visual.js';
 function splitLineBySeparators(line) {
     const segments = [];
     const separators = [];
@@ -306,52 +158,39 @@ function alignGroupRight(entries, rightAlign, terminalWidth) {
     }
     return `${leftText}${' '.repeat(gap)}${rightText}`;
 }
-function collectActivityLines(ctx, skipAgents = false) {
-    const activityLines = [];
-    const display = ctx.config?.display;
-    if (display?.showTools !== false) {
-        const toolsLine = renderToolsLine(ctx);
-        if (toolsLine) {
-            activityLines.push(toolsLine);
-        }
+function fitActivityLine(line, width) {
+    if (line === null || width === null || width <= 0) {
+        return line;
     }
-    if (display?.showSkills === true) {
-        const skillsLine = renderSkillsLine(ctx);
-        if (skillsLine) {
-            activityLines.push(skillsLine);
-        }
-    }
-    if (display?.showMcp === true) {
-        const mcpLine = renderMcpLine(ctx);
-        if (mcpLine) {
-            activityLines.push(mcpLine);
-        }
-    }
-    if (display?.showAgents !== false && !skipAgents) {
-        const agentsLine = renderAgentsLine(ctx);
-        if (agentsLine) {
-            activityLines.push(agentsLine);
-        }
-    }
-    if (display?.showTodos !== false) {
-        const todosLine = renderTodosLine(ctx);
-        if (todosLine) {
-            activityLines.push(todosLine);
-        }
-    }
-    return activityLines;
+    return line.split('\n').map((row) => clipToWidth(row, width)).join('\n');
 }
-function renderElementLine(ctx, element, labelOptions = {}) {
+function collectActivityLines(ctx, skipAgents = false, width = null) {
     const display = ctx.config?.display;
+    const fits = fitsWidth(width);
+    const candidates = [
+        display?.toolsLine === true ? renderToolsLine(ctx, fits) : null,
+        display?.showSkills === true ? renderSkillsLine(ctx) : null,
+        display?.showMcp === true ? renderMcpLine(ctx) : null,
+        display?.agentsLine === true && !skipAgents ? renderAgentsLine(ctx, fits) : null,
+        display?.todosLine === true ? renderTodosLine(ctx, fits) : null,
+    ];
+    return candidates.flatMap((line) => {
+        const fitted = fitActivityLine(line, width);
+        return fitted ? [fitted] : [];
+    });
+}
+function renderElementLine(ctx, element, labelOptions = {}, width = null) {
+    const display = ctx.config?.display;
+    const fits = fitsWidth(width);
     switch (element) {
         case 'project':
-            return renderProjectLine(ctx);
+            return renderProjectLine(ctx, width);
         case 'addedDirs':
             return renderAddedDirsLine(ctx);
         case 'context':
             return renderIdentityLine(ctx, labelOptions);
         case 'usage':
-            return renderUsageLine(ctx, labelOptions);
+            return renderUsageLine(ctx, labelOptions, fits);
         case 'promptCache':
             return renderPromptCacheLine(ctx);
         case 'memory':
@@ -359,22 +198,22 @@ function renderElementLine(ctx, element, labelOptions = {}) {
         case 'environment':
             return renderEnvironmentLine(ctx);
         case 'tools':
-            return display?.showTools === false ? null : renderToolsLine(ctx);
+            return display?.toolsLine === true ? fitActivityLine(renderToolsLine(ctx, fits), width) : null;
         case 'skills':
-            return display?.showSkills === true ? renderSkillsLine(ctx) : null;
+            return display?.showSkills === true ? fitActivityLine(renderSkillsLine(ctx), width) : null;
         case 'mcp':
-            return display?.showMcp === true ? renderMcpLine(ctx) : null;
+            return display?.showMcp === true ? fitActivityLine(renderMcpLine(ctx), width) : null;
         case 'agents':
-            return display?.showAgents === false ? null : renderAgentsLine(ctx);
+            return display?.agentsLine === true ? fitActivityLine(renderAgentsLine(ctx, fits), width) : null;
         case 'todos':
-            return display?.showTodos === false ? null : renderTodosLine(ctx);
+            return display?.todosLine === true ? fitActivityLine(renderTodosLine(ctx, fits), width) : null;
         case 'sessionTime':
             return renderSessionTimeLine(ctx);
     }
 }
-function renderCompact(ctx, fitsRow) {
+function renderCompact(ctx, maxWidth, isSingleRow) {
     const lines = [];
-    const sessionLine = renderSessionLine(ctx, { fitsRow });
+    const sessionLine = renderSessionLine(ctx, { maxWidth, isSingleRow });
     if (sessionLine) {
         lines.push(sessionLine);
     }
@@ -442,7 +281,7 @@ function renderExpanded(ctx, terminalWidth = null) {
                             const stackedLine = renderElementLine(ctx, groupedElement, {
                                 align: true,
                                 includeMemoryInWidth: memoryLineVisible,
-                            }) ?? line;
+                            }, terminalWidth) ?? line;
                             lines.push({
                                 line: stackedLine,
                                 isActivity: ACTIVITY_ELEMENTS.has(groupedElement),
@@ -452,7 +291,7 @@ function renderExpanded(ctx, terminalWidth = null) {
                 }
                 else if (renderedGroupLines.length === 1) {
                     const [{ element: groupedElement, line }] = renderedGroupLines;
-                    const separateLine = renderElementLine(ctx, groupedElement, separateMemoryLabelOptions) ?? line;
+                    const separateLine = renderElementLine(ctx, groupedElement, separateMemoryLabelOptions, terminalWidth) ?? line;
                     lines.push({
                         line: separateLine,
                         isActivity: ACTIVITY_ELEMENTS.has(groupedElement),
@@ -462,7 +301,7 @@ function renderExpanded(ctx, terminalWidth = null) {
             }
         }
         seen.add(element);
-        const line = renderElementLine(ctx, element, separateMemoryLabelOptions);
+        const line = renderElementLine(ctx, element, separateMemoryLabelOptions, terminalWidth);
         if (!line) {
             continue;
         }
@@ -523,7 +362,7 @@ write = (line) => console.log(line)) {
         const pillWidth = terminalWidth !== UNKNOWN_TERMINAL_WIDTH ? (terminalWidth ?? 0) : 0;
         lines = [
             ...renderPillLines(ctx, pillWidth > 0 ? pillWidth : null),
-            ...collectActivityLines(ctx, (ctx.pillAgents?.length ?? 0) > 0),
+            ...collectActivityLines(ctx, (ctx.pillAgents?.length ?? 0) > 0, pillWidth > 0 ? pillWidth : null),
         ];
     }
     else {
@@ -533,17 +372,13 @@ write = (line) => console.log(line)) {
         // wrapping onto a third row. Activity lines below always wrap normally.
         const singleRow = ctx.config?.display?.compactSingleRow === true;
         const compactWidth = terminalWidth !== UNKNOWN_TERMINAL_WIDTH ? (terminalWidth ?? 0) : 0;
-        // A usage row that would overflow narrows itself (bars go first) rather than
-        // losing its weekly window to the cut or wrapping onto another row.
-        const fitsRow = compactWidth > 0
-            ? (row) => visualLength(row) <= compactWidth
-            : undefined;
+        const fitWidth = compactWidth > 0 ? compactWidth : null;
         const headerLines = singleRow
-            ? renderCompact(ctx, fitsRow)
+            ? renderCompact(ctx, fitWidth, true)
                 .flatMap(line => line.split('\n'))
                 .map(line => wrapLineToWidth(line, compactWidth)[0] ?? line)
-            : renderCompact(ctx, fitsRow);
-        const activityLines = collectActivityLines(ctx);
+            : renderCompact(ctx, fitWidth, false);
+        const activityLines = collectActivityLines(ctx, false, fitWidth);
         lines = [...headerLines];
         if (showSeparators && activityLines.length > 0) {
             const maxWidth = Math.max(...headerLines.map(visualLength), 20);

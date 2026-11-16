@@ -103,6 +103,8 @@ src/
     ├── pills.ts          # Default pill row (ported from the usage-band mod): palettes, layout, ANSI
     ├── session-line.ts   # Compact session line
     ├── lines/            # Expanded element renderers (usage, project, …)
+    ├── usage-figure.ts   # Shared usage figure: freshness note, model tone, extra spend
+    ├── visual.ts         # ANSI-aware width, clipping and fit helpers
     ├── tools-line.ts     # Tool activity
     ├── agents-line.ts    # Agent status
     ├── todos-line.ts     # Todo progress
@@ -111,26 +113,28 @@ src/
 
 ### Output Format
 
-Default (`lineLayout: "pills"`): one row of pills, in a light and a dark palette (`display.pillTheme`), reflowed to the pane width by `layout()` in `render/pills.ts`. Any UI change there must be checked in both palettes.
+Default (`lineLayout: "compact"`): the session line and the usage line. It uses the terminal's own ANSI colours (`render/colors.ts`), so it is the same in a light and a dark theme, and it needs no special font.
 
 ```
- Opus 5.5 medium │ ◔ ╸━━━━━━━ 7% 69.0k/1.0M    ◷ 5h ━━━╸━━━━ 42% │ 2:10 PM    ▦ 7d ╸━━━━━━━ 8% │ Sat 2:00 AM     my-project │  main ~6 ?3
+[Opus | Max 20x] █████░░░░░ 45% (90k/200k) | my-project git:(main* ↑2) #1971 ● ready | 2 agents
+Usage ███░░░░░░░ 25% (resets 9:10 PM) | Fable ████░░░░░░ 38% | Weekly ██░░░░░░░░ ~21% · 4m ago (resets Sat 4:00 AM) | extra $12.40/$50
 ```
 
-`lineLayout: "compact"`:
+Both rows follow the pane width and never wrap: `fitRowOne` and `fitUsageRow` in `render/session-line.ts` drop and shorten segments in a fixed order. A new segment must be added to that ladder and to the width tests (`tests/compact-default.test.js`, 40 to 200 columns).
+
+The activity lines are off by default and opt-in through `display.toolsLine`, `display.agentsLine` and `display.todosLine` (the older `showTools`/`showAgents`/`showTodos` keys are parsed but never read):
 
 ```
-[Opus | Pro] █████░░░░░ 45% | my-project git:(main) | 2 CLAUDE.md | 5h: 25% | ⏱️ 5m
-◐ Edit: auth.ts | ✓ Read ×3 | ✓ Grep ×2
-◐ explore [haiku]: Finding auth code (2m 15s)
+◐ Edit: auth.ts | ✓ Read ×3 | ✓ chrome:browser_batch ×2 | +3 more
+◐ explore [haiku-4.5 low 23%]: Finding auth code (2m 15s)
 ▸ Fix authentication bug (2/5)
 ```
 
-Lines are conditionally shown:
-- Line 1 (session): Always shown
-- Line 2 (tools): Shown if any tools used
-- Line 3 (agents): Shown only if agents active
-- Line 4 (todos): Shown only if todos exist
+`lineLayout: "pills"` (opt-in): one row of pills, in a light and a dark palette (`display.pillTheme`), reflowed to the pane width by `layout()` in `render/pills.ts`. Any UI change there must be checked in both palettes. Private-use (Nerd Font) glyphs are allowed only behind `display.pillCaps`; every default glyph must be plain Unicode.
+
+```
+ Opus 5.5 medium │ ◔ ╸━━━━━━━ 7% 69.0k/1.0M   ◷ 5h ━━━╸━━━━ 42% │ 2:10 PM   ▦ 7d ╸━━━━━━━ 8% │ Sat 2:00 AM   ▣ my-project │ ◆ main ~6 ?3
+```
 
 ### Context Thresholds
 

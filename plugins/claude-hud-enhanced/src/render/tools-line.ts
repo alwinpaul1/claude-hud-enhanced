@@ -1,12 +1,40 @@
 import type { RenderContext } from '../types.js';
 import { yellow, green, cyan, label } from './colors.js';
+import { firstFitting, type Fits } from './visual.js';
 
 const ELLIPSIS = '…';
-const MCP_TOOL_NAME_PATTERN = /^mcp__.+__.+$/;
+const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
+const RUNNING_SHOWN = 2;
+
+export function shortenMcpServer(server: string): string {
+  const hosted = server.replace(/^claude[-_]in[-_]/i, '').replace(/^claude[-_]ai[-_]/i, '');
+  if (!hosted.startsWith('plugin_')) {
+    return hosted;
+  }
+  const rest = hosted.slice('plugin_'.length);
+  const tokens = rest.split('_');
+  for (let cut = 1; cut < tokens.length; cut += 1) {
+    const plugin = tokens.slice(0, cut).join('_');
+    const own = tokens.slice(cut).join('_');
+    if (own === plugin || own.startsWith(`${plugin}-`) || own.startsWith(`${plugin}_`)) {
+      return own;
+    }
+  }
+  return rest;
+}
+
+export function compactToolName(name: string): string {
+  const mcp = MCP_TOOL_NAME_PATTERN.exec(name);
+  if (!mcp) {
+    return name;
+  }
+  const [, server = '', tool = ''] = mcp;
+  return `${shortenMcpServer(server)}:${tool}`;
+}
 
 export function shortenToolName(name: string, maxLen: number): string {
   if (maxLen === 0) {
-    return name;
+    return compactToolName(name);
   }
 
   const displayName = MCP_TOOL_NAME_PATTERN.test(name)
@@ -20,7 +48,7 @@ export function shortenToolName(name: string, maxLen: number): string {
   return `${displayName.slice(0, Math.max(0, maxLen - 1))}${ELLIPSIS}`;
 }
 
-export function renderToolsLine(ctx: RenderContext): string | null {
+export function renderToolsLine(ctx: RenderContext, fits?: Fits): string | null {
   const hideSkillTools = ctx.config?.display?.showSkills === true;
   const tools = hideSkillTools
     ? ctx.transcript.tools.filter((tool) => tool.name !== 'Skill')
@@ -33,43 +61,48 @@ export function renderToolsLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  const parts: string[] = [];
-
-  const runningTools = tools.filter((t) => t.status === 'running');
+  const runningTools = tools.filter((t) => t.status === 'running').slice(-RUNNING_SHOWN);
   const completedTools = tools.filter((t) => t.status === 'completed' || t.status === 'error');
-
-  for (const tool of runningTools.slice(-2)) {
-    const target = tool.target ? truncatePath(tool.target) : '';
-    const name = shortenToolName(tool.name, toolNameMaxLength);
-    parts.push(`${yellow('◐')} ${cyan(name)}${target ? label(`: ${target}`, colors) : ''}`);
-  }
+  const runningParts = (withTargets: boolean, shown: number): string[] =>
+    runningTools.slice(-shown).map((tool) => {
+      const target = withTargets && tool.target ? truncatePath(tool.target) : '';
+      const name = shortenToolName(tool.name, toolNameMaxLength);
+      return `${yellow('◐')} ${cyan(name)}${target ? label(`: ${target}`, colors) : ''}`;
+    });
 
   const toolCounts = new Map<string, number>();
   for (const tool of completedTools) {
-    const count = toolCounts.get(tool.name) ?? 0;
-    toolCounts.set(tool.name, count + 1);
+    toolCounts.set(tool.name, (toolCounts.get(tool.name) ?? 0) + 1);
   }
 
   const sortedTools = Array.from(toolCounts.entries())
     .sort((a, b) => b[1] - a[1]);
-  const visibleTools = toolsMaxVisible === 0
-    ? sortedTools
-    : sortedTools.slice(0, toolsMaxVisible);
+  const maxVisible = toolsMaxVisible === 0 ? sortedTools.length : Math.min(toolsMaxVisible, sortedTools.length);
+  const completedParts = (visible: number): string[] => {
+    const shown = sortedTools
+      .slice(0, visible)
+      .map(([name, count]) => `${green('✓')} ${shortenToolName(name, toolNameMaxLength)} ${label(`×${count}`, colors)}`);
+    const hidden = sortedTools.length - visible;
+    if (hidden <= 0) return shown;
+    return [...shown, label(visible === 0 && runningTools.length === 0 ? `${hidden} tools` : `+${hidden} more`, colors)];
+  };
 
-  for (const [name, count] of visibleTools) {
-    parts.push(`${green('✓')} ${shortenToolName(name, toolNameMaxLength)} ${label(`×${count}`, colors)}`);
-  }
-
-  const hiddenToolCount = toolsMaxVisible === 0 ? 0 : sortedTools.length - visibleTools.length;
-  if (hiddenToolCount > 0) {
-    parts.push(label(`+${hiddenToolCount} more`, colors));
-  }
-
-  if (parts.length === 0) {
+  if (runningTools.length === 0 && sortedTools.length === 0) {
     return null;
   }
 
-  return parts.join(' | ');
+  const candidates: Array<() => string> = [];
+  for (let visible = maxVisible; visible >= 0; visible -= 1) {
+    candidates.push(() => [...runningParts(true, RUNNING_SHOWN), ...completedParts(visible)].join(' | '));
+  }
+  candidates.push(() => [...runningParts(false, RUNNING_SHOWN), ...completedParts(0)].join(' | '));
+  candidates.push(() => [...runningParts(false, 1), ...completedParts(0)].join(' | '));
+  if (runningTools.length > 0) {
+    candidates.push(() => runningParts(false, 1).join(' | '));
+  }
+  candidates.push(() => label(`${runningTools.length + sortedTools.length} tools`, colors));
+
+  return firstFitting(candidates, fits);
 }
 
 function truncatePath(path: string, maxLen: number = 20): string {

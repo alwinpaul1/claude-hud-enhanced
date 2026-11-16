@@ -20,7 +20,8 @@ export interface ContextThresholds {
     critical?: number;
 }
 export declare function getContextColor(percent: number, colors?: Partial<HudColorOverrides>, thresholds?: ContextThresholds): string;
-export declare function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string;
-export declare function quotaBar(percent: number, width?: number, colors?: Partial<HudColorOverrides>): string;
+export type QuotaTone = 'usage' | 'model';
+export declare function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>, tone?: QuotaTone): string;
+export declare function quotaBar(percent: number, width?: number, colors?: Partial<HudColorOverrides>, tone?: QuotaTone): string;
 export declare function coloredBar(percent: number, width?: number, colors?: Partial<HudColorOverrides>, thresholds?: ContextThresholds): string;
 //# sourceMappingURL=colors.d.ts.map

@@ -7,9 +7,9 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion
 
 ## Step -1: Am I the version that is installed? (Run before anything else)
 
-<!-- SETUP_COMMAND_VERSION: 0.9.1 -->
+<!-- SETUP_COMMAND_VERSION: 0.9.2 -->
 
-**This command's own version is `0.9.1`**, written in the comment above and kept equal to
+**This command's own version is `0.9.2`**, written in the comment above and kept equal to
 `plugin.json` by a test.
 
 `/plugin update` replaces the files on disk, but a running Claude Code session keeps the
@@ -36,7 +36,7 @@ $claudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-
   Select-Object -First 1).Name
 ```
 
-**If the printed version does not equal `0.9.1`, STOP.** Do not continue, and do not write
+**If the printed version does not equal `0.9.2`, STOP.** Do not continue, and do not write
 anything to `settings.json`. Tell the user:
 
 > Your session is running the setup command from an older version, while <printed> is
@@ -867,17 +867,18 @@ After the verification above passes, tell the user:
 
 ## Step 4: Optional Features
 
-claude-hud-enhanced ships with a rich default HUD. **On by default:** model,
-context bar, project, usage, **tools activity, agents, todos, and session
-duration**. Most users keep these — so this step is about opting *out* of the
-defaults or turning on a couple of extras that are off.
+claude-hud-enhanced ships with a clean two-row default HUD. **On by default:**
+model, context bar, project, git, usage and session duration. **Off by
+default:** the tools activity, agents and todos lines. This step is about
+turning on the extras the user wants.
 
 Use AskUserQuestion:
 - header: "Customize"
-- question: "The enhanced HUD shows tools, agents, todos, and session duration by default. Adjust anything? (skip to keep the full HUD)"
+- question: "The enhanced HUD shows model, context, project, git, usage and session duration by default. Add anything? (skip to keep the default HUD)"
 - multiSelect: true
 - options:
-  - "Minimal mode" — Hide tools, agents, todos, and session duration for a leaner HUD
+  - "Activity lines" — Show the tools, agents and todos lines below the header (off by default)
+  - "Minimal mode" — Hide session duration for a leaner HUD
   - "Config counts" — Show CLAUDE.md / MCP / hooks counts (off by default)
   - "Session name" — Show session slug or custom title from /rename (off by default)
   - "Custom line" — Display a custom phrase in the HUD
@@ -886,7 +887,8 @@ Use AskUserQuestion:
 
 | Selection | Config keys |
 |-----------|------------|
-| Minimal mode | `display.showTools: false, display.showAgents: false, display.showTodos: false, display.showDuration: false` |
+| Activity lines | `display.toolsLine: true, display.agentsLine: true, display.todosLine: true` (never write the older `showTools`/`showAgents`/`showTodos` keys: they are no longer read) |
+| Minimal mode | `display.showDuration: false` |
 | Config counts | `display.showConfigCounts: true` |
 | Session name | `display.showSessionName: true` |
 | Custom line | `display.customLine: "<user's text>"` — ask user for the text (max 80 chars) |

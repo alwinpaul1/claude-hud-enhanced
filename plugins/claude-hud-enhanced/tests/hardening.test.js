@@ -12,21 +12,21 @@ import { contextSpec, layout, paletteFor, renderPillBand } from '../dist/render/
 const tempDir = (label) => mkdtempSync(path.join(testRoot, `${label}-`));
 const plain = (text) => text.replace(/\x1b\[[0-9;]*m/g, '');
 
-test('mergeConfig gives pills to a config that never chose a layout and keeps one that did', () => {
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'pills');
+test('mergeConfig gives compact to a config that never chose a layout and keeps one that did', () => {
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
   const cases = [
-    [{}, 'pills'],
-    [{ showSeparators: true, display: { usageCompact: true } }, 'pills'],
+    [{}, 'compact'],
+    [{ showSeparators: true, display: { usageCompact: true } }, 'compact'],
     [{ lineLayout: 'compact' }, 'compact'],
     [{ lineLayout: 'expanded' }, 'expanded'],
     [{ lineLayout: 'pills' }, 'pills'],
     [{ layout: 'default' }, 'compact'],
     [{ layout: 'separators' }, 'compact'],
     [{ layout: { lineLayout: 'expanded' } }, 'expanded'],
-    [{ layout: { lineLayout: 'nope' } }, 'pills'],
+    [{ layout: { lineLayout: 'nope' } }, 'compact'],
     [{ layout: 'separators', lineLayout: 'expanded' }, 'expanded'],
-    [{ lineLayout: 'COMPACT' }, 'pills'],
-    [{ lineLayout: null }, 'pills'],
+    [{ lineLayout: 'COMPACT' }, 'compact'],
+    [{ lineLayout: null }, 'compact'],
   ];
   for (const [config, expected] of cases) {
     assert.equal(mergeConfig(config).lineLayout, expected, JSON.stringify(config));
@@ -38,7 +38,7 @@ test('mergeConfig gives pills to a config that never chose a layout and keeps on
 test('pill options fall back to their defaults on any bad value', () => {
   const merged = mergeConfig({ display: { pillTheme: 'neon', pillCaps: 'yes', pillPr: 0 } });
   assert.equal(merged.display.pillTheme, 'auto');
-  assert.equal(merged.display.pillCaps, true);
+  assert.equal(merged.display.pillCaps, false);
   assert.equal(merged.display.pillPr, true);
   const chosen = mergeConfig({ display: { pillTheme: 'light', pillCaps: false, pillPr: false } });
   assert.deepEqual([chosen.display.pillTheme, chosen.display.pillCaps, chosen.display.pillPr], ['light', false, false]);

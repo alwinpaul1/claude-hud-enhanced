@@ -7,6 +7,9 @@ import type { RenderContext } from '../types.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
 import { hasFigure } from '../usage-available.js';
 import { RESET } from './colors.js';
+import { agoLabel, STALE_AFTER, windowNote } from './usage-figure.js';
+
+export { agoLabel, STALE_AFTER, windowNote };
 import { formatProjectPath } from './project-path.js';
 import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
 
@@ -332,22 +335,7 @@ export const rolled = (w: PillWindow, now: number, span: number): PillWindow => 
   return { percentUsed: 0, resetsAt: at, isRolled: true };
 };
 
-export const STALE_AFTER = 150_000;
 export const MAX_SCOPED_PILLS = 2;
-
-export const agoLabel = (ms: number): string => {
-  const minutes = Math.max(1, Math.floor(ms / 60_000));
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
-};
-
-export const windowNote = (w: PillWindow, now: number): string | null => {
-  if (w.isRolled) return 'reset';
-  if (w.seenAt === undefined) return null;
-  if (w.seenAt === null) return 'unconfirmed';
-  return now - w.seenAt > STALE_AFTER ? `${agoLabel(now - w.seenAt)} ago` : null;
-};
 
 export const windowSpec = (
   label: string,
@@ -487,11 +475,14 @@ export const prBadge = (pr: Pr, p: Palette): { state: Seg[]; checks: Seg[] } => 
   return { state, checks };
 };
 
-const ICON = { worktree: '', repo: '', branch: '' };
+const NERD_ICON = { worktree: '', repo: '', branch: '' };
+const PLAIN_ICON: typeof NERD_ICON = { worktree: '◫', repo: '▣', branch: '◆' };
+const iconsFor = (isNerdFont: boolean): typeof NERD_ICON => (isNerdFont ? NERD_ICON : PLAIN_ICON);
 
 type GitCount = 'ahead' | 'behind' | 'staged' | 'modified' | 'untracked' | 'conflicts';
 
-export const gitSpec = (r: PillGit, p: Palette): PillSpec => {
+export const gitSpec = (r: PillGit, p: Palette, isNerdFont: boolean = false): PillSpec => {
+  const ICON = iconsFor(isNerdFont);
   const marks: [GitCount, string, string][] = [
     ['ahead', `↑${r.ahead}`, 'text'],
     ['behind', `↓${r.behind}`, 'text'],
@@ -545,7 +536,8 @@ export const gitSpec = (r: PillGit, p: Palette): PillSpec => {
   };
 };
 
-export const folderSpec = (name: string, p: Palette): PillSpec => {
+export const folderSpec = (name: string, p: Palette, isNerdFont: boolean = false): PillSpec => {
+  const ICON = iconsFor(isNerdFont);
   const segs: Seg[] = [
     { key: 'wt-icon', text: ` ${ICON.repo} `, color: p.tray.fg },
     { key: 'wt', text: name, color: 'text' },
@@ -554,21 +546,55 @@ export const folderSpec = (name: string, p: Palette): PillSpec => {
   return { key: 'folder', tone: p.tray, full: segs, compact: segs, tight: segs };
 };
 
-const sgr = (kind: 38 | 48, color: string): string => {
+export type ColorDepth = 'truecolor' | '256';
+
+const CUBE = [0, 95, 135, 175, 215, 255];
+
+const nearest = (value: number, levels: number[]): number =>
+  levels.reduce((best, level, index) => (Math.abs(level - value) < Math.abs((levels[best] ?? 0) - value) ? index : best), 0);
+
+export const to256 = (r: number, g: number, b: number): number => {
+  const [ri, gi, bi] = [r, g, b].map((channel) => nearest(channel, CUBE)) as [number, number, number];
+  const cube = [CUBE[ri] ?? 0, CUBE[gi] ?? 0, CUBE[bi] ?? 0] as const;
+  const grayStep = Math.max(0, Math.min(23, Math.round(((r + g + b) / 3 - 8) / 10)));
+  const gray = 8 + grayStep * 10;
+  const distance = (x: number, y: number, z: number): number => (r - x) ** 2 + (g - y) ** 2 + (b - z) ** 2;
+
+  return distance(gray, gray, gray) < distance(cube[0], cube[1], cube[2]) ? 232 + grayStep : 16 + 36 * ri + 6 * gi + bi;
+};
+
+export const colorDepthFor = (env: NodeJS.ProcessEnv = process.env): ColorDepth => {
+  if (/truecolor|24bit/i.test(env.COLORTERM ?? '')) return 'truecolor';
+  return env.TERM_PROGRAM === 'Apple_Terminal' ? '256' : 'truecolor';
+};
+
+const sgr = (kind: 38 | 48, color: string, depth: ColorDepth = 'truecolor'): string => {
   const channels = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(color);
-  return channels ? `\x1b[${kind};2;${channels[1]};${channels[2]};${channels[3]}m` : '';
+  if (!channels) return '';
+  const [r, g, b] = [channels[1], channels[2], channels[3]].map(Number) as [number, number, number];
+  return depth === '256' ? `\x1b[${kind};5;${to256(r, g, b)}m` : `\x1b[${kind};2;${r};${g};${b}m`;
 };
 
 const inkOf = (color: string | undefined, p: Palette): string =>
   color === undefined ? p.ink.text : color in p.ink ? p.ink[color as InkName] : color;
 
-export const drawPill = (spec: PillSpec, segs: Seg[], p: Palette, caps: boolean): string => {
+export const drawPill = (
+  spec: PillSpec,
+  segs: Seg[],
+  p: Palette,
+  caps: boolean,
+  depth: ColorDepth = 'truecolor',
+): string => {
+  const background = sgr(48, spec.tone.bg, depth);
   const body = segs
-    .map((seg) => `${seg.bold || BOLD_PILLS.has(spec.key) ? BOLD : NORMAL}${sgr(38, inkOf(seg.color, p))}${seg.text}`)
+    .map(
+      (seg) =>
+        `${background}${seg.bold || BOLD_PILLS.has(spec.key) ? BOLD : NORMAL}${sgr(38, inkOf(seg.color, p), depth)}${seg.text}`,
+    )
     .join('');
-  const cap = (glyph: string): string => (caps ? `${sgr(38, spec.tone.bg)}${glyph}${RESET}` : '');
+  const cap = (glyph: string): string => (caps ? `${sgr(38, spec.tone.bg, depth)}${glyph}${RESET}` : '');
 
-  return `${cap(CAP_LEFT)}${sgr(48, spec.tone.bg)}${body}${RESET}${cap(CAP_RIGHT)}`;
+  return `${cap(CAP_LEFT)}${body}${RESET}${cap(CAP_RIGHT)}`;
 };
 
 export interface PillOptions {
@@ -576,6 +602,7 @@ export interface PillOptions {
   caps: boolean;
   now: number;
   maxRows?: number | null;
+  depth?: ColorDepth;
 }
 
 export const pillRows = (band: PillBand, columns: number, options: PillOptions): [PillSpec, Seg[]][][] => {
@@ -584,7 +611,7 @@ export const pillRows = (band: PillBand, columns: number, options: PillOptions):
   const pills: PillSpec[] = [
     contextSpec(band.context, band.model, p),
     ...usageSpecs(band, now, p),
-    ...(band.git ? [gitSpec(band.git, p)] : band.folder ? [folderSpec(band.folder, p)] : []),
+    ...(band.git ? [gitSpec(band.git, p, options.caps)] : band.folder ? [folderSpec(band.folder, p, options.caps)] : []),
   ];
   const maxRows = options.maxRows ?? null;
   let rows = layout(pills, columns, capWidth);
@@ -592,7 +619,7 @@ export const pillRows = (band: PillBand, columns: number, options: PillOptions):
   for (const agent of band.agents) {
     rows.push(
       ...layout(
-        [agentContextSpec(agent, band.model, band.context, p), ...(agent.git ? [gitSpec(agent.git, p)] : [])],
+        [agentContextSpec(agent, band.model, band.context, p), ...(agent.git ? [gitSpec(agent.git, p, options.caps)] : [])],
         columns,
         capWidth,
       ),
@@ -604,7 +631,7 @@ export const pillRows = (band: PillBand, columns: number, options: PillOptions):
 
 export const renderPillBand = (band: PillBand, columns: number, options: PillOptions): string[] =>
   pillRows(band, columns, options).map((row) =>
-    row.map(([spec, segs]) => drawPill(spec, segs, options.palette, options.caps)).join(' '),
+    row.map(([spec, segs]) => drawPill(spec, segs, options.palette, options.caps, options.depth)).join(' '),
   );
 
 const safe = (text: string): string => sanitizeDisplayText(text);
@@ -708,8 +735,9 @@ export const renderPillLines = (ctx: RenderContext, columns: number | null, now:
 
   return renderPillBand(bandFromContext(ctx), columns !== null && columns > 0 ? columns : Number.POSITIVE_INFINITY, {
     palette: paletteFor(mode === 'auto' ? ctx.claudeTheme : mode),
-    caps: display?.pillCaps !== false,
+    caps: display?.pillCaps === true,
     now,
     maxRows: display?.pillMaxRows ?? null,
+    depth: colorDepthFor(),
   });
 };

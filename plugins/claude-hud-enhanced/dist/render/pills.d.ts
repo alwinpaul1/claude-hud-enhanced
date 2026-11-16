@@ -2,6 +2,8 @@ import { type ExtraSpend } from '../extra-usage.js';
 import type { GitStatus } from '../git.js';
 import type { BaseCompare, Pr, PrSnapshot } from '../pr-status.js';
 import type { RenderContext } from '../types.js';
+import { agoLabel, STALE_AFTER, windowNote } from './usage-figure.js';
+export { agoLabel, STALE_AFTER, windowNote };
 export type Tone = {
     bg: string;
     fg: string;
@@ -89,10 +91,7 @@ export declare const agentWindow: (a: PillAgent, main: PillModel | null, ctx: Pi
 export declare const contextSpec: (ctx: PillContext | null, mdl: PillModel | null, p: Palette) => PillSpec;
 export declare const agentContextSpec: (a: PillAgent, main: PillModel | null, ctx: PillContext | null, p: Palette) => PillSpec;
 export declare const rolled: (w: PillWindow, now: number, span: number) => PillWindow;
-export declare const STALE_AFTER = 150000;
 export declare const MAX_SCOPED_PILLS = 2;
-export declare const agoLabel: (ms: number) => string;
-export declare const windowNote: (w: PillWindow, now: number) => string | null;
 export declare const windowSpec: (label: string, icon: string, seen: PillWindow, now: number, tone: Tone, p: Palette, span?: number, key?: string) => PillSpec;
 export declare const scopedSpec: (scoped: PillScoped, sevenDay: PillWindow | null, now: number, p: Palette) => PillSpec;
 export declare const usageSpecs: (band: PillBand, now: number, p: Palette) => PillSpec[];
@@ -101,19 +100,22 @@ export declare const prBadge: (pr: Pr, p: Palette) => {
     state: Seg[];
     checks: Seg[];
 };
-export declare const gitSpec: (r: PillGit, p: Palette) => PillSpec;
-export declare const folderSpec: (name: string, p: Palette) => PillSpec;
-export declare const drawPill: (spec: PillSpec, segs: Seg[], p: Palette, caps: boolean) => string;
+export declare const gitSpec: (r: PillGit, p: Palette, isNerdFont?: boolean) => PillSpec;
+export declare const folderSpec: (name: string, p: Palette, isNerdFont?: boolean) => PillSpec;
+export type ColorDepth = 'truecolor' | '256';
+export declare const to256: (r: number, g: number, b: number) => number;
+export declare const colorDepthFor: (env?: NodeJS.ProcessEnv) => ColorDepth;
+export declare const drawPill: (spec: PillSpec, segs: Seg[], p: Palette, caps: boolean, depth?: ColorDepth) => string;
 export interface PillOptions {
     palette: Palette;
     caps: boolean;
     now: number;
     maxRows?: number | null;
+    depth?: ColorDepth;
 }
 export declare const pillRows: (band: PillBand, columns: number, options: PillOptions) => [PillSpec, Seg[]][][];
 export declare const renderPillBand: (band: PillBand, columns: number, options: PillOptions) => string[];
 export declare const gitFromStatus: (status: GitStatus, fallbackName: string, snapshot: PrSnapshot | null | undefined) => PillGit;
 export declare const bandFromContext: (ctx: RenderContext) => PillBand;
 export declare const renderPillLines: (ctx: RenderContext, columns: number | null, now?: number) => string[];
-export {};
 //# sourceMappingURL=pills.d.ts.map

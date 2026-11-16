@@ -101,19 +101,19 @@ export function getContextColor(percent, colors, thresholds) {
         return resolveAnsi(colors?.warning, YELLOW);
     return resolveAnsi(colors?.context, GREEN);
 }
-export function getQuotaColor(percent, colors) {
+export function getQuotaColor(percent, colors, tone = 'usage') {
     if (percent >= 90)
         return resolveAnsi(colors?.critical, RED);
     if (percent >= 75)
         return resolveAnsi(colors?.usageWarning, BRIGHT_MAGENTA);
-    return resolveAnsi(colors?.usage, BRIGHT_BLUE);
+    return tone === 'model' ? resolveAnsi(colors?.modelUsage, CYAN) : resolveAnsi(colors?.usage, BRIGHT_BLUE);
 }
-export function quotaBar(percent, width = 10, colors) {
+export function quotaBar(percent, width = 10, colors, tone = 'usage') {
     const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
     const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
     const filled = Math.round((safePercent / 100) * safeWidth);
     const empty = safeWidth - filled;
-    const color = getQuotaColor(safePercent, colors);
+    const color = getQuotaColor(safePercent, colors, tone);
     const filledChar = colors?.barFilled ?? '█';
     const emptyChar = colors?.barEmpty ?? '░';
     return `${color}${filledChar.repeat(filled)}${DIM}${emptyChar.repeat(empty)}${RESET}`;

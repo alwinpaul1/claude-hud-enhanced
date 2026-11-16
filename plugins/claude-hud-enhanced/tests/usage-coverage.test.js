@@ -43,7 +43,7 @@ function baseContext() {
       pathLevels: 1,
       elementOrder: ['project', 'context', 'usage'],
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false, branchOverflow: 'truncate', pushWarningThreshold: 0, pushCriticalThreshold: 0 },
-      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageValue: 'percent', usageBarEnabled: false, showResetLabel: true, showTools: true, showSkills: false, showMcp: false, showAgents: true, showTodos: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showPromptCache: false, showOutputStyle: false, mergeGroups: [['context', 'usage']], autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
+      display: { showModel: true, showProject: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showCost: false, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, usageValue: 'percent', usageBarEnabled: false, showResetLabel: true, toolsLine: true, showSkills: false, showMcp: false, agentsLine: true, todosLine: true, showSessionTokens: false, showSessionName: false, showClaudeCodeVersion: false, showMemoryUsage: false, showPromptCache: false, showOutputStyle: false, mergeGroups: [['context', 'usage']], autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0, customLine: '' },
       colors: {
         context: 'green',
         usage: 'brightBlue',
@@ -344,14 +344,14 @@ test('renderUsageLine hidden by threshold stays hidden even when stale', () => {
   assert.equal(renderUsageLine(ctx), null);
 });
 
-test('renderUsageLine groups Fable with Weekly when they share a reset', () => {
+test('renderUsageLine puts Fable before Weekly and prints a shared reset once', () => {
   const ctx = baseContext();
   ctx.config.display.sevenDayThreshold = 0;
   ctx.usageData.sevenDay = 3;
   ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(ctx.usageData.sevenDayResetAt.getTime() + 400) }];
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
-  assert.match(line, /Weekly 3% · Fable 0% \(resets in [^)]+\)$/, line);
+  assert.match(line, /\| Fable 0% \| Weekly 3% \(resets in [^)]+\)$/, line);
 });
 
 test('renderUsageLine keeps a scoped window with a different reset separate', () => {
@@ -361,24 +361,24 @@ test('renderUsageLine keeps a scoped window with a different reset separate', ()
   ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 0, resetAt: new Date(Date.now() + 2 * 86400_000) }];
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
-  assert.ok(!line.includes('·') && line.includes('| Fable'), line);
+  assert.match(line, /\| Fable 0% \(resets in [^)]+\) \| Weekly 3% \(resets in [^)]+\)$/, line);
 });
 
-test('renderUsageLine groups Fable with a weekly limit warning that shares its reset', () => {
+test('renderUsageLine keeps Fable beside a weekly limit warning and prints the shared reset once', () => {
   const ctx = baseContext();
   ctx.usageData.sevenDay = 100;
   ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: ctx.usageData.sevenDayResetAt }];
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
-  assert.match(line, /⚠ Limit reached · Fable 29% \(resets in [^)]+\)$/, line);
+  assert.match(line, /⚠ Limit reached \(resets in [^)]+\) \| Fable 29%$/, line);
 });
 
-test('renderUsageLine compact limit groups Fable too', () => {
+test('renderUsageLine compact limit keeps Fable too', () => {
   const ctx = baseContext();
   ctx.config.display.usageCompact = true;
   ctx.usageData.sevenDay = 100;
   ctx.usageData.sevenDayResetAt = new Date(Date.now() + 5 * 86400_000);
   ctx.usageData.scopedWindows = [{ label: 'Fable', percent: 29, resetAt: ctx.usageData.sevenDayResetAt }];
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
-  assert.match(line, /^⚠ Limit · Fable: 29% \([^)]+\)$/, line);
+  assert.match(line, /^⚠ Limit \([^)]+\) \| Fable: 29%$/, line);
 });

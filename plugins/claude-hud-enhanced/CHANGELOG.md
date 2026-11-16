@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.9.2] - 2026-11-16
+
+### Changed
+
+- **The compact layout is the default again.** 0.9.0 made the pill row the
+  default; it needs a Nerd Font and 24-bit colour, and without them it showed
+  empty boxes and patchy blocks. A config with no `lineLayout` renders the
+  compact layout; an explicit `lineLayout: "pills"` is kept.
+- **The tools, agents and todos lines are turned off on update.** They read
+  three new keys, all `false` by default: `display.toolsLine`,
+  `display.agentsLine` and `display.todosLine`. The older `display.showTools`,
+  `display.showAgents` and `display.showTodos` are still accepted but no longer
+  read, so a `true` written by an older setup does not bring a line back. Turn
+  a line on with its new key set to `true`, or with
+  `/claude-hud-enhanced:configure`. While the agents line is off, running
+  agents are a count on the session line (`2 agents`).
+- **Everything 0.9 added is in the compact and expanded layouts.** A model's
+  weekly window is its own segment between 5h and weekly (`Fable ████░ 38%`,
+  `Fable: 38%` in the short form), in its own colour (`colors.modelUsage`,
+  cyan), with a reset time only when it differs from the weekly one. A reading
+  nobody has confirmed for 150 seconds is dimmed and dated
+  (`~16% · 4m ago`), a window past its reset reads `~0% · reset`, and the age
+  label replaces the `⚠ stale` marker. `extra $12.40/$50` shows only while
+  extra usage is being spent. The git segment carries the pull request and its
+  checks (`#1971 ● ready ◷ 2 running`) and reads `wt:(branch)` in a linked
+  worktree. The agents line shows each subagent's model, effort, context use
+  and worktree branch.
+- **The old layouts follow the pane width.** The compact header stays two rows
+  at any width: trailing segments drop first, then the token count, the usage
+  bars and the reset wording, then the usage row takes its short form, the
+  plan label leaves the model badge and a long branch is cut with `…`. The
+  tools, agents and todos lines keep to one row each.
+- **MCP tools read `server:tool` on the tools line.** `mcp__claude-in-chrome__browser_batch`
+  is `chrome:browser_batch`, `mcp__plugin_<plugin>_<server>__<tool>` is
+  `<server>:<tool>` and `mcp__claude_ai_<Service>__<tool>` is
+  `<Service>:<tool>`. Tools that do not fit fold into `+N more`.
+- Reset times on the usage row are dimmed.
+
+### Fixed
+
+- **The pill row no longer needs a Nerd Font.** `display.pillCaps` is `false`
+  by default: the pills are square, and the folder, worktree and branch icons
+  are plain Unicode (`▣`, `◫`, `◆`). Set `display.pillCaps: true` for the
+  rounded caps and Nerd Font icons.
+- **Every pill segment carries the pill background**, so a renderer that
+  restyles text between segments cannot leave gaps in a pill, and Apple
+  Terminal without `COLORTERM=truecolor` gets 256-colour shades instead of
+  24-bit colours it cannot draw.
+
 ## [0.9.1] - 2026-11-16
 
 ### Changed

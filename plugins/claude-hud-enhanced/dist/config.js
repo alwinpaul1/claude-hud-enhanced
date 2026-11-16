@@ -47,7 +47,7 @@ const KNOWN_ELEMENTS = new Set(DEFAULT_ELEMENT_ORDER);
 const KNOWN_FIRST_LINE_SEGMENTS = new Set(PROJECT_LINE_SEGMENTS);
 export const DEFAULT_CONFIG = {
     language: 'en',
-    lineLayout: 'pills',
+    lineLayout: 'compact',
     showSeparators: true,
     pathLevels: 1,
     maxWidth: null,
@@ -90,10 +90,13 @@ export const DEFAULT_CONFIG = {
         showResetLabel: true,
         usageCompact: false,
         pillTheme: 'auto',
-        pillCaps: true,
+        pillCaps: false,
         pillPr: true,
         pillMaxRows: null,
         showTools: true,
+        toolsLine: false,
+        agentsLine: false,
+        todosLine: false,
         showSkills: false,
         showMcp: false,
         toolNameMaxLength: 0,
@@ -154,6 +157,7 @@ export const DEFAULT_CONFIG = {
         usage: 'green',
         warning: 'yellow',
         usageWarning: 'yellow',
+        modelUsage: 'cyan',
         critical: 'red',
         model: 'cyan',
         project: 'yellow',
@@ -560,6 +564,9 @@ export function mergeConfig(userConfig) {
         showTools: typeof migrated.display?.showTools === 'boolean'
             ? migrated.display.showTools
             : DEFAULT_CONFIG.display.showTools,
+        toolsLine: migrated.display?.toolsLine === true,
+        agentsLine: migrated.display?.agentsLine === true,
+        todosLine: migrated.display?.todosLine === true,
         showSkills: typeof migrated.display?.showSkills === 'boolean'
             ? migrated.display.showSkills
             : DEFAULT_CONFIG.display.showSkills,
@@ -693,6 +700,9 @@ export function mergeConfig(userConfig) {
         usageWarning: validateColorValue(migrated.colors?.usageWarning)
             ? migrated.colors.usageWarning
             : DEFAULT_CONFIG.colors.usageWarning,
+        modelUsage: validateColorValue(migrated.colors?.modelUsage)
+            ? migrated.colors.modelUsage
+            : DEFAULT_CONFIG.colors.modelUsage,
         critical: validateColorValue(migrated.colors?.critical)
             ? migrated.colors.critical
             : DEFAULT_CONFIG.colors.critical,

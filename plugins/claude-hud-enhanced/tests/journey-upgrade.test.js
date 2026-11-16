@@ -68,33 +68,34 @@ const V017_CONFIG = {
 };
 
 const CONFIG_CASES = [
-  ['an empty object', {}, 'pills'],
-  ['options but no layout', { display: { showTools: true, usageCompact: true, compactSingleRow: true, showConfigCounts: true }, colors: { usage: 'green' }, showSeparators: true, pathLevels: 2 }, 'pills', true],
+  ['an empty object', {}, 'compact'],
+  ['options but no layout', { display: { showTools: true, usageCompact: true, compactSingleRow: true, showConfigCounts: true }, colors: { usage: 'green' }, showSeparators: true, pathLevels: 2 }, 'compact', true],
   ['an explicit compact', { lineLayout: 'compact' }, 'compact', true],
   ['an explicit compact with separators', { lineLayout: 'compact', showSeparators: true }, 'compact'],
   ['an explicit expanded', { lineLayout: 'expanded', showSeparators: false }, 'expanded', true],
-  ['an explicit pills', { lineLayout: 'pills' }, 'pills'],
+  ['an explicit pills', { lineLayout: 'pills' }, 'pills', true],
+  ['an explicit pills beside the old activity keys', { lineLayout: 'pills', display: { showTools: true, pillCaps: true } }, 'pills'],
   ['the 0.1.x layout: separators', V017_CONFIG, 'compact', true],
   ['the 0.1.x layout: default', { layout: 'default' }, 'compact'],
   ['a nested layout object', { layout: { lineLayout: 'expanded', showSeparators: true } }, 'expanded'],
-  ['a nested layout object with no choice in it', { layout: { pathLevels: 2 } }, 'pills'],
+  ['a nested layout object with no choice in it', { layout: { pathLevels: 2 } }, 'compact'],
   ['lineLayout beside a stale layout key', { layout: 'separators', lineLayout: 'expanded' }, 'expanded'],
-  ['an unknown layout name', { lineLayout: 'fancy' }, 'pills'],
-  ['a layout of the wrong type', { lineLayout: 5 }, 'pills'],
-  ['removed and unknown keys', { display: { showSonnetUsage: true, usageThreshold: 90, sevenDayThreshold: 80 }, theme: 'neon', usage: { enabled: true }, elementOrder: ['bogus'] }, 'pills'],
-  ['truncated JSON', '{ "lineLayout": "compact",', 'pills', true],
+  ['an unknown layout name', { lineLayout: 'fancy' }, 'compact'],
+  ['a layout of the wrong type', { lineLayout: 5 }, 'compact'],
+  ['removed and unknown keys', { display: { showSonnetUsage: true, usageThreshold: 90, sevenDayThreshold: 80 }, theme: 'neon', usage: { enabled: true }, elementOrder: ['bogus'] }, 'compact'],
+  ['truncated JSON', '{ "lineLayout": "compact",', 'compact', true],
   ['a BOM before a compact choice', '﻿{ "lineLayout": "compact" }', 'compact'],
-  ['a JSON null', 'null', 'pills'],
-  ['a JSON array', '[]', 'pills'],
-  ['an empty file', '', 'pills'],
-  ['a prototype-pollution attempt', '{ "__proto__": { "lineLayout": "compact" }, "constructor": { "prototype": { "lineLayout": "compact" } } }', 'pills'],
+  ['a JSON null', 'null', 'compact'],
+  ['a JSON array', '[]', 'compact'],
+  ['an empty file', '', 'compact'],
+  ['a prototype-pollution attempt', '{ "__proto__": { "lineLayout": "compact" }, "constructor": { "prototype": { "lineLayout": "compact" } } }', 'compact'],
 ];
 
-test('an existing config keeps a chosen layout and gets pills only when it never chose one', { skip }, () => {
+test('an existing config keeps a chosen layout and gets compact when it never chose one', { skip }, () => {
   const { world, stdin } = installedWorld('configs');
   for (const profile of Object.values(world.profiles)) {
     const untouched = runStatusline(world, profile, stdin, { columns: 200 });
-    assert.equal(layoutOf(untouched), 'pills', `${profile.name}: no config file`);
+    assert.equal(layoutOf(untouched), 'compact', `${profile.name}: no config file`);
 
     const cases = profile.name === 'work' ? CONFIG_CASES : CONFIG_CASES.filter(([, , , both]) => both);
     for (const [name, content, expected] of cases) {
@@ -115,7 +116,8 @@ test('an existing config keeps a chosen layout and gets pills only when it never
 test('the options an older config already set still apply to the pill row', { skip }, () => {
   const { world, stdin } = installedWorld('honoured');
   const profile = world.profiles.work;
-  const render = (config) => {
+  const render = (options) => {
+    const config = { lineLayout: 'pills', ...options };
     writeConfig(profile, config);
     const run = runStatusline(world, profile, stdin, { columns: 220, ...(config.gitStatus?.enabled === false && { settled: false }) });
     assert.equal(run.stderr, '');
@@ -128,7 +130,8 @@ test('the options an older config already set still apply to the pill row', { sk
   const noGit = render({ gitStatus: { enabled: false } }).plainLines[0];
   assert.ok(noGit.includes('acme-app') && !noGit.includes('main'), noGit);
   assert.doesNotMatch(render({ display: { showEffortLevel: false } }).plainLines[0], /medium/);
-  assert.doesNotMatch(render({ display: { showTools: false } }).plain, /Read/);
+  assert.doesNotMatch(render({ display: { showTools: true, showAgents: true, showTodos: true } }).plain, /Read/, 'a true from before the update no longer shows the tools line');
+  assert.match(render({ display: { toolsLine: true } }).plain, /✓ Read/);
   assert.ok(render({ display: { modelOverride: 'Custom Model' } }).plainLines[0].includes(' Custom Model '));
 });
 
@@ -166,14 +169,15 @@ test('a config in the legacy plugins/claude-hud folder moves over with its layou
   assert.equal(layoutOf(runStatusline(world, work, stdin, { columns: 200 })), 'expanded', 'the enhanced config wins');
 });
 
-test('a legacy folder with no layout choice upgrades to pills', { skip }, () => {
+test('a legacy folder with no layout choice keeps the compact layout', { skip }, () => {
   const { world, stdin } = installedWorld('legacy-default');
   const profile = world.profiles.work;
   writeConfig(profile, { display: { showTools: true }, gitStatus: { enabled: true } }, profile.legacyDataDir);
   const run = runStatusline(world, profile, stdin, { columns: 200 });
 
   assert.equal(run.stderr, '');
-  assert.equal(layoutOf(run), 'pills');
+  assert.equal(layoutOf(run), 'compact');
+  assert.doesNotMatch(run.plain, /✓ Read/, 'showTools: true from the legacy config does not bring the tools line back');
   assert.ok(existsSync(path.join(profile.dataDir, 'config.json')));
 });
 
@@ -193,6 +197,7 @@ const keepTimes = (file, write) => {
 test('caches written by an older build are ignored, not rendered', { skip }, async () => {
   const { world, repo, stdin } = installedWorld('caches');
   for (const profile of Object.values(world.profiles)) {
+    writeConfig(profile, { lineLayout: 'pills' });
     const clean = runStatusline(world, profile, stdin, { columns: 220 });
     assert.equal(layoutOf(clean), 'pills');
     await waitFor(() => listDir(path.join(profile.dataDir, 'pr-cache')).some((name) => /^pr-[0-9a-f]+\.json$/.test(name)));
@@ -237,10 +242,10 @@ test('caches written by an older build are ignored, not rendered', { skip }, asy
     const wrecked = runStatusline(world, profile, stdin, { columns: 220 });
     assert.equal(wrecked.status, 0, profile.name);
     assert.equal(wrecked.stderr, '', profile.name);
-    assert.equal(layoutOf(wrecked), 'pills', profile.name);
+    assert.equal(layoutOf(wrecked), 'compact', `${profile.name}: an unreadable config falls back to the default layout`);
     assert.doesNotMatch(wrecked.plain, /undefined|NaN|Error/, profile.name);
-    assert.ok(wrecked.plainLines[0].includes(' Opus 5.5 medium │ ◔ '), wrecked.plainLines[0]);
-    assert.ok(wrecked.plainLines[0].includes('main ↑2 ↓1 +1 ~1 ?2 '), wrecked.plainLines[0]);
+    assert.ok(wrecked.plainLines[0].startsWith('[Opus 5.5 (1M context) medium'), wrecked.plainLines[0]);
+    assert.ok(wrecked.plainLines[0].includes('git:(main* ↑2 ↓1 !1 +1 ?2)'), wrecked.plainLines[0]);
   }
   assert.ok(existsSync(repo.repo));
 });
@@ -257,7 +262,7 @@ test('a git cache entry with a broken status is refetched instead of crashing th
 
   assert.equal(run.stderr, '');
   assert.doesNotMatch(run.plain, /Error|undefined/);
-  assert.ok(run.plainLines[0].includes('main ↑2 ↓1 +1 ~1 ?2 '), run.plainLines[0]);
+  assert.ok(run.plainLines[0].includes('git:(main* ↑2 ↓1 !1 +1 ?2)'), run.plainLines[0]);
 });
 
 async function withFakeDaemon(world, profile, onRequest, body) {
@@ -302,7 +307,7 @@ test('a daemon from an older build still running cannot paint its old layout', {
         assert.equal(run.status, 0);
         assert.equal(run.stderr, '');
         assert.doesNotMatch(run.stdout, /OLD COMPACT RENDER/);
-        assert.equal(layoutOf(run), 'pills', profile.name);
+        assert.equal(layoutOf(run), 'compact', profile.name);
       },
     );
 
@@ -313,7 +318,7 @@ test('a daemon from an older build still running cannot paint its old layout', {
       async () => {
         const run = await runStatuslineAsync(world, profile, stdin, { columns: 220 });
         assert.doesNotMatch(run.stdout, /OLD COMPACT RENDER/, 'a daemon that is on its way out is not trusted either');
-        assert.equal(layoutOf(run), 'pills');
+        assert.equal(layoutOf(run), 'compact');
       },
     );
 
@@ -321,14 +326,14 @@ test('a daemon from an older build still running cannot paint its old layout', {
       const run = await runStatuslineAsync(world, profile, stdin, { columns: 220 });
       assert.equal(run.status, 0);
       assert.equal(run.stderr, '');
-      assert.equal(layoutOf(run), 'pills', 'a daemon that never answers falls back inline');
+      assert.equal(layoutOf(run), 'compact', 'a daemon that never answers falls back inline');
       assert.ok(run.ms < 20_000, `render took ${run.ms}ms`);
     });
 
     await withFakeDaemon(world, profile, (socket) => socket.end('\x00garbage\n{"v":99}\n'), async () => {
       const run = await runStatuslineAsync(world, profile, stdin, { columns: 220 });
       assert.equal(run.stderr, '');
-      assert.equal(layoutOf(run), 'pills', 'a garbage reply falls back inline');
+      assert.equal(layoutOf(run), 'compact', 'a garbage reply falls back inline');
     });
   }
 });
@@ -342,7 +347,7 @@ const daemonPid = (profile) => {
   }
 };
 
-test('the warm daemon serves the same pill row as the inline render', { skip }, async (t) => {
+test('the warm daemon serves the same rows as the inline render', { skip }, async (t) => {
   const { world, stdin } = installedWorld('daemon');
   const profile = world.profiles.work;
   t.after(() => stopDaemon(profile));
@@ -365,10 +370,10 @@ test('the warm daemon serves the same pill row as the inline render', { skip }, 
     assert.equal(viaDaemon.status, 0);
     assert.equal(viaDaemon.stderr, '');
     assert.equal(viaDaemon.stdout, direct.stdout, `byte-for-byte at ${columns} columns`);
-    assert.equal(layoutOf(viaDaemon), 'pills');
+    assert.equal(layoutOf(viaDaemon), 'compact');
   }
-  writeConfig(profile, { daemon: { enabled: true }, lineLayout: 'compact' });
-  assert.equal(layoutOf(runStatusline(world, profile, stdin, { columns: 220 })), 'compact', 'the daemon re-reads the config');
+  writeConfig(profile, { daemon: { enabled: true }, lineLayout: 'pills' });
+  assert.equal(layoutOf(runStatusline(world, profile, stdin, { columns: 220 })), 'pills', 'the daemon re-reads the config');
 
   stopDaemon(profile);
   assert.ok(await waitFor(() => !isAlive(pid)), 'the daemon stopped');
@@ -379,7 +384,7 @@ const RELEASES = ['v0.4.13', 'v0.6.0', 'v0.7.0', 'v0.8.3'];
 for (const tag of RELEASES) {
   const tagSkip = skip || (hasReleaseTag(tag) ? false : `${tag} is not in this checkout`);
 
-  test(`updating from the released ${tag} build keeps its data and switches to pills`, { skip: tagSkip }, async (t) => {
+  test(`updating from the released ${tag} build keeps its data and its compact layout`, { skip: tagSkip }, async (t) => {
     const world = createWorld(`from-${tag}`);
     const repo = sharedRepo();
     const transcript = writeTranscript(world);
@@ -411,11 +416,11 @@ for (const tag of RELEASES) {
       const upgraded = runStatusline(world, profile, stdin, { columns: 200 });
       assert.equal(upgraded.status, 0, `${tag} ${profile.name}`);
       assert.equal(upgraded.stderr, '', `${tag} ${profile.name}`);
-      assert.equal(layoutOf(upgraded), 'pills', `the first repaint after updating from ${tag} is already the pill row`);
-      assert.ok(upgraded.plainLines[0].includes(' Opus 5.5 medium │ ◔ '), upgraded.plainLines[0]);
-      assert.ok(upgraded.plainLines[0].includes('main ↑2 ↓1 +1 ~1 ?2 '), upgraded.plainLines[0]);
-      assert.match(upgraded.plain, /✓ Read/);
-      assert.ok(upgraded.stdout.includes(profile.name === 'default' ? '\x1b[48;2;226;230;250m' : '\x1b[48;2;40;46;80m'));
+      assert.equal(layoutOf(upgraded), 'compact', `the first repaint after updating from ${tag} is the compact layout`);
+      assert.ok(upgraded.plainLines[0].startsWith('[Opus 5.5 (1M context) medium'), upgraded.plainLines[0]);
+      assert.ok(upgraded.plainLines[0].includes('git:(main* ↑2 ↓1 !1 +1 ?2)'), upgraded.plainLines[0]);
+      assert.doesNotMatch(upgraded.plain, /✓ Read/, 'the tools line is off after the update');
+      assert.doesNotMatch(upgraded.stdout, /\x1b\[[34]8;2;|[\ue000-\uf8ff]/u, 'no pill colours or private-use glyphs');
 
       if (oldPid) {
         assert.ok(await waitFor(() => !isAlive(oldPid)), `the ${tag} daemon stepped down`);
@@ -429,13 +434,13 @@ for (const tag of RELEASES) {
         assert.ok(newPid, 'a daemon of the new build took over');
         const served = runStatusline(world, profile, stdin, { columns: 200 });
         assert.equal(served.stderr, '');
-        assert.equal(layoutOf(served), 'pills');
+        assert.equal(layoutOf(served), 'compact');
       }
 
-      writeConfig(profile, { lineLayout: 'compact', ...(supportsDaemon ? { daemon: { enabled: true } } : {}) });
+      writeConfig(profile, { lineLayout: 'pills', ...(supportsDaemon ? { daemon: { enabled: true } } : {}) });
       const kept = runStatusline(world, profile, stdin, { columns: 200 });
       assert.equal(kept.stderr, '');
-      assert.equal(layoutOf(kept), 'compact', 'a chosen layout survives the update');
+      assert.equal(layoutOf(kept), 'pills', 'a chosen layout survives the update');
       stopDaemon(profile);
     }
   });
@@ -492,8 +497,8 @@ for (const launcher of HISTORIC_LAUNCHERS) {
       assert.equal(run.status, 0, name);
       assert.equal(run.stderr, '', name);
       assert.doesNotMatch(run.stdout, /STALE BUILD/, name);
-      assert.equal(layoutOf(run), 'pills', name);
-      assert.ok(run.plainLines[0].includes('main ↑2 ↓1 +1 ~1 ?2 '), run.plainLines[0]);
+      assert.equal(layoutOf(run), 'compact', name);
+      assert.ok(run.plainLines[0].includes('git:(main* ↑2 ↓1 !1 +1 ?2)'), run.plainLines[0]);
       assert.ok(existsSync(profile.dataDir), `${name} wrote into its own profile`);
     }
   });

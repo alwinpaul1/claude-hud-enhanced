@@ -60,7 +60,7 @@ test("CLI renders expected output for a basic transcript", async (t) => {
         env: { ...process.env, HOME: homeDir, LANG: "C", COLUMNS: "200" },
       });
 
-    await writeFile(path.join(hudDir, "config.json"), JSON.stringify({ lineLayout: "compact" }), "utf8");
+    await writeFile(path.join(hudDir, "config.json"), JSON.stringify({ lineLayout: "compact", display: { toolsLine: true, agentsLine: true, todosLine: true } }), "utf8");
     const result = run();
     if (skipIfSpawnBlocked(result, t)) return;
 
@@ -76,6 +76,11 @@ test("CLI renders expected output for a basic transcript", async (t) => {
     assert.equal(normalized, expected);
 
     await rm(path.join(hudDir, "config.json"), { force: true });
+    const bare = run();
+    assert.equal(bare.status, 0, bare.stderr || "non-zero exit");
+    assert.equal(stripAnsi(bare.stdout).replace(/\u00A0/g, " ").trimEnd(), expected.split("\n")[0]);
+
+    await writeFile(path.join(hudDir, "config.json"), JSON.stringify({ lineLayout: "pills", display: { pillCaps: true } }), "utf8");
     const pills = run();
     assert.equal(pills.status, 0, pills.stderr || "non-zero exit");
     assert.equal(
