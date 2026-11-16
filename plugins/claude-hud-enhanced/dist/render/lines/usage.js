@@ -6,6 +6,7 @@ import { t } from "../../i18n/index.js";
 import { progressLabel, } from "./label-align.js";
 import { formatRelativeTime } from "./session-time.js";
 import { formatResetTime, sameResetMinute, SHARED_RESET_JOINER } from "../format-reset-time.js";
+import { hasFigure } from "../../usage-available.js";
 const FIVE_HOUR_WINDOW_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /**
@@ -38,7 +39,7 @@ function renderUsageBody(ctx, labelOptions) {
     }
     const usageLabel = progressLabel("label.usage", colors, labelOptions);
     const balanceLabel = ctx.usageData.balanceLabel ?? null;
-    const scopedWindows = ctx.usageData.scopedWindows ?? [];
+    const scopedWindows = (ctx.usageData.scopedWindows ?? []).filter((w) => hasFigure(w.percent));
     const hasWindowData = ctx.usageData.fiveHour !== null
         || ctx.usageData.sevenDay !== null
         || scopedWindows.length > 0;

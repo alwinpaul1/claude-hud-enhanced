@@ -511,7 +511,7 @@ test('the windows the usage API reported are shown as they are: no invented 5h, 
 
   const max = runStatusline(world, personal, weeklyOnly, { columns: 240 });
   assert.equal(max.stderr, '');
-  assert.ok(max.plainLines[0].includes(' ◷ 5h — no limit '), 'the plan has no 5h window: the pill says so, with no figure');
+  assert.doesNotMatch(max.plainLines[0], /5h|no limit|◷/, 'the plan has no 5h window: no pill is drawn for it');
   assert.doesNotMatch(max.plainLines[0], /5h[^▦]*%/);
   assert.match(max.plainLines[0], / 7d [^%~]* 61% /);
   assert.ok(max.plainLines[0].includes(' $ ━━━━━━━━ 12.40/$50 '), max.plainLines[0]);
@@ -639,7 +639,9 @@ test('a crowded row through the real launcher keeps every pill whole at each pan
       assert.equal(line.split(CAP_LEFT).length, line.split(CAP_RIGHT).length, `${label}: a pill is split across rows`);
       assert.doesNotMatch(line, /[│·]\s*(|$)/u, `${label}: dangling separator: ${JSON.stringify(line)}`);
     }
-    for (const piece of ['Opus 5.5', '~16%', '58%', 'Fable 7d', '30%', '12.40', '#1971']) assert.ok(text.includes(piece), `${label}: ${piece}`);
+    for (const piece of ['Opus 5.5', '~16%', '58%', '▦ Fable ', '30%', '12.40', '#1971']) assert.ok(text.includes(piece), `${label}: ${piece}`);
+    assert.doesNotMatch(text, /Fable 7d/, label);
+    assert.ok(text.indexOf(' 5h ') < text.indexOf('▦ Fable ') && text.indexOf('▦ Fable ') < text.indexOf('▦ 7d '), `${label}: 5h, Fable, 7d in order: ${JSON.stringify(lines)}`);
     assert.ok(lines.some((line) => line.includes('feat') && line.includes('#1971')), `${label}: branch and PR share a row: ${JSON.stringify(lines)}`);
     if (columns >= 120) assert.ok(text.includes("feature/pills"), `${label}: the branch name is whole`);
     if (columns >= 52) assert.ok(lines.some((line) => line.split(CAP_LEFT).length - 1 >= 2), `${label}: short pills sit side by side`);

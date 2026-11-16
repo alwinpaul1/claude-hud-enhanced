@@ -10,6 +10,7 @@ import { formatStaleUsageMarker } from './lines/usage.js';
 import { renderAdvisorLine } from './lines/advisor.js';
 import { t } from '../i18n/index.js';
 import { formatResetTime, sameResetMinute, SHARED_RESET_JOINER } from './format-reset-time.js';
+import { hasFigure } from '../usage-available.js';
 import { formatTokens, formatContextValue } from '../utils/format.js';
 import { formatAuthSegment } from '../auth.js';
 import { createDebug } from '../debug.js';
@@ -262,7 +263,7 @@ function renderUsageParts(ctx, style, barWidth) {
     const showResetLabel = style.resetLabel;
     const resetAtOf = (resetAt) => (style.resetTimes ? resetAt : null);
     const usageValueMode = display?.usageValue ?? 'percent';
-    const scopedWindows = ctx.usageData.scopedWindows ?? [];
+    const scopedWindows = (ctx.usageData.scopedWindows ?? []).filter((window) => hasFigure(window.percent));
     const hasGenericWindowData = ctx.usageData.fiveHour !== null || ctx.usageData.sevenDay !== null;
     const hasWindowData = hasGenericWindowData || scopedWindows.length > 0;
     const scopedPart = (window, withReset = true) => usageCompact
@@ -355,7 +356,7 @@ function renderUsageParts(ctx, style, barWidth) {
                 });
                 weeklyGroup(weeklyOnlyPart).forEach((part) => push(part));
             }
-            else if (hasGenericWindowData || !hasWindowData) {
+            else if (hasFigure(fiveHour)) {
                 const fiveHourPart = formatUsageWindowPart({
                     label: '5h',
                     percent: fiveHour,

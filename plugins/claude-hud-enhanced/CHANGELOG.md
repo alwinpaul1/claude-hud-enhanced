@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.9.1] - 2026-11-16
+
+### Changed
+
+- **The model weekly pill reads `Fable 43%` and sits between 5h and 7d.** It
+  was `Fable 7d 43% │ Sat 2:00 AM`, after the 7d pill. A model window is weekly
+  by definition, so the `7d` is gone from the label, and the reset time is left
+  to the 7d pill when the two reset within a minute of each other. The model
+  pill keeps its own reset when it differs, or when there is no 7d pill to
+  carry it. The order is context, 5h, model, 7d, extra, git at every width.
+- **The model weekly pill has a colour of its own.** It was purple, the same as
+  7d. It is teal now, in both the dark and the light palette, so the 5h (green),
+  model (teal) and 7d (purple) pills read apart. Near the limit its bar still
+  turns gold and then red, like the other windows.
+- When a narrow pane wraps the row, the 5h, model and 7d pills are kept on as
+  few rows as the pane allows without adding a row (it was 5h and 7d only).
+- **Only the usage the account has is drawn.** A window without a real figure
+  gets no pill and no text: the grey `5h — no limit` pill is gone, and the
+  compact and expanded layouts no longer print `--` for a window or a model
+  with no figure. A response with only a weekly window draws exactly one usage
+  pill. One check (`hasFigure`) decides this for every window in every layout.
+- **A 5h window that was open is not hidden by the reset.** Right after a reset
+  the usage API reports no 5h window until the next request opens one. The
+  refresher now keeps the window that was open, so the pill reads
+  `~0% · reset`, and drops it only when the API still reports none a whole
+  span (5 hours, or 7 days for the weekly window) after that reset.
+
+### Removed
+
+- `fiveHourUnlimited` and `sevenDayUnlimited` on the resolved usage, and the
+  `noLimit` field of the pill band. Nothing reads them now.
+
 ## [0.9.0] - 2026-11-16
 
 ### Added

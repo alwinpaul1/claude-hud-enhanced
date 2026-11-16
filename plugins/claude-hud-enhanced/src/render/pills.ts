@@ -5,6 +5,7 @@ import { formatModelName, getContextPercent, getTotalTokens, resolveModelName, s
 import { knownWindows, type SubagentSeen } from '../subagents.js';
 import type { RenderContext } from '../types.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
+import { hasFigure } from '../usage-available.js';
 import { RESET } from './colors.js';
 import { formatProjectPath } from './project-path.js';
 import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
@@ -21,13 +22,14 @@ const BOLD = '\x1b[1m';
 const NORMAL = '\x1b[22m';
 
 export type Tone = { bg: string; fg: string };
-type ToneName = 'green' | 'purple' | 'red' | 'mint' | 'blue' | 'gold' | 'tray';
+type ToneName = 'green' | 'purple' | 'teal' | 'red' | 'mint' | 'blue' | 'gold' | 'tray';
 type InkName = 'text' | 'subtle' | 'success' | 'warning' | 'error';
 export type Palette = Record<ToneName, Tone> & { ink: Record<InkName, string> };
 
 const LIGHT: Palette = {
   green: { bg: 'rgb(221,236,226)', fg: 'rgb(62,134,84)' },
   purple: { bg: 'rgb(233,228,247)', fg: 'rgb(118,92,196)' },
+  teal: { bg: 'rgb(214,236,241)', fg: 'rgb(26,124,138)' },
   red: { bg: 'rgb(247,226,220)', fg: 'rgb(196,92,64)' },
   mint: { bg: 'rgb(224,238,226)', fg: 'rgb(62,134,84)' },
   blue: { bg: 'rgb(226,230,250)', fg: 'rgb(84,100,220)' },
@@ -44,6 +46,7 @@ const LIGHT: Palette = {
 const DARK: Palette = {
   green: { bg: 'rgb(36,58,44)', fg: 'rgb(122,200,146)' },
   purple: { bg: 'rgb(52,44,76)', fg: 'rgb(184,164,245)' },
+  teal: { bg: 'rgb(28,56,66)', fg: 'rgb(108,204,216)' },
   red: { bg: 'rgb(72,44,38)', fg: 'rgb(240,146,120)' },
   mint: { bg: 'rgb(38,60,46)', fg: 'rgb(122,200,146)' },
   blue: { bg: 'rgb(40,46,80)', fg: 'rgb(146,164,255)' },
@@ -114,7 +117,6 @@ export interface PillBand {
   model: PillModel | null;
   fiveHour: PillWindow | null;
   sevenDay: PillWindow | null;
-  noLimit?: { fiveHour?: boolean; sevenDay?: boolean };
   scoped?: PillScoped[];
   extra?: ExtraSpend | null;
   git: PillGit | null;
@@ -165,6 +167,7 @@ const cellWidth = (text: string): number => {
 const segWidth = (segs: Seg[]): number => segs.reduce((n, s) => n + cellWidth(s.text), 0);
 
 const BOLD_PILLS = new Set(['context', '5h', '7d']);
+const isUsagePill = (key: string): boolean => key === '5h' || key === '7d' || key.startsWith('7d-');
 
 export const clip = (segs: Seg[], cells: number): Seg[] => {
   if (segWidth(segs) <= cells) return segs;
@@ -240,9 +243,9 @@ export const layout = (
   const packed = flow(rest);
   const [head, ...tail] = rest;
   const led = head ? [...flow([head]), ...flow(tail)] : packed;
-  const pairs = (rows: [PillSpec, Seg[]][][]): boolean =>
-    rows.some((row) => ['5h', '7d'].every((key) => row.some(([x]) => x.key === key)));
-  const rows = led.length === packed.length && pairs(led) && !pairs(packed) ? led : packed;
+  const spread = (rows: [PillSpec, Seg[]][][]): number =>
+    rows.filter((row) => row.some(([x]) => isUsagePill(x.key))).length;
+  const rows = led.length === packed.length && spread(led) < spread(packed) ? led : packed;
 
   return own && ownSegs ? [...rows, [[own, ownSegs]]] : rows;
 };
@@ -400,14 +403,37 @@ export const windowSpec = (
   };
 };
 
-export const noLimitSpec = (label: string, icon: string, p: Palette): PillSpec => {
-  const head: Seg[] = [
-    { key: 'icon', text: ` ${icon} `, color: p.tray.fg },
-    { key: 'label', text: `${label} `, color: p.tray.fg },
-  ];
-  const none: Seg = { key: 'none', text: '— no limit ', color: p.tray.fg };
+const WEEK = SPAN['7d'] ?? 0;
 
-  return { key: label, tone: p.tray, full: [...head, none], compact: [...head, none], tight: [...head, { ...none, text: '— ' }] };
+const sharesReset = (a: PillWindow, b: PillWindow | null, now: number): boolean => {
+  if (!isAvailable(b)) return false;
+  const [x, y] = [a, b].map((w) => rolled(w, now, WEEK).resetsAt);
+
+  return x != null && y != null && Math.abs(x - y) < 60_000;
+};
+
+export const scopedSpec = (scoped: PillScoped, sevenDay: PillWindow | null, now: number, p: Palette): PillSpec => {
+  const spec = windowSpec(scoped.label, '▦', scoped.window, now, p.teal, p, WEEK, `7d-${scoped.label}`);
+  if (!sharesReset(scoped.window, sevenDay, now)) return spec;
+  const cut = (segs: Seg[]): Seg[] => segs.filter((seg) => seg.key !== 'sep' && seg.key !== 'at');
+
+  return { ...spec, full: cut(spec.full), compact: cut(spec.compact), tight: cut(spec.tight) };
+};
+
+const isAvailable = (w: PillWindow | null | undefined): w is PillWindow => w != null && hasFigure(w.percentUsed);
+
+export const usageSpecs = (band: PillBand, now: number, p: Palette): PillSpec[] => {
+  const sevenDay = isAvailable(band.sevenDay) ? band.sevenDay : null;
+
+  return [
+    ...(isAvailable(band.fiveHour) ? [windowSpec('5h', '◷', band.fiveHour, now, p.green, p)] : []),
+    ...(band.scoped ?? [])
+      .filter((scoped) => isAvailable(scoped.window))
+      .slice(0, MAX_SCOPED_PILLS)
+      .map((scoped) => scopedSpec(scoped, sevenDay, now, p)),
+    ...(sevenDay ? [windowSpec('7d', '▦', sevenDay, now, p.purple, p)] : []),
+    ...(band.extra ? [extraSpec(band.extra, p)] : []),
+  ];
 };
 
 export const extraSpec = (spend: ExtraSpend, p: Palette): PillSpec => {
@@ -557,22 +583,7 @@ export const pillRows = (band: PillBand, columns: number, options: PillOptions):
   const capWidth = options.caps ? 2 : 0;
   const pills: PillSpec[] = [
     contextSpec(band.context, band.model, p),
-    ...(band.fiveHour
-      ? [windowSpec('5h', '◷', band.fiveHour, now, p.green, p)]
-      : band.noLimit?.fiveHour
-        ? [noLimitSpec('5h', '◷', p)]
-        : []),
-    ...(band.sevenDay
-      ? [windowSpec('7d', '▦', band.sevenDay, now, p.purple, p)]
-      : band.noLimit?.sevenDay
-        ? [noLimitSpec('7d', '▦', p)]
-        : []),
-    ...(band.scoped ?? [])
-      .slice(0, MAX_SCOPED_PILLS)
-      .map((scoped) =>
-        windowSpec(`${scoped.label} 7d`, '▦', scoped.window, now, p.purple, p, SPAN['7d'] ?? 0, `7d-${scoped.label}`),
-      ),
-    ...(band.extra ? [extraSpec(band.extra, p)] : []),
+    ...usageSpecs(band, now, p),
     ...(band.git ? [gitSpec(band.git, p)] : band.folder ? [folderSpec(band.folder, p)] : []),
   ];
   const maxRows = options.maxRows ?? null;
@@ -663,7 +674,7 @@ export const bandFromContext = (ctx: RenderContext): PillBand => {
     seenAt?: Date | null,
     isRolled?: boolean,
   ): PillWindow | null =>
-    typeof percent === 'number'
+    hasFigure(percent)
       ? {
           percentUsed: percent,
           resetsAt: resetAt?.getTime() ?? null,
@@ -683,7 +694,6 @@ export const bandFromContext = (ctx: RenderContext): PillBand => {
     model,
     fiveHour: window(usage?.fiveHour, usage?.fiveHourResetAt, usage?.fiveHourSeenAt, usage?.fiveHourRolled),
     sevenDay: window(usage?.sevenDay, usage?.sevenDayResetAt, usage?.sevenDaySeenAt, usage?.sevenDayRolled),
-    noLimit: { fiveHour: usage?.fiveHourUnlimited === true, sevenDay: usage?.sevenDayUnlimited === true },
     scoped,
     extra: extraSpend(usage),
     git: ctx.gitStatus ? gitFromStatus(ctx.gitStatus, folder ?? '', ctx.prStatus) : null,

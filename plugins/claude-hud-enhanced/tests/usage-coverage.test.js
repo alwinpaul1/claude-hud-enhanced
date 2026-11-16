@@ -254,14 +254,20 @@ test('renderUsageLine with only balanceLabel and no window data', () => {
   assert.ok(line.includes('$5.00'));
 });
 
-test('renderUsageLine with null percent shows -- in compact mode', () => {
+test('renderUsageLine with a null 5h percent shows only 7d in compact mode, with no placeholder', () => {
   const ctx = baseContext();
   ctx.config.display.usageCompact = true;
   ctx.usageData.fiveHour = null;
   ctx.usageData.sevenDay = 85;
   ctx.usageData.sevenDayResetAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: null, resetAt: null }];
   const line = stripAnsi(renderUsageLine(ctx) ?? '');
   assert.ok(line.includes('7d:'));
+  assert.ok(!line.includes('5h') && !line.includes('Fable') && !line.includes('--'), line);
+  ctx.config.display.usageCompact = false;
+  const expanded = stripAnsi(renderUsageLine(ctx) ?? '');
+  assert.ok(expanded.includes('85%'));
+  assert.ok(!expanded.includes('5h') && !expanded.includes('Fable') && !expanded.includes('--'), expanded);
 });
 
 test('renderUsageLine limit reached with sevenDay at 100', () => {

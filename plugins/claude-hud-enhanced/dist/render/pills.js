@@ -2,6 +2,7 @@ import { extraSpend, spendRatio, spentText } from '../extra-usage.js';
 import { formatModelName, getContextPercent, getTotalTokens, resolveModelName, shouldHideUsage } from '../stdin.js';
 import { knownWindows } from '../subagents.js';
 import { sanitizeDisplayText } from '../utils/sanitize.js';
+import { hasFigure } from '../usage-available.js';
 import { RESET } from './colors.js';
 import { formatProjectPath } from './project-path.js';
 import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
@@ -18,6 +19,7 @@ const NORMAL = '\x1b[22m';
 const LIGHT = {
     green: { bg: 'rgb(221,236,226)', fg: 'rgb(62,134,84)' },
     purple: { bg: 'rgb(233,228,247)', fg: 'rgb(118,92,196)' },
+    teal: { bg: 'rgb(214,236,241)', fg: 'rgb(26,124,138)' },
     red: { bg: 'rgb(247,226,220)', fg: 'rgb(196,92,64)' },
     mint: { bg: 'rgb(224,238,226)', fg: 'rgb(62,134,84)' },
     blue: { bg: 'rgb(226,230,250)', fg: 'rgb(84,100,220)' },
@@ -34,6 +36,7 @@ const LIGHT = {
 const DARK = {
     green: { bg: 'rgb(36,58,44)', fg: 'rgb(122,200,146)' },
     purple: { bg: 'rgb(52,44,76)', fg: 'rgb(184,164,245)' },
+    teal: { bg: 'rgb(28,56,66)', fg: 'rgb(108,204,216)' },
     red: { bg: 'rgb(72,44,38)', fg: 'rgb(240,146,120)' },
     mint: { bg: 'rgb(38,60,46)', fg: 'rgb(122,200,146)' },
     blue: { bg: 'rgb(40,46,80)', fg: 'rgb(146,164,255)' },
@@ -73,6 +76,7 @@ const cellWidth = (text) => {
 };
 const segWidth = (segs) => segs.reduce((n, s) => n + cellWidth(s.text), 0);
 const BOLD_PILLS = new Set(['context', '5h', '7d']);
+const isUsagePill = (key) => key === '5h' || key === '7d' || key.startsWith('7d-');
 export const clip = (segs, cells) => {
     if (segWidth(segs) <= cells)
         return segs;
@@ -151,8 +155,8 @@ export const layout = (pills, columns, capWidth, oneRow = false) => {
     const packed = flow(rest);
     const [head, ...tail] = rest;
     const led = head ? [...flow([head]), ...flow(tail)] : packed;
-    const pairs = (rows) => rows.some((row) => ['5h', '7d'].every((key) => row.some(([x]) => x.key === key)));
-    const rows = led.length === packed.length && pairs(led) && !pairs(packed) ? led : packed;
+    const spread = (rows) => rows.filter((row) => row.some(([x]) => isUsagePill(x.key))).length;
+    const rows = led.length === packed.length && spread(led) < spread(packed) ? led : packed;
     return own && ownSegs ? [...rows, [[own, ownSegs]]] : rows;
 };
 const meter = (key, percent, calm, p) => {
@@ -284,13 +288,32 @@ export const windowSpec = (label, icon, seen, now, tone, p, span = SPAN[label] ?
         tight: [...head, { ...pct, text: `${figure} ` }],
     };
 };
-export const noLimitSpec = (label, icon, p) => {
-    const head = [
-        { key: 'icon', text: ` ${icon} `, color: p.tray.fg },
-        { key: 'label', text: `${label} `, color: p.tray.fg },
+const WEEK = SPAN['7d'] ?? 0;
+const sharesReset = (a, b, now) => {
+    if (!isAvailable(b))
+        return false;
+    const [x, y] = [a, b].map((w) => rolled(w, now, WEEK).resetsAt);
+    return x != null && y != null && Math.abs(x - y) < 60_000;
+};
+export const scopedSpec = (scoped, sevenDay, now, p) => {
+    const spec = windowSpec(scoped.label, '▦', scoped.window, now, p.teal, p, WEEK, `7d-${scoped.label}`);
+    if (!sharesReset(scoped.window, sevenDay, now))
+        return spec;
+    const cut = (segs) => segs.filter((seg) => seg.key !== 'sep' && seg.key !== 'at');
+    return { ...spec, full: cut(spec.full), compact: cut(spec.compact), tight: cut(spec.tight) };
+};
+const isAvailable = (w) => w != null && hasFigure(w.percentUsed);
+export const usageSpecs = (band, now, p) => {
+    const sevenDay = isAvailable(band.sevenDay) ? band.sevenDay : null;
+    return [
+        ...(isAvailable(band.fiveHour) ? [windowSpec('5h', '◷', band.fiveHour, now, p.green, p)] : []),
+        ...(band.scoped ?? [])
+            .filter((scoped) => isAvailable(scoped.window))
+            .slice(0, MAX_SCOPED_PILLS)
+            .map((scoped) => scopedSpec(scoped, sevenDay, now, p)),
+        ...(sevenDay ? [windowSpec('7d', '▦', sevenDay, now, p.purple, p)] : []),
+        ...(band.extra ? [extraSpec(band.extra, p)] : []),
     ];
-    const none = { key: 'none', text: '— no limit ', color: p.tray.fg };
-    return { key: label, tone: p.tray, full: [...head, none], compact: [...head, none], tight: [...head, { ...none, text: '— ' }] };
 };
 export const extraSpec = (spend, p) => {
     const reached = spend.percent !== null && spend.percent >= LIMIT_AT;
@@ -414,20 +437,7 @@ export const pillRows = (band, columns, options) => {
     const capWidth = options.caps ? 2 : 0;
     const pills = [
         contextSpec(band.context, band.model, p),
-        ...(band.fiveHour
-            ? [windowSpec('5h', '◷', band.fiveHour, now, p.green, p)]
-            : band.noLimit?.fiveHour
-                ? [noLimitSpec('5h', '◷', p)]
-                : []),
-        ...(band.sevenDay
-            ? [windowSpec('7d', '▦', band.sevenDay, now, p.purple, p)]
-            : band.noLimit?.sevenDay
-                ? [noLimitSpec('7d', '▦', p)]
-                : []),
-        ...(band.scoped ?? [])
-            .slice(0, MAX_SCOPED_PILLS)
-            .map((scoped) => windowSpec(`${scoped.label} 7d`, '▦', scoped.window, now, p.purple, p, SPAN['7d'] ?? 0, `7d-${scoped.label}`)),
-        ...(band.extra ? [extraSpec(band.extra, p)] : []),
+        ...usageSpecs(band, now, p),
         ...(band.git ? [gitSpec(band.git, p)] : band.folder ? [folderSpec(band.folder, p)] : []),
     ];
     const maxRows = options.maxRows ?? null;
@@ -486,7 +496,7 @@ export const bandFromContext = (ctx) => {
             effort: ctx.effortLevel ? safe(ctx.effortLevel) : null,
         };
     const usage = shouldHideUsage(ctx.stdin) ? null : ctx.usageData;
-    const window = (percent, resetAt, seenAt, isRolled) => typeof percent === 'number'
+    const window = (percent, resetAt, seenAt, isRolled) => hasFigure(percent)
         ? {
             percentUsed: percent,
             resetsAt: resetAt?.getTime() ?? null,
@@ -505,7 +515,6 @@ export const bandFromContext = (ctx) => {
         model,
         fiveHour: window(usage?.fiveHour, usage?.fiveHourResetAt, usage?.fiveHourSeenAt, usage?.fiveHourRolled),
         sevenDay: window(usage?.sevenDay, usage?.sevenDayResetAt, usage?.sevenDaySeenAt, usage?.sevenDayRolled),
-        noLimit: { fiveHour: usage?.fiveHourUnlimited === true, sevenDay: usage?.sevenDayUnlimited === true },
         scoped,
         extra: extraSpend(usage),
         git: ctx.gitStatus ? gitFromStatus(ctx.gitStatus, folder ?? '', ctx.prStatus) : null,

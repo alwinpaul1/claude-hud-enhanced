@@ -19,13 +19,14 @@ import {
   gitSpec,
   layout,
   modelName,
-  noLimitSpec,
+  usageSpecs,
   paletteFor,
   pillRows,
   prBadge,
   renderPillBand,
   resetLabel,
   rolled,
+  scopedSpec,
   windowNote,
   windowSpec,
 } from '../dist/render/pills.js';
@@ -203,6 +204,46 @@ test('light themes get the light pastels and every other theme the dark ones', (
   assert.equal(paletteFor('auto').green.bg, 'rgb(36,58,44)');
   assert.equal(paletteFor('custom:orca').green.bg, 'rgb(36,58,44)');
   assert.equal(paletteFor(null).green.bg, 'rgb(36,58,44)');
+});
+
+test('the model pill has a tone of its own in both palettes, as readable as the others', () => {
+  assert.deepEqual(paletteFor('light').teal, { bg: 'rgb(214,236,241)', fg: 'rgb(26,124,138)' });
+  assert.deepEqual(paletteFor('dark').teal, { bg: 'rgb(28,56,66)', fg: 'rgb(108,204,216)' });
+  const channels = (rgb) => rgb.match(/\d+/g).map(Number);
+  const luminance = (rgb) => {
+    const [r, g, b] = channels(rgb).map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (tone) => {
+    const [hi, lo] = [luminance(tone.bg), luminance(tone.fg)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const apart = (a, b) => Math.max(...channels(a).map((v, i) => Math.abs(v - channels(b)[i])));
+  const sgr = (layer, rgb) => `\x1b[${layer};2;${channels(rgb).join(';')}m`;
+  const at = SEVEN_RESET;
+  for (const theme of ['light', 'dark']) {
+    const p = paletteFor(theme);
+    const others = [p.green, p.purple, p.blue, p.gold, p.red];
+    const ratios = others.map(contrast);
+    assert.ok(contrast(p.teal) >= Math.min(...ratios) && contrast(p.teal) <= Math.max(...ratios), `${theme}: contrast ${contrast(p.teal)}`);
+    for (const other of [...others, p.mint, p.tray]) {
+      assert.ok(apart(p.teal.fg, other.fg) >= 40, `${theme}: ink apart from ${other.fg}`);
+      assert.ok(apart(p.teal.bg, other.bg) >= 8, `${theme}: fill apart from ${other.bg}`);
+    }
+    const spec = (percentUsed) => scopedSpec({ label: 'Fable', window: { percentUsed, resetsAt: at } }, null, NOW, p);
+    const calm = spec(43);
+    assert.equal(calm.tone, p.teal);
+    assert.equal(calm.full.find((seg) => seg.key === 'icon').color, p.teal.fg);
+    assert.equal(calm.full.find((seg) => seg.key === '7d-Fable-fill').color, p.teal.fg);
+    assert.equal(spec(75).full.find((seg) => seg.key === '7d-Fable-fill').color, p.gold.fg);
+    assert.equal(spec(90).full.find((seg) => seg.key === '7d-Fable-fill').color, p.red.fg);
+    assert.equal(spec(100).tone, p.red);
+    const drawn = drawPill(calm, calm.full, p, true);
+    assert.ok(drawn.includes(sgr(48, p.teal.bg)), `${theme}: the pill is filled with its own tone`);
+    assert.ok(drawn.includes(`${sgr(38, p.teal.fg)}━━━╸`), `${theme}: the bar is drawn in its own ink`);
+    const row = renderPillBand(band({ scoped: [{ label: 'Fable', window: { percentUsed: 43, resetsAt: at } }] }), 600, options({ palette: p }))[0];
+    assert.ok(row.includes(sgr(48, p.teal.bg)) && row.includes(sgr(48, p.purple.bg)) && row.includes(sgr(48, p.green.bg)), `${theme}: 5h, model and 7d each have their own fill`);
+  }
 });
 
 test('model ids read as their family and version', () => {
@@ -601,7 +642,7 @@ test('a PR from another repo the session looked at is not shown as this repo\'s'
     session: 's',
     branch: 'main',
     named: null,
-    sessionPr: { number: 1040, url: 'https://github.com/parth2600/nexdash/pull/1040', owned: false },
+    sessionPr: { number: 1040, url: 'https://github.com/example-org/example-repo/pull/1040', owned: false },
   };
   const { snapshot } = await refreshPr(req, emptyState(), { run, now: () => NOW });
   assert.equal(snapshot.pr, null);
@@ -1005,7 +1046,7 @@ test('the extra usage pill sits after the weekly pills and survives every width'
   const spend = { spent: 12.4, limit: 50, percent: 24.8, ...USD };
   const fable = { label: 'Fable', window: { percentUsed: 30, resetsAt: SEVEN_RESET } };
   assert.deepEqual(rowKeys(pillRows(band({ extra: spend }), 400, options())), [['context', '5h', '7d', 'extra', 'git']]);
-  assert.deepEqual(rowKeys(pillRows(band({ extra: spend, scoped: [fable] }), 400, options())), [['context', '5h', '7d', '7d-Fable', 'extra', 'git']]);
+  assert.deepEqual(rowKeys(pillRows(band({ extra: spend, scoped: [fable] }), 400, options())), [['context', '5h', '7d-Fable', '7d', 'extra', 'git']]);
   assert.deepEqual(rowKeys(pillRows(band({ extra: null }), 400, options())), [['context', '5h', '7d', 'git']]);
   assert.deepEqual(rowKeys(pillRows(band({ extra: spend, fiveHour: null }), 400, options())), [['context', '7d', 'extra', 'git']]);
   for (const columns of [200, 140, 110, 90, 70, 50, 36, 24, 14]) {
@@ -1067,29 +1108,39 @@ test('a reading that is old, unconfirmed or rolled past its reset is dimmed and 
   assert.equal('seenAt' in bandFromContext(context({ usageData: usageWith(undefined) })).fiveHour, false);
 });
 
-test('a plan with no such window gets a grey "no limit" pill instead of a made-up figure', () => {
-  const text = (segs) => segs.map((seg) => seg.text).join('');
-  for (const palette of [DARK, paletteFor('light')]) {
-    const spec = noLimitSpec('5h', '◷', palette);
-    assert.equal(spec.key, '5h');
-    assert.equal(spec.tone, palette.tray);
-    assert.equal(text(spec.full), ' ◷ 5h — no limit ');
-    assert.equal(text(spec.compact), ' ◷ 5h — no limit ');
-    assert.equal(text(spec.tight), ' ◷ 5h — ');
-    assert.ok(spec.full.every((seg) => seg.color === palette.tray.fg));
+test('only the usage the account has is drawn: no placeholder for a window without a figure', () => {
+  const weekly = { percentUsed: 8, resetsAt: SEVEN_RESET };
+  const usageKeys = (overrides) => usageSpecs(band(overrides), NOW, DARK).map((spec) => spec.key);
+  assert.deepEqual(usageKeys({ fiveHour: null, sevenDay: weekly }), ['7d'], 'a response with only seven_day draws exactly one usage pill');
+  assert.deepEqual(usageKeys({}), ['5h', '7d']);
+  assert.deepEqual(usageKeys({ fiveHour: null, sevenDay: null }), []);
+  assert.deepEqual(usageKeys({ fiveHour: { percentUsed: Number.NaN, resetsAt: null }, sevenDay: { percentUsed: null, resetsAt: SEVEN_RESET } }), []);
+  const ghost = { label: 'Ghost', window: { percentUsed: null, resetsAt: SEVEN_RESET } };
+  const fable = { label: 'Fable', window: { percentUsed: 30, resetsAt: SEVEN_RESET } };
+  assert.deepEqual(usageKeys({ fiveHour: null, sevenDay: null, scoped: [ghost, fable] }), ['7d-Fable']);
+  assert.deepEqual(usageKeys({ scoped: [ghost], extra: null }), ['5h', '7d']);
+  assert.deepEqual(usageKeys({ fiveHour: null, sevenDay: null, extra: { spent: 12.4, limit: 50, percent: 24.8, ...USD } }), ['extra']);
+
+  for (const columns of [...WIDTHS, 400]) {
+    for (const palette of [DARK, paletteFor('light')]) {
+      const rows = pillRows(band({ fiveHour: null, sevenDay: weekly }), columns, options({ palette }));
+      assert.deepEqual(rowKeys(rows).flat(), ['context', '7d', 'git'], `${columns} columns`);
+      const usage = rows.flat().filter(([spec]) => spec.key !== 'context' && spec.key !== 'git');
+      assert.equal(usage.length, 1, `${columns} columns: one usage pill`);
+      for (const line of renderPillBand(band({ fiveHour: null, sevenDay: weekly }), columns, options({ palette })).map(stripAnsi)) {
+        assert.doesNotMatch(line, /no limit|5h|[◷▦] \S+ —/u, `${columns} columns`);
+      }
+    }
   }
-  const none = pillRows(band({ fiveHour: null, noLimit: { fiveHour: true } }), 400, options());
-  assert.deepEqual(rowKeys(none), [['context', '5h', '7d', 'git']]);
-  assert.ok(texts(none).includes('— no limit '));
-  assert.ok(!texts(none).some((part) => /^\s*0%/.test(part)));
-  assert.deepEqual(rowKeys(pillRows(band({ fiveHour: null }), 400, options())), [['context', '7d', 'git']], 'unknown is not the same as no limit');
-  assert.deepEqual(rowKeys(pillRows(band({ fiveHour: null, sevenDay: null, noLimit: { fiveHour: true, sevenDay: true } }), 400, options())), [['context', '5h', '7d', 'git']]);
-  const ctx = context({ usageData: { fiveHour: null, sevenDay: 8, fiveHourResetAt: null, sevenDayResetAt: null, fiveHourUnlimited: true } });
-  assert.deepEqual(bandFromContext(ctx).noLimit, { fiveHour: true, sevenDay: false });
+  const ctx = context({ usageData: { fiveHour: null, sevenDay: 8, fiveHourResetAt: null, sevenDayResetAt: null } });
   assert.equal(bandFromContext(ctx).fiveHour, null);
+  assert.equal('noLimit' in bandFromContext(ctx), false);
+  assert.deepEqual(rowKeys(pillRows(bandFromContext(ctx), 400, options())).flat().filter((key) => key !== 'context' && key !== 'git' && key !== 'folder'), ['7d']);
+  const rolled5h = pillRows(band({ fiveHour: { percentUsed: 93, resetsAt: NOW - 1_000 } }), 400, options());
+  assert.match(texts(rolled5h).join(''), / ◷ 5h .*~0% · reset │ /u, 'a 5h window that was open stays, rolled on, after its reset');
 });
 
-test('model weekly windows get their own pill after the 7d one', () => {
+test('model weekly windows get their own pill between the 5h and 7d ones, named for the model alone', () => {
   const text = (segs) => segs.map((seg) => seg.text).join('');
   const scoped = [
     { label: 'Fable', window: { percentUsed: 30, resetsAt: SEVEN_RESET } },
@@ -1097,20 +1148,68 @@ test('model weekly windows get their own pill after the 7d one', () => {
     { label: 'Sonnet', window: { percentUsed: 1, resetsAt: null } },
   ];
   const rows = pillRows(band({ scoped }), 600, options());
-  assert.deepEqual(rowKeys(rows), [['context', '5h', '7d', '7d-Fable', '7d-Opus', 'git']], 'two at most');
+  assert.deepEqual(rowKeys(rows), [['context', '5h', '7d-Fable', '7d-Opus', '7d', 'git']], 'two at most');
   const fable = rows[0].find(([spec]) => spec.key === '7d-Fable');
-  assert.match(text(fable[0].compact), /^ ▦ Fable 7d 30% │ .+ $/u);
-  assert.equal(fable[0].tone, DARK.purple);
+  assert.equal(text(fable[0].full), ' ▦ Fable ━━╸━━━━━ 30% ');
+  assert.equal(text(fable[0].compact), ' ▦ Fable 30% ');
+  assert.equal(text(fable[0].tight), ' ▦ Fable 30% ');
+  assert.equal(fable[0].tone, DARK.teal);
   const opus = rows[0].find(([spec]) => spec.key === '7d-Opus');
   assert.equal(opus[0].tone, DARK.red);
-  assert.match(text(opus[0].full), /^ ▦ Opus 7d {2}limit reached │ /u);
-  const over = windowSpec('Fable 7d', '▦', { percentUsed: 70, resetsAt: NOW - 1_000 }, NOW, DARK.purple, DARK, 7 * 24 * 3_600_000, '7d-Fable');
-  assert.match(text(over.compact), /^ ▦ Fable 7d ~0% · reset │ /u, 'a model window rolls on the weekly span');
+  assert.equal(text(opus[0].full), ' ▦ Opus  limit reached ');
+  assert.equal(text(opus[0].tight), ' ▦ Opus ✕ ');
+  const over = windowSpec('Fable', '▦', { percentUsed: 70, resetsAt: NOW - 1_000 }, NOW, DARK.purple, DARK, 7 * 24 * 3_600_000, '7d-Fable');
+  assert.match(text(over.compact), /^ ▦ Fable ~0% · reset │ /u, 'a model window rolls on the weekly span');
   const ctx = context({ usageData: usageWith(undefined, { scopedWindows: [{ label: 'Fa\x1b[31mble', percent: 30, resetAt: new Date(SEVEN_RESET) }, { label: 'Ghost', percent: null, resetAt: null }] }) });
   assert.deepEqual(bandFromContext(ctx).scoped, [{ label: 'Fable', window: { percentUsed: 30, resetsAt: SEVEN_RESET } }]);
   assert.deepEqual(bandFromContext(context({ usageData: usageWith(undefined) })).scoped, []);
 });
 
+
+test('a model weekly pill drops its reset only when the 7d pill beside it shows the same one', () => {
+  const text = (segs) => segs.map((seg) => seg.text).join('');
+  const fable = { label: 'Fable', window: { percentUsed: 43, resetsAt: SEVEN_RESET } };
+  const weekly = (resetsAt) => ({ percentUsed: 34, resetsAt });
+
+  const same = scopedSpec(fable, weekly(SEVEN_RESET + 59_000), NOW, DARK);
+  assert.equal(same.key, '7d-Fable');
+  assert.equal(same.tone, DARK.teal);
+  assert.equal(text(same.full), ' ▦ Fable ━━━╸━━━━ 43% ');
+  assert.equal(text(same.compact), ' ▦ Fable 43% ');
+  assert.equal(text(same.tight), ' ▦ Fable 43% ');
+
+  for (const [label, other] of [['a different reset', weekly(SEVEN_RESET + 60_000)], ['a 7d window without a reset', weekly(null)], ['no 7d window', null]]) {
+    const own = scopedSpec(fable, other, NOW, DARK);
+    assert.match(text(own.full), /^ ▦ Fable ━━━╸━━━━ 43% │ \S.* $/u, label);
+    assert.match(text(own.compact), /^ ▦ Fable 43% │ \S.* $/u, label);
+    assert.equal(text(own.tight), ' ▦ Fable 43% ', label);
+  }
+
+  const past = { percentUsed: 70, resetsAt: NOW - 1_000 };
+  assert.equal(text(scopedSpec({ label: 'Fable', window: past }, past, NOW, DARK).compact), ' ▦ Fable ~0% · reset ');
+
+  const pillOf = (overrides) => text(pillRows(band({ scoped: [fable], ...overrides }), 600, options())[0].find(([spec]) => spec.key === '7d-Fable')[1]);
+  assert.equal(pillOf({ sevenDay: weekly(SEVEN_RESET) }), ' ▦ Fable ━━━╸━━━━ 43% ');
+  assert.match(pillOf({ sevenDay: weekly(SEVEN_RESET + 3_600_000) }), / 43% │ \S.* $/u);
+  assert.match(pillOf({ sevenDay: null }), / 43% │ \S.* $/u, 'no 7d pill');
+  assert.match(pillOf({ sevenDay: { percentUsed: null, resetsAt: SEVEN_RESET } }), / 43% │ \S.* $/u, 'a 7d window without a figure draws no pill to carry the reset');
+});
+
+test('the 5h, model weekly and 7d pills keep their order and share a row when that costs no extra one', () => {
+  const pill = (key, n) => ({
+    key,
+    tone: DARK.tray,
+    full: [{ key: 'a', text: 'x'.repeat(n * 2) }],
+    compact: [{ key: 'a', text: 'x'.repeat(n) }],
+    tight: [{ key: 'a', text: 'x'.repeat(n) }],
+  });
+  const trio = [pill('context', 10), pill('5h', 6), pill('7d-Fable', 6), pill('7d', 6)];
+  assert.deepEqual(rowKeys(layout(trio, 28, 2)), [['context'], ['5h', '7d-Fable', '7d']]);
+  assert.deepEqual(rowKeys(layout([...trio, pill('extra', 6)], 28, 2)), [['context', '5h'], ['7d-Fable', '7d', 'extra']], 'not at the price of a row');
+  for (const columns of [10, 12, 20, 24, 28, 30, 36, 60, 100]) {
+    assert.deepEqual(rowKeys(layout([...trio, pill('extra', 6)], columns, 2)).flat(), ['context', '5h', '7d-Fable', '7d', 'extra'], `${columns} columns`);
+  }
+});
 const CAP_L = String.fromCodePoint(0xe0b6);
 const CAP_R = String.fromCodePoint(0xe0b4);
 const WIDTHS = [40, 52, 60, 80, 100, 120, 200];
@@ -1138,7 +1237,7 @@ const crowded = (overrides = {}) =>
     git: PR_GIT,
     ...overrides,
   });
-const KINDS = ['5h', '7d', '7d-Fable', 'context', 'extra', 'git'];
+const KINDS = ['context', '5h', '7d-Fable', '7d', 'extra', 'git'];
 const bodyOf = (segs) => segs.map((seg) => seg.text).join('');
 
 function drawn(bandUnderTest, columns, extra = {}) {
@@ -1168,7 +1267,14 @@ test('every pill at once fits a pane of any width, each pill as wide as its text
     const view = drawn(crowded(), columns);
     const label = `${columns} columns`;
     expectSound(view, columns, label);
-    assert.deepEqual(view.keys.flat().sort(), KINDS, `${label}: all six pills, once each`);
+    assert.deepEqual(view.keys.flat(), KINDS, `${label}: all six pills, once each, in order`);
+    const fable = bodyOf(view.rows.flat().find(([spec]) => spec.key === '7d-Fable')[1]);
+    assert.match(fable, /^ ▦ Fable ([━╸]+ )?30% $/u, `${label}: the model pill is named for the model and leaves the shared reset to 7d`);
+    const apart = drawn(crowded({ scoped: [{ label: 'Fable', window: { percentUsed: 30, resetsAt: SEVEN_RESET + 3 * 3_600_000 } }] }), columns);
+    expectSound(apart, columns, `${label}, a reset of its own`);
+    assert.deepEqual(apart.keys.flat(), KINDS, `${label}, a reset of its own: in order`);
+    const sized = apart.rows.flat().find(([spec]) => spec.key === '7d-Fable');
+    if (sized[1] !== sized[0].tight) assert.match(bodyOf(sized[1]), /^ ▦ Fable ([━╸]+ )?30% │ \S.* $/u, `${label}: a reset of its own is shown`);
     assert.deepEqual(view.keys[view.keys.length - 1], ['git'], `${label}: git has the last row to itself`);
     const git = bodyOf(view.rows.flat().find(([spec]) => spec.key === 'git')[1]);
     assert.match(git, /#1971 /, label);
@@ -1176,7 +1282,8 @@ test('every pill at once fits a pane of any width, each pill as wide as its text
     assert.match(git, /◌ $/u, label);
   }
   const at52 = drawn(crowded(), 52).keys;
-  assert.ok(at52.find((row) => row.includes('5h')).includes('7d'), `5h and 7d share a row at 52: ${JSON.stringify(at52)}`);
+  assert.deepEqual(at52, [['context', '5h'], ['7d-Fable', '7d'], ['extra'], ['git']]);
+  assert.deepEqual(drawn(crowded(), 80).keys, [['context', '5h', '7d-Fable', '7d', 'extra'], ['git']], 'the three usage pills share a row at 80');
   assert.ok(at52.length <= 4, `52 columns took ${at52.length} rows`);
   assert.ok(at52.some((row) => row.length >= 2), 'short pills sit side by side');
   assert.ok(drawn(crowded(), 200).keys.length <= 2);
@@ -1194,14 +1301,16 @@ test('a pane with few rows to spare packs the pills tighter instead of spilling 
 });
 
 test('age labels and a plan without a 5h window fit a narrow pane too', () => {
-  const weeklyOnly = crowded({ fiveHour: null, noLimit: { fiveHour: true }, extra: { spent: 12.4, limit: null, percent: null, symbol: '$', decimals: 2 } });
-  for (const columns of WIDTHS) expectSound(drawn(weeklyOnly, columns), columns, `no 5h window at ${columns}`);
-  const wide = drawn(weeklyOnly, 200);
-  assert.match(bodyOf(wide.rows.flat().find(([spec]) => spec.key === '5h')[1]), /5h — no limit $/u);
+  const weeklyOnly = crowded({ fiveHour: null, extra: { spent: 12.4, limit: null, percent: null, symbol: '$', decimals: 2 } });
+  for (const columns of WIDTHS) {
+    const view = drawn(weeklyOnly, columns);
+    expectSound(view, columns, `no 5h window at ${columns}`);
+    assert.deepEqual(view.keys.flat(), KINDS.filter((kind) => kind !== '5h'), `${columns} columns: no pill for the window the plan lacks`);
+    assert.doesNotMatch(view.lines.join(' '), /no limit|5h|—/u, `${columns} columns`);
+  }
 
   const aged = crowded({
     fiveHour: null,
-    noLimit: { fiveHour: true },
     sevenDay: { percentUsed: 34, resetsAt: SEVEN_RESET, seenAt: NOW - 215_000 },
   });
   for (const columns of WIDTHS) {

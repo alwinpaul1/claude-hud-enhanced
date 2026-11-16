@@ -419,14 +419,11 @@ function observedAt(window, snap, choice, stdinSeen, shown) {
     const at = choice === 'snapshot' ? stamped : isSameFigure ? Math.max(stamped ?? 0, stdinSeen ?? 0) || null : stdinSeen;
     return at === null ? null : new Date(at);
 }
-const isUnlimited = (window, shown, resetAt) => shown == null && resetAt == null && window.used_percentage == null && window.resets_at == null && parseMs(window.seen_at) != null;
 function withObservations(usage, snap, choice, stdinSeen) {
     return {
         ...usage,
         fiveHourSeenAt: observedAt(snap.five_hour, snap, choice.five, stdinSeen.fiveHour, usage.fiveHour),
         sevenDaySeenAt: observedAt(snap.seven_day, snap, choice.seven, stdinSeen.sevenDay, usage.sevenDay),
-        ...(isUnlimited(snap.five_hour, usage.fiveHour, usage.fiveHourResetAt) && { fiveHourUnlimited: true }),
-        ...(isUnlimited(snap.seven_day, usage.sevenDay, usage.sevenDayResetAt) && { sevenDayUnlimited: true }),
     };
 }
 function pickWindow(percent, resetAt, known, snap, stdinSeenAt) {

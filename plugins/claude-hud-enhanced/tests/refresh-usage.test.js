@@ -250,6 +250,22 @@ test('parseUsageResponse adds no model_scoped key when the body has no limits ar
   assert.equal('model_scoped' in parseUsageResponse(body), false);
 });
 
+test('successSnapshot keeps an open window through an absent reading until a whole span after its reset', () => {
+  const HOUR = 3_600_000;
+  const reset = new Date(NOW - 1_000).toISOString();
+  const weekly = { used_percentage: 20, resets_at: new Date(NOW + 48 * HOUR).toISOString() };
+  const open = successSnapshot({ five_hour: { used_percentage: 93, resets_at: reset }, seven_day: weekly }, NOW - 60_000);
+  const absent = { five_hour: { used_percentage: null, resets_at: null }, seven_day: weekly };
+  const brief = successSnapshot(absent, NOW, open);
+  assert.deepEqual(brief.five_hour, open.five_hour, 'right after the reset the window that was open is kept');
+  const gone = successSnapshot(absent, NOW + 5 * HOUR, brief);
+  assert.deepEqual(gone.five_hour, { used_percentage: null, resets_at: null, seen_at: new Date(NOW + 5 * HOUR).toISOString() }, 'a span later the plan has no such window');
+  const never = successSnapshot(absent, NOW, null);
+  assert.equal(never.five_hour.used_percentage, null, 'a window that was never open is not invented');
+  const reopened = successSnapshot({ five_hour: { used_percentage: 2, resets_at: new Date(NOW + 5 * HOUR).toISOString() }, seven_day: weekly }, NOW + 60_000, brief);
+  assert.equal(reopened.five_hour.used_percentage, 2);
+});
+
 test('failureSnapshot keeps the last-good Fable window', () => {
   const prev = successSnapshot({
     five_hour: { used_percentage: 3, resets_at: null },

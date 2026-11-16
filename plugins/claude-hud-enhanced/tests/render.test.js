@@ -3040,7 +3040,7 @@ test('renderUsageLine shows limit reset in days when >= 24 hours', () => {
   assert.ok(!plain.includes('151h'), `should avoid raw hour format for long durations: ${plain}`);
 });
 
-test('renderSessionLine displays -- for null usage values', () => {
+test('renderSessionLine draws no placeholder for usage windows without a figure', () => {
   const ctx = baseContext();
   ctx.usageData = {
     planName: 'Max',
@@ -3050,8 +3050,13 @@ test('renderSessionLine displays -- for null usage values', () => {
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('5h'), 'should include 5h label');
-  assert.ok(line.includes('--'), 'should show -- for null values');
+  assert.ok(!line.includes('5h'), 'no 5h label without a 5h figure');
+  assert.ok(!line.includes('--'), 'no -- placeholder');
+  ctx.usageData.sevenDay = 61;
+  ctx.usageData.scopedWindows = [{ label: 'Fable', percent: null, resetAt: null }];
+  const weeklyOnly = renderSessionLine(ctx);
+  assert.ok(weeklyOnly.includes('61%'));
+  assert.ok(!weeklyOnly.includes('5h') && !weeklyOnly.includes('Fable') && !weeklyOnly.includes('--'), 'only the window with a figure is drawn');
 });
 
 test('renderSessionLine omits usage when usageData is null', () => {

@@ -112,8 +112,6 @@ export interface UsageData {
   extraUsage?: ExtraUsage;
   fiveHourSeenAt?: Date | null;
   sevenDaySeenAt?: Date | null;
-  fiveHourUnlimited?: boolean;
-  sevenDayUnlimited?: boolean;
   fiveHourRolled?: boolean;
   sevenDayRolled?: boolean;
 }

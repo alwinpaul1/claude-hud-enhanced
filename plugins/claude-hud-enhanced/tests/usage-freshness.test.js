@@ -290,7 +290,7 @@ test('each session remembers, per window, when its own stdin reading last change
   assert.equal(observeStdinUsage('/t/a.jsonl', stdin({ fiveHour: 11, sevenDay: 21 }), NOW, homeDir).sevenDay, null, 'a time from the future is not trusted');
 });
 
-test('every shown window says when it was last confirmed, and a plan without one says so', () => {
+test('every shown window says when it was last confirmed, and a plan without one gets none', () => {
   const w = world(snap({ five_hour: { used_percentage: 50, resets_at: ISO(FIVE_RESET), seen_at: ISO(NOW - 4 * 60_000) } }));
   const idle = w.resolve(stdin({ fiveHour: 50 }));
   assert.equal(idle.fiveHourSeenAt.getTime(), NOW - 4 * 60_000, 'an unchanged figure is as old as the reading that confirmed it');
@@ -301,11 +301,9 @@ test('every shown window says when it was last confirmed, and a plan without one
   const absent = world(snap({ five_hour: { used_percentage: null, resets_at: null, seen_at: ISO(NOW - 10_000) } }));
   const none = absent.resolve(stdin({ fiveHour: null, fiveHourResetAt: null }));
   assert.equal(none.fiveHour, null);
-  assert.equal(none.fiveHourUnlimited, true, 'the API said the plan has no 5h window');
-  assert.equal(none.sevenDayUnlimited, undefined);
+  assert.equal('fiveHourUnlimited' in none, false, 'a window the plan lacks is simply not there');
   const fallback = absent.resolve(stdin({ fiveHour: 37 }));
   assert.equal(fallback.fiveHour, 37);
-  assert.equal(fallback.fiveHourUnlimited, undefined);
   assert.equal(fallback.fiveHourSeenAt, null, 'a stdin fallback nobody has confirmed is marked as such');
 
   const untracked = resolveUsage(stdin(), false, { now: () => NOW, homeDir: w.homeDir, fs: defaultSnapshotFs, spawnRefresher: () => undefined });

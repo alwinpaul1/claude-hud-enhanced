@@ -6,7 +6,7 @@ export type Tone = {
     bg: string;
     fg: string;
 };
-type ToneName = 'green' | 'purple' | 'red' | 'mint' | 'blue' | 'gold' | 'tray';
+type ToneName = 'green' | 'purple' | 'teal' | 'red' | 'mint' | 'blue' | 'gold' | 'tray';
 type InkName = 'text' | 'subtle' | 'success' | 'warning' | 'error';
 export type Palette = Record<ToneName, Tone> & {
     ink: Record<InkName, string>;
@@ -60,10 +60,6 @@ export interface PillBand {
     model: PillModel | null;
     fiveHour: PillWindow | null;
     sevenDay: PillWindow | null;
-    noLimit?: {
-        fiveHour?: boolean;
-        sevenDay?: boolean;
-    };
     scoped?: PillScoped[];
     extra?: ExtraSpend | null;
     git: PillGit | null;
@@ -98,7 +94,8 @@ export declare const MAX_SCOPED_PILLS = 2;
 export declare const agoLabel: (ms: number) => string;
 export declare const windowNote: (w: PillWindow, now: number) => string | null;
 export declare const windowSpec: (label: string, icon: string, seen: PillWindow, now: number, tone: Tone, p: Palette, span?: number, key?: string) => PillSpec;
-export declare const noLimitSpec: (label: string, icon: string, p: Palette) => PillSpec;
+export declare const scopedSpec: (scoped: PillScoped, sevenDay: PillWindow | null, now: number, p: Palette) => PillSpec;
+export declare const usageSpecs: (band: PillBand, now: number, p: Palette) => PillSpec[];
 export declare const extraSpec: (spend: ExtraSpend, p: Palette) => PillSpec;
 export declare const prBadge: (pr: Pr, p: Palette) => {
     state: Seg[];

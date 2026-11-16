@@ -31,6 +31,7 @@ import {
   writeSnapshotAtomic,
 } from './usage-snapshot.js';
 import { ensurePrivateDir, readJsonCache, writeJsonCacheAtomic } from './utils/cache-file.js';
+import { hasFigure } from './usage-available.js';
 import { stripBom } from './utils/sanitize.js';
 import { getClaudeCodeVersion } from './version.js';
 
@@ -47,6 +48,8 @@ import { getClaudeCodeVersion } from './version.js';
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const KEYCHAIN_SERVICE = 'Claude Code-credentials';
 const FETCH_TIMEOUT_MS = 5_000;
+const FIVE_HOUR_MS = 5 * 60 * 60 * 1000;
+const SEVEN_DAY_MS = 7 * 24 * 60 * 60 * 1000;
 const WATCHDOG_MS = 15_000;
 
 export type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day' | 'model_scoped' | 'extra_usage'>;
@@ -305,7 +308,21 @@ export function parseRetryAfterMs(headerValue: string | null, nowMs: number): nu
   return ms > 0 ? ms : null;
 }
 
-function liveWindow(next: UsageSnapshotWindow, prev: UsageSnapshotWindow | undefined, at: string): UsageSnapshotWindow {
+function liveWindow(
+  next: UsageSnapshotWindow,
+  prev: UsageSnapshotWindow | undefined,
+  at: string,
+  span: number,
+): UsageSnapshotWindow {
+  if (
+    isAbsent(next)
+    && prev !== undefined
+    && hasFigure(prev.used_percentage)
+    && prev.resets_at !== null
+    && Date.parse(at) < Date.parse(prev.resets_at) + span
+  ) {
+    return prev;
+  }
   const sameWindow =
     prev !== undefined
     && prev.resets_at !== null
@@ -323,8 +340,8 @@ export function successSnapshot(windows: UsageWindows, now: number, prev: UsageS
     updated_at: at,
     oauth_updated_at: at,
     source: 'oauth',
-    five_hour: liveWindow(windows.five_hour, prev?.five_hour, at),
-    seven_day: liveWindow(windows.seven_day, prev?.seven_day, at),
+    five_hour: liveWindow(windows.five_hour, prev?.five_hour, at, FIVE_HOUR_MS),
+    seven_day: liveWindow(windows.seven_day, prev?.seven_day, at, SEVEN_DAY_MS),
     ...(windows.model_scoped !== undefined && { model_scoped: windows.model_scoped }),
     ...(windows.extra_usage !== undefined && { extra_usage: windows.extra_usage }),
     status: 'ok',
