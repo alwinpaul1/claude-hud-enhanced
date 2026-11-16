@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatResetTime, sameResetMinute } from '../dist/render/format-reset-time.js';

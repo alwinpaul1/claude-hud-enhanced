@@ -9,6 +9,7 @@ import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage
 import { sanitizeDisplayText } from './utils/sanitize.js';
 import { CACHE_SWEEP_SAMPLE_RATE, sweepCacheDir, writeJsonCacheAtomic } from './utils/cache-file.js';
 import { sanitizeTranscriptModel } from './model-source.js';
+import { isGhPrCommand, pickPr, prFromCommand, prFromResult, type SessionPrRef } from './pr-status.js';
 import {
   isDetectedPromptCacheTtl,
   PROMPT_CACHE_TTL_1H_SECONDS,
@@ -62,6 +63,8 @@ interface TranscriptLine {
   // model instead of passing `model` explicitly.
   toolUseResult?: {
     resolvedModel?: unknown;
+    stdout?: unknown;
+    gitOperation?: unknown;
   };
   compactMetadata?: {
     trigger?: string;
@@ -83,6 +86,7 @@ interface ContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   is_error?: boolean;
+  content?: unknown;
 }
 
 interface TranscriptFileState {
@@ -119,6 +123,7 @@ interface SerializedTranscriptData {
   advisorModel?: string;
   ultracodeActive?: boolean;
   lastAssistantModel?: string;
+  sessionPr?: SessionPrRef;
 }
 
 /**
@@ -157,6 +162,7 @@ interface SerializedAcc {
   sessionStart?: string;
   lastAssistantResponseAt?: string;
   lastAssistantModel?: string;
+  sessionPr?: SessionPrRef;
 }
 
 interface TranscriptCacheFile {
@@ -174,7 +180,7 @@ interface TranscriptCacheFile {
 // (accumulateMessageUsage), its bounded MCP error set and the prompt-cache TTL
 // fields, on top of our incremental-resume accumulator. An older cache lacks one
 // or more of these and safely falls back to a full parse.
-const TRANSCRIPT_CACHE_VERSION = 16;
+const TRANSCRIPT_CACHE_VERSION = 17;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
@@ -193,6 +199,7 @@ const TRANSCRIPT_WRITE_TTL_MS = 3000;
 // Cap the max length of an untrusted tool target / agent description persisted
 // in the resume accumulator (the display truncates well below this anyway).
 const RESUME_TEXT_MAX_LEN = 256;
+const PR_COMMAND_MAX_LEN = 2048;
 const MCP_ERROR_SERVERS_MAX = 64;
 
 // Hard cap on the advisor model ID captured from the transcript. Real Claude
@@ -395,6 +402,7 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     advisorModel: data.advisorModel,
     ultracodeActive: data.ultracodeActive,
     lastAssistantModel: sanitizeTranscriptModel(data.lastAssistantModel),
+    sessionPr: normalizeSessionPr(data.sessionPr),
   };
 }
 
@@ -436,7 +444,27 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
       : undefined,
     ultracodeActive: typeof data.ultracodeActive === 'boolean' ? data.ultracodeActive : undefined,
     lastAssistantModel: sanitizeTranscriptModel(data.lastAssistantModel),
+    sessionPr: normalizeSessionPr(data.sessionPr),
   };
+}
+
+function normalizeSessionPr(value: unknown): SessionPrRef | undefined {
+  const ref = value as Partial<SessionPrRef> | null | undefined;
+  if (!ref || typeof ref.number !== 'number' || !Number.isSafeInteger(ref.number) || ref.number <= 0) {
+    return undefined;
+  }
+  const url = typeof ref.url === 'string' && /^https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+$/.test(ref.url) ? ref.url : '';
+  return { number: ref.number, url, owned: ref.owned === true };
+}
+
+function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+      ? (part as { text: string }).text
+      : ''))
+    .join('\n');
 }
 
 function reviveToolEntry(s: SerializedToolEntry): ToolEntry {
@@ -648,6 +676,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     result.sessionStart = undefined;
     result.lastAssistantResponseAt = undefined;
     result.lastAssistantModel = undefined;
+    result.sessionPr = undefined;
   };
 
   if (
@@ -693,6 +722,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
       result.sessionStart = a.sessionStart ? new Date(a.sessionStart) : undefined;
       result.lastAssistantResponseAt = a.lastAssistantResponseAt ? new Date(a.lastAssistantResponseAt) : undefined;
       result.lastAssistantModel = a.lastAssistantModel;
+      result.sessionPr = normalizeSessionPr(a.sessionPr);
       resuming = true;
       skipCount = Math.max(0, cacheRaw.resumeSkip);
     } catch (err) {
@@ -999,6 +1029,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
       sessionStart: result.sessionStart?.toISOString(),
       lastAssistantResponseAt: result.lastAssistantResponseAt?.toISOString(),
       lastAssistantModel: result.lastAssistantModel,
+      sessionPr: result.sessionPr,
     };
     writeTranscriptCache(canonicalTranscriptPath, transcriptState, result, {
       acc,
@@ -1060,6 +1091,10 @@ function processEntry(
         status: 'running',
         startTime: timestamp,
       };
+      const bashCommand = block.name === 'Bash' && typeof block.input?.command === 'string' ? block.input.command : '';
+      if (bashCommand && isGhPrCommand(bashCommand)) {
+        toolEntry.prCommand = bashCommand.slice(0, PR_COMMAND_MAX_LEN);
+      }
 
       if (block.name === 'Task' || block.name === 'Agent') {
         const input = block.input as Record<string, unknown>;
@@ -1166,6 +1201,16 @@ function processEntry(
       if (tool) {
         tool.status = block.is_error ? 'error' : 'completed';
         tool.endTime = timestamp;
+
+        if (tool.name === 'Bash') {
+          const stdout = entry.toolUseResult?.stdout;
+          const seen = prFromResult(entry.toolUseResult)
+            ?? (tool.prCommand
+              ? prFromCommand(tool.prCommand, typeof stdout === 'string' ? stdout : toolResultText(block.content))
+              : null);
+          result.sessionPr = normalizeSessionPr(pickPr(result.sessionPr ?? null, seen));
+          tool.prCommand = undefined;
+        }
 
         // Track each server's latest observed result. Tool names are untrusted
         // transcript data, so reuse the bounded terminal-safe extractor.

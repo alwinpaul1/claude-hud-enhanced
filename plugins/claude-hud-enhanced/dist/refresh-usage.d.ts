@@ -1,5 +1,18 @@
 import { type UsageSnapshot } from './usage-snapshot.js';
-type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day' | 'model_scoped'>;
+export type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day' | 'model_scoped' | 'extra_usage'>;
+type FetchOutcome = {
+    kind: 'ok';
+    windows: UsageWindows;
+} | {
+    kind: 'auth_expired';
+} | {
+    kind: 'forbidden';
+} | {
+    kind: 'rate_limited';
+    retryAfterMs: number | null;
+} | {
+    kind: 'error';
+};
 /** Extract `claudeAiOauth.accessToken` from a credentials JSON blob. */
 export declare function parseAccessToken(rawJson: string): string | null;
 /**
@@ -33,16 +46,37 @@ export declare function readKeychainTokenForAccounts(service: string, accounts: 
  * work profile would be worse than serving nothing.
  */
 export declare function readOauthToken(configDir: string, homeDir?: string): string | null;
-/** Parse the usage API body; null when it carries no usable window at all. */
 export declare function parseUsageResponse(body: string): UsageWindows | null;
 /** `Retry-After` header (delta-seconds or HTTP-date) → milliseconds, null if unusable. */
 export declare function parseRetryAfterMs(headerValue: string | null, nowMs: number): number | null;
-export declare function successSnapshot(windows: UsageWindows, now: number): UsageSnapshot;
-/**
- * Failed attempt → snapshot that PRESERVES the last-good values and moves neither
- * clock (`updated_at`, `oauth_updated_at`), only sets the retry backoff. A poll
- * that failed is not a read, and must not be recorded as one.
- */
-export declare function failureSnapshot(prev: UsageSnapshot | null, status: Exclude<UsageSnapshot['status'], 'ok'>, now: number, retryAfterMs?: number | null): UsageSnapshot;
+export declare function successSnapshot(windows: UsageWindows, now: number, prev?: UsageSnapshot | null): UsageSnapshot;
+export type FailureKind = Exclude<UsageSnapshot['status'], 'ok'> | 'forbidden' | 'no_login';
+export declare function backoffMs(kind: FailureKind, failures: number, retryAfterMs?: number | null, random?: () => number): number;
+export declare function failureSnapshot(prev: UsageSnapshot | null, kind: FailureKind, now: number, retryAfterMs?: number | null, random?: () => number): UsageSnapshot;
+export type FetchUsage = (token: string, userAgent: string, now: number) => Promise<FetchOutcome>;
+export declare function classifyResponse(status: number, body: string, retryAfter: string | null, now: number): FetchOutcome;
+export interface AccountRecord {
+    version: 1;
+    fetched_at: string | null;
+    windows: UsageWindows | null;
+    failure: FailureKind | null;
+    next_attempt_at: string | null;
+    failure_count: number;
+}
+export declare function accountsDir(homeDir?: string, env?: NodeJS.ProcessEnv): string;
+export declare function readAccountKey(homeDir?: string): string | null;
+export interface RefreshDeps {
+    now: () => number;
+    random: () => number;
+    snapshotPath: string;
+    readToken: () => string | null;
+    fetchUsage: FetchUsage;
+    userAgent: () => Promise<string>;
+    accountKey: string | null;
+    accountsDir: string;
+    isAlive?: (pid: number) => boolean;
+}
+export type RefreshResult = 'fresh' | 'no-token' | 'shared' | 'backing-off' | 'busy' | FetchOutcome['kind'];
+export declare function refreshUsage(deps: RefreshDeps): Promise<RefreshResult>;
 export {};
 //# sourceMappingURL=refresh-usage.d.ts.map

@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { resolveEffortLevel } from '../dist/effort.js';

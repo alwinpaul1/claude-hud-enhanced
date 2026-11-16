@@ -20,6 +20,7 @@ import {
   renderSessionTimeLine,
 } from './lines/index.js';
 import { dim, RESET } from './colors.js';
+import { renderPillLines } from './pills.js';
 import { getTerminalWidth, UNKNOWN_TERMINAL_WIDTH } from '../utils/terminal.js';
 import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
 import type { ProgressLabelOptions } from './lines/label-align.js';
@@ -384,7 +385,7 @@ function alignGroupRight(
   return `${leftText}${' '.repeat(gap)}${rightText}`;
 }
 
-function collectActivityLines(ctx: RenderContext): string[] {
+function collectActivityLines(ctx: RenderContext, skipAgents: boolean = false): string[] {
   const activityLines: string[] = [];
   const display = ctx.config?.display;
 
@@ -409,7 +410,7 @@ function collectActivityLines(ctx: RenderContext): string[] {
     }
   }
 
-  if (display?.showAgents !== false) {
+  if (display?.showAgents !== false && !skipAgents) {
     const agentsLine = renderAgentsLine(ctx);
     if (agentsLine) {
       activityLines.push(agentsLine);
@@ -641,6 +642,12 @@ export function render(
         lines.splice(firstActivityIndex, 0, makeSeparator(separatorWidth));
       }
     }
+  } else if (lineLayout === 'pills') {
+    const pillWidth = terminalWidth !== UNKNOWN_TERMINAL_WIDTH ? (terminalWidth ?? 0) : 0;
+    lines = [
+      ...renderPillLines(ctx, pillWidth > 0 ? pillWidth : null),
+      ...collectActivityLines(ctx, (ctx.pillAgents?.length ?? 0) > 0),
+    ];
   } else {
     // With `display.compactSingleRow`, keep the header a tight session + usage
     // pair: each header line (the session line and the usage line) stays a single

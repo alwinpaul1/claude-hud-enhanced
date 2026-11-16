@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { render } from '../dist/render/index.js';
@@ -273,7 +274,7 @@ test('render ignores forceMaxWidth when maxWidth is invalid in user config', () 
   ctx.stdin.cwd = '/tmp/project';
   ctx.config = {
     ...ctx.config,
-    ...mergeConfig({ maxWidth: 'wide', forceMaxWidth: true }),
+    ...mergeConfig({ maxWidth: 'wide', forceMaxWidth: true, lineLayout: 'compact' }),
     display: ctx.config.display,
     gitStatus: ctx.config.gitStatus,
   };

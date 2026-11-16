@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises';

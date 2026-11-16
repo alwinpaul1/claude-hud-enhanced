@@ -13,7 +13,8 @@ const MAX_CONFIG_FILE_BYTES = 64 * 1024;
 const MAX_CONFIG_NESTING_DEPTH = 8;
 const UNSAFE_CONFIG_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
-export type LineLayoutType = 'compact' | 'expanded';
+export type LineLayoutType = 'compact' | 'expanded' | 'pills';
+export type PillThemeMode = 'auto' | 'dark' | 'light';
 
 export type AutocompactBufferMode = 'enabled' | 'disabled';
 export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
@@ -214,6 +215,10 @@ export interface HudConfig {
     usageBarEnabled: boolean;
     showResetLabel: boolean;
     usageCompact: boolean;
+    pillTheme: PillThemeMode;
+    pillCaps: boolean;
+    pillPr: boolean;
+    pillMaxRows: number | null;
     showTools: boolean;
     showSkills: boolean;
     showMcp: boolean;
@@ -293,7 +298,7 @@ export interface HudConfig {
     compactSingleRow: boolean;
     // Local idle reset detection (no network): when a usage window's reset time
     // has passed, show it as reset (~0%) and roll the reset forward — the true
-    // value while idle, since usage only rises on a message. Default off.
+    // value while idle, since usage only rises on a message. Default on.
     idleUsageReset: boolean;
     // Hybrid OAuth usage poll (ccstatusline-style): while idle, refresh the
     // 5h/weekly windows from Anthropic's OAuth usage endpoint via a detached
@@ -321,7 +326,7 @@ export interface HudConfig {
 
 export const DEFAULT_CONFIG: HudConfig = {
   language: 'en',
-  lineLayout: 'compact',
+  lineLayout: 'pills',
   showSeparators: true,
   pathLevels: 1,
   maxWidth: null,
@@ -363,6 +368,10 @@ export const DEFAULT_CONFIG: HudConfig = {
     usageBarEnabled: true,
     showResetLabel: true,
     usageCompact: false,
+    pillTheme: 'auto',
+    pillCaps: true,
+    pillPr: true,
+    pillMaxRows: null,
     showTools: true,
     showSkills: false,
     showMcp: false,
@@ -408,7 +417,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     // out-of-the-box look on every platform (overflow drops at a segment
     // boundary instead of wrapping to a third row).
     compactSingleRow: true,
-    idleUsageReset: false,
+    idleUsageReset: true,
     oauthUsagePoll: true,
     customLine: '',
     customLinePosition: 'last',
@@ -460,7 +469,11 @@ function validatePathLevels(value: unknown): value is PathLevels {
 }
 
 function validateLineLayout(value: unknown): value is LineLayoutType {
-  return value === 'compact' || value === 'expanded';
+  return value === 'compact' || value === 'expanded' || value === 'pills';
+}
+
+function validatePillTheme(value: unknown): value is PillThemeMode {
+  return value === 'auto' || value === 'dark' || value === 'light';
 }
 
 function validateAutocompactBuffer(value: unknown): value is AutocompactBufferMode {
@@ -872,6 +885,20 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
     usageCompact: typeof migrated.display?.usageCompact === 'boolean'
       ? migrated.display.usageCompact
       : DEFAULT_CONFIG.display.usageCompact,
+    pillTheme: validatePillTheme(migrated.display?.pillTheme)
+      ? migrated.display.pillTheme
+      : DEFAULT_CONFIG.display.pillTheme,
+    pillCaps: typeof migrated.display?.pillCaps === 'boolean'
+      ? migrated.display.pillCaps
+      : DEFAULT_CONFIG.display.pillCaps,
+    pillPr: typeof migrated.display?.pillPr === 'boolean'
+      ? migrated.display.pillPr
+      : DEFAULT_CONFIG.display.pillPr,
+    pillMaxRows: typeof migrated.display?.pillMaxRows === 'number'
+      && Number.isInteger(migrated.display.pillMaxRows)
+      && migrated.display.pillMaxRows >= 1
+      ? migrated.display.pillMaxRows
+      : DEFAULT_CONFIG.display.pillMaxRows,
     showTools: typeof migrated.display?.showTools === 'boolean'
       ? migrated.display.showTools
       : DEFAULT_CONFIG.display.showTools,

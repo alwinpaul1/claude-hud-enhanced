@@ -276,7 +276,8 @@ function isConfigCounts(value) {
         && typeof counts.hooksCount === 'number'
         && Number.isFinite(counts.hooksCount)
         && counts.hooksCount >= 0
-        && (counts.outputStyle === undefined || typeof counts.outputStyle === 'string'));
+        && (counts.outputStyle === undefined || typeof counts.outputStyle === 'string')
+        && (counts.claudeTheme === undefined || counts.claudeTheme === null || typeof counts.claudeTheme === 'string'));
 }
 function readConfigCache(cacheKey, homeDir) {
     try {
@@ -340,6 +341,7 @@ function computeConfigCountsFresh(cwd) {
     outputStyle = readStringSetting(userSettings, 'outputStyle');
     const userLocalSettings = path.join(claudeDir, 'settings.local.json');
     outputStyle = readStringSetting(userLocalSettings, 'outputStyle') ?? outputStyle;
+    const claudeTheme = readStringSetting(userLocalSettings, 'theme') ?? readStringSetting(userSettings, 'theme') ?? null;
     // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
     const userClaudeJson = getClaudeConfigJsonPath(homeDir);
     for (const name of getMcpServerNames(userClaudeJson)) {
@@ -411,7 +413,7 @@ function computeConfigCountsFresh(cwd) {
     // Note: Deduplication only occurs within each scope, not across scopes.
     // A server with the same name in both user and project scope counts as 2 (separate configs).
     const mcpCount = userMcpServers.size + projectMcpServers.size;
-    return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle };
+    return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, claudeTheme };
 }
 export async function countConfigs(cwd) {
     const homeDir = os.homedir();
@@ -424,7 +426,7 @@ export async function countConfigs(cwd) {
         ? Array.from(new Set([...staticSentinelPaths, ...Object.keys(cached.key.sentinels)]))
         : staticSentinelPaths;
     const currentSentinels = statSentinels(cacheValidationPaths);
-    if (cached && sentinelsMatch(cached.key.sentinels, currentSentinels)) {
+    if (cached && cached.data.claudeTheme !== undefined && sentinelsMatch(cached.key.sentinels, currentSentinels)) {
         return cached.data;
     }
     const result = computeConfigCountsFresh(cwd);

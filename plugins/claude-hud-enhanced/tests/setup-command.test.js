@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';

@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -30,7 +31,7 @@ test('loadConfig returns valid config structure', async () => {
   assert.ok([1, 2, 3, 'full'].includes(config.pathLevels), 'pathLevels should be 1, 2, 3, or "full"');
 
   // lineLayout must be valid
-  const validLineLayouts = ['compact', 'expanded'];
+  const validLineLayouts = ['compact', 'expanded', 'pills'];
   assert.ok(validLineLayouts.includes(config.lineLayout), 'lineLayout should be valid');
 
   // showSeparators must be boolean
@@ -113,16 +114,18 @@ test('flagship layout is the default on every platform (0.5.1)', () => {
   assert.equal(config.display.compactSingleRow, true);
   assert.equal(DEFAULT_CONFIG.display.compactSingleRow, true);
   // Visual defaults that complete the look (already on; pinned here).
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'pills');
   assert.equal(DEFAULT_CONFIG.display.usageOnNewLine, true);
   assert.equal(DEFAULT_CONFIG.display.showAuthInModel, true);
   assert.equal(DEFAULT_CONFIG.display.timeFormat, 'absolute');
   // The OAuth poll is ON by default since 0.8.3: without it the Fable meter
   // never renders (Claude Code sends no model_scoped windows on stdin), and a
-  // fresh install has no config.json to turn it on. The other behavior flags
-  // stay opt-in.
+  // fresh install has no config.json to turn it on. A window whose reset has
+  // passed reads 0% by default too, so no session shows a figure from a window
+  // that is over; the daemon stays opt-in.
   assert.equal(DEFAULT_CONFIG.display.oauthUsagePoll, true);
-  assert.equal(DEFAULT_CONFIG.display.idleUsageReset, false);
+  assert.equal(DEFAULT_CONFIG.display.idleUsageReset, true);
+  assert.equal(mergeConfig({ display: { idleUsageReset: false } }).display.idleUsageReset, false);
   assert.equal(DEFAULT_CONFIG.daemon.enabled, false);
 });
 
@@ -1301,7 +1304,7 @@ test('mergeConfig defaults showAuth to true when neither showAuth nor showPlan s
 test('enhanced defaults lock (0.4.0 product surface)', () => {
   const d = DEFAULT_CONFIG.display;
   // 0.4.0: ship the rich compact look out of the box (matches the reference HUD)
-  assert.equal(DEFAULT_CONFIG.lineLayout, 'compact');
+  assert.equal(DEFAULT_CONFIG.lineLayout, 'pills');
   assert.equal(DEFAULT_CONFIG.showSeparators, true);
   assert.equal(d.contextValue, 'both');
   assert.equal(d.showConfigCounts, true);   // CLAUDE.md / MCPs / hooks

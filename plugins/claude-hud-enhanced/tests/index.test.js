@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -501,6 +502,7 @@ test("main includes usageData from stdin when available", async () => {
   let externalCalls = 0;
 
   await main({
+    now: () => 1709990000000,
     readStdin: async () => makeStdin({
       rate_limits: {
         five_hour: { used_percentage: 49.6, resets_at: 1710000000 },
@@ -589,6 +591,7 @@ test("main prefers stdin usage over external usage fallback", async () => {
   let externalCalls = 0;
 
   await main({
+    now: () => 1709990000000,
     readStdin: async () => makeStdin({
       rate_limits: {
         five_hour: { used_percentage: 21.9, resets_at: 1710000000 },
@@ -627,6 +630,7 @@ test("main appends external balance label to stdin usage when snapshot path is c
   let externalCalls = 0;
 
   await main({
+    now: () => 1709990000000,
     readStdin: async () => makeStdin({
       rate_limits: {
         five_hour: { used_percentage: 21.9, resets_at: 1710000000 },
@@ -669,6 +673,7 @@ test("main fills missing seven-day usage from external snapshot", async () => {
   let externalCalls = 0;
 
   await main({
+    now: () => 1709990000000,
     readStdin: async () => makeStdin({
       rate_limits: {
         five_hour: { used_percentage: 21.9, resets_at: 1710000000 },
@@ -889,6 +894,7 @@ test("main merges scoped windows from the external snapshot when stdin lacks the
   const scopedWindows = [{ label: "Fable", percent: 89, resetAt: new Date("2026-04-27T12:00:00.000Z") }];
 
   await main({
+    now: () => 1709990000000,
     readStdin: async () => makeStdin({
       rate_limits: {
         five_hour: { used_percentage: 49.6, resets_at: 1710000000 },
@@ -922,6 +928,7 @@ test("main prefers stdin scoped windows over the external snapshot", async () =>
   let renderedContext;
 
   await main({
+    now: () => 1709990000000,
     readStdin: async () => makeStdin({
       rate_limits: {
         five_hour: { used_percentage: 49.6, resets_at: 1710000000 },

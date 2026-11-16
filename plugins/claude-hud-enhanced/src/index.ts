@@ -1,30 +1,35 @@
-import { readStdin, getUsageFromStdin } from "./stdin.js";
+import { readStdin, getUsageFromStdin, shouldHideUsage } from "./stdin.js";
 import { applyIdleUsageReset } from "./idle-usage-reset.js";
 import { parseTranscript } from "./transcript.js";
 import { render } from "./render/index.js";
 import { countConfigs } from "./config-reader.js";
 import type { getGitStatus } from "./git.js";
-import { getGitStatusCached } from "./git-cache.js";
+import { findGitDir, getGitStatusCached } from "./git-cache.js";
 import { getJjStatus, isJjRepo } from "./jj.js";
 import { loadConfig } from "./config.js";
 import { parseExtraCmdArg, runExtraCmd } from "./extra-cmd.js";
+import { extraSpend, extraSpendLabel } from "./extra-usage.js";
 import { getClaudeCodeVersion } from "./version.js";
 import { getMemoryUsage } from "./memory.js";
 import { readAuthInfo } from "./auth.js";
 import { resolveEffortLevel } from "./effort.js";
 import { applyContextWindowFallback } from "./context-cache.js";
 import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
-import { resolveUsage, defaultSnapshotFs } from "./usage-hybrid.js";
+import { observeStdinUsage, resolveUsage, defaultSnapshotFs } from "./usage-hybrid.js";
 import { getLockPath } from "./usage-snapshot.js";
 import { setLanguage, t } from "./i18n/index.js";
 import { tryDaemonRender } from "./daemon-client.js";
 import type { RenderContext, StdinData } from "./types.js";
 import type { GitStatus } from "./git.js";
 import type { HudConfig } from "./config.js";
+import { prFromTitle, resolvePrStatus, type PrPaths, type PrRequest } from "./pr-status.js";
+import { readRunningSubagents } from "./subagents.js";
+import { ensurePrivateDir } from "./utils/cache-file.js";
+import { getClaudeConfigDir } from "./claude-config-dir.js";
 
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 import { fileURLToPath } from "node:url";
-import { realpathSync, existsSync, rmSync } from "node:fs";
+import { realpathSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import * as os from "node:os";
 import * as nodePath from "node:path";
@@ -47,6 +52,8 @@ export type MainDeps = {
   readAuthInfo: typeof readAuthInfo;
   applyContextWindowFallback: typeof applyContextWindowFallback;
   render: typeof render;
+  readRunningSubagents: typeof readRunningSubagents;
+  spawnPrRefresher: (request: PrRequest, paths: PrPaths) => void;
   now: () => number;
   log: (...args: unknown[]) => void;
   /**
@@ -70,7 +77,7 @@ export type MainDeps = {
  * docs/oauth-usage-poll-handoff.md; if it is absent this is a silent no-op, so
  * the oauthUsagePoll flag degrades gracefully to plain stdin behavior.
  */
-function refresherScriptPath(): string | null {
+function refresherScriptPath(name: string = "refresh-usage"): string | null {
   const here = nodePath.dirname(fileURLToPath(import.meta.url));
   // Why three candidates: the statusLine entry runs `src/index.ts` under bun
   // (the README's install line), so `here` is src/ and the sibling
@@ -78,9 +85,9 @@ function refresherScriptPath(): string | null {
   // disabled the OAuth poll for every such install (5h bar missing, weekly
   // frozen). dist/ is preferred when built; the .ts source is fine under bun.
   const candidates = [
-    nodePath.join(here, "refresh-usage.js"),
-    nodePath.join(here, "..", "dist", "refresh-usage.js"),
-    nodePath.join(here, "refresh-usage.ts"),
+    nodePath.join(here, `${name}.js`),
+    nodePath.join(here, "..", "dist", `${name}.js`),
+    nodePath.join(here, `${name}.ts`),
   ];
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
@@ -106,10 +113,56 @@ function spawnUsageRefresher(_homeDir: string): void {
         /* stale-lock reclaim will recover */
       }
     });
+    if (typeof child.pid === "number") {
+      try {
+        writeFileSync(getLockPath(os.homedir()), String(child.pid), { encoding: "utf8", mode: 0o600 });
+      } catch {
+        child.unref();
+        return;
+      }
+    }
     child.unref();
   } catch {
     /* never break the HUD over a failed spawn */
   }
+}
+
+function spawnPrRefresher(request: PrRequest, paths: PrPaths): void {
+  const release = (): void => {
+    try {
+      rmSync(paths.lock, { force: true });
+    } catch {
+      return;
+    }
+  };
+  try {
+    const script = refresherScriptPath("refresh-pr");
+    if (!script) {
+      release();
+      return;
+    }
+    const child = spawn(process.execPath, [script, JSON.stringify({ request, paths })], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: process.env,
+    });
+    child.on("error", release);
+    child.unref();
+  } catch {
+    release();
+  }
+}
+
+function isApiBilled(stdin: StdinData, env: NodeJS.ProcessEnv = process.env): boolean {
+  return (
+    shouldHideUsage(stdin)
+    || (env.ANTHROPIC_API_KEY ?? "").trim() !== ""
+    || (env.ANTHROPIC_AUTH_TOKEN ?? "").trim() !== ""
+    || env.CLAUDE_CODE_USE_BEDROCK === "1"
+    || env.CLAUDE_CODE_USE_VERTEX === "1"
+    || env.CLAUDE_CODE_USE_FOUNDRY === "1"
+  );
 }
 
 export function isHudDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -169,6 +222,8 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     readAuthInfo,
     applyContextWindowFallback,
     render,
+    readRunningSubagents,
+    spawnPrRefresher,
     now: () => Date.now(),
     log: console.log,
     tryDaemonRender,
@@ -226,7 +281,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       lastCompactPostTokens: transcript.lastCompactPostTokens,
     });
 
-    const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle } =
+    const { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, claudeTheme } =
       configCounts;
     // resolveVcsStatus keeps our enabled-gate (it checks
     // config.gitStatus.enabled before spawning) and routes through
@@ -283,7 +338,12 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
           spawnRefresher: spawnUsageRefresher,
           // Skip lock churn entirely while the owner-supplied refresher script
           // is absent (see docs/oauth-usage-poll-handoff.md).
-          canRefresh: () => refresherScriptPath() !== null,
+          canRefresh: () => refresherScriptPath() !== null && !isApiBilled(stdin),
+          stdinSeenAt: observeStdinUsage(
+            stdin.transcript_path || stdin.session_id,
+            stdinUsage,
+            deps.now(),
+          ),
         });
       }
 
@@ -291,6 +351,11 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       // over while idle (reset time passed) as ~0% instead of a stale value.
       if (config.display.idleUsageReset) {
         usageData = applyIdleUsageReset(usageData, deps.now());
+      }
+
+      const spend = config.lineLayout === "pills" ? null : extraSpend(usageData);
+      if (usageData && spend && usageData.balanceLabel == null) {
+        usageData = { ...usageData, balanceLabel: `extra ${extraSpendLabel(spend)}` };
       }
     }
 
@@ -316,6 +381,32 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
         ? deps.readAuthInfo()
         : null;
 
+    const isPills = config.lineLayout === "pills";
+    const pillAgents =
+      isPills && config.display.showAgents !== false
+        ? await deps.readRunningSubagents(
+            transcriptPath,
+            transcript.agents,
+            (dir) => deps.getGitStatus(dir),
+            stdin.session_id && /^[A-Za-z0-9-]+$/.test(stdin.session_id)
+              ? nodePath.join(getClaudeConfigDir(os.homedir()), "usage-band", `sa-${stdin.session_id}.json`)
+              : undefined,
+          )
+        : undefined;
+    const prStatus =
+      isPills && config.display.pillPr && stdin.cwd && gitStatus && gitStatus.vcs !== "jj" && findGitDir(stdin.cwd) !== null
+        ? resolvePrStatus(
+            {
+              cwd: stdin.cwd,
+              session: transcriptPath,
+              branch: gitStatus.branch,
+              named: prFromTitle(stdin.session_name || transcript.sessionName),
+              sessionPr: transcript.sessionPr ?? null,
+            },
+            { now: deps.now, ensureDir: ensurePrivateDir, spawnRefresher: deps.spawnPrRefresher },
+          )
+        : null;
+
     const ctx: RenderContext = {
       stdin,
       transcript,
@@ -330,6 +421,9 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       config,
       extraLabel,
       outputStyle,
+      claudeTheme,
+      prStatus,
+      pillAgents,
       claudeCodeVersion,
       effortLevel: effortInfo?.level,
       effortSymbol: effortInfo?.symbol,

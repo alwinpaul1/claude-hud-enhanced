@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -36,9 +37,11 @@ test("CLI renders expected output for a basic transcript", async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), "claude-hud-home-"));
   // Use a fixed 3-level path for deterministic test output
   const projectDir = path.join(homeDir, "dev", "apps", "my-project");
-  await import("node:fs/promises").then((fs) =>
-    fs.mkdir(projectDir, { recursive: true }),
-  );
+  const hudDir = path.join(homeDir, ".claude", "plugins", "claude-hud-enhanced");
+  await import("node:fs/promises").then(async (fs) => {
+    await fs.mkdir(projectDir, { recursive: true });
+    await fs.mkdir(hudDir, { recursive: true });
+  });
   try {
     const stdin = JSON.stringify({
       model: { display_name: "Opus" },
@@ -49,14 +52,16 @@ test("CLI renders expected output for a basic transcript", async (t) => {
       transcript_path: fixturePath,
       cwd: projectDir,
     });
+    const run = () =>
+      spawnSync("node", ["dist/index.js"], {
+        cwd: path.resolve(process.cwd()),
+        input: stdin,
+        encoding: "utf8",
+        env: { ...process.env, HOME: homeDir, LANG: "C", COLUMNS: "200" },
+      });
 
-    const result = spawnSync("node", ["dist/index.js"], {
-      cwd: path.resolve(process.cwd()),
-      input: stdin,
-      encoding: "utf8",
-      env: { ...process.env, HOME: homeDir, LANG: "C" },
-    });
-
+    await writeFile(path.join(hudDir, "config.json"), JSON.stringify({ lineLayout: "compact" }), "utf8");
+    const result = run();
     if (skipIfSpawnBlocked(result, t)) return;
 
     assert.equal(result.error, undefined, result.error?.message);
@@ -69,6 +74,14 @@ test("CLI renders expected output for a basic transcript", async (t) => {
       return;
     }
     assert.equal(normalized, expected);
+
+    await rm(path.join(hudDir, "config.json"), { force: true });
+    const pills = run();
+    assert.equal(pills.status, 0, pills.stderr || "non-zero exit");
+    assert.equal(
+      stripAnsi(pills.stdout).split("\n")[0],
+      "\uE0B6 Opus \u2502 \u25D4 \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 23% 45.0k/200.0k \uE0B4 \uE0B6 \uF07B my-project \uE0B4",
+    );
   } finally {
     await rm(homeDir, { recursive: true, force: true });
   }

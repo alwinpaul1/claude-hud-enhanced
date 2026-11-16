@@ -14,6 +14,8 @@ import { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./exte
 import type { StdinData } from "./types.js";
 import type { GitStatus } from "./git.js";
 import type { HudConfig } from "./config.js";
+import { type PrPaths, type PrRequest } from "./pr-status.js";
+import { readRunningSubagents } from "./subagents.js";
 export { getUsageFromExternalSnapshot, writeExternalUsageSnapshot } from "./external-usage.js";
 export type MainDeps = {
     readStdin: typeof readStdin;
@@ -33,6 +35,8 @@ export type MainDeps = {
     readAuthInfo: typeof readAuthInfo;
     applyContextWindowFallback: typeof applyContextWindowFallback;
     render: typeof render;
+    readRunningSubagents: typeof readRunningSubagents;
+    spawnPrRefresher: (request: PrRequest, paths: PrPaths) => void;
     now: () => number;
     log: (...args: unknown[]) => void;
     /**

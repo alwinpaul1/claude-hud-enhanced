@@ -281,6 +281,7 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 
 | Option | Config |
 |--------|--------|
+| Pills (default) | `lineLayout: "pills"` |
 | Expanded | `lineLayout: "expanded", showSeparators: false` |
 | Compact | `lineLayout: "compact", showSeparators: false` |
 | Compact + Separators | `lineLayout: "compact", showSeparators: true` |

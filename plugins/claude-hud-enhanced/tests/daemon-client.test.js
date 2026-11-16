@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -5,7 +6,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { tryDaemonRender } from '../dist/daemon-client.js';
-import { encodeMessage, createLineDecoder, getIpcPath, getPluginVersion } from '../dist/daemon-ipc.js';
+import { encodeMessage, createLineDecoder, getIpcPath, getBuildId } from '../dist/daemon-ipc.js';
 
 const STDIN = { model: { display_name: 'T' }, cwd: '/tmp' };
 
@@ -42,7 +43,7 @@ test('happy path: returns the daemon output', async () => {
   const socketPath = getIpcPath(home);
   const server = await stubServer(socketPath, (req) => ({
     v: 1,
-    pluginVersion: getPluginVersion(),
+    pluginVersion: getBuildId(),
     output: `rendered:${req.stdin.model.display_name}`,
     willExit: false,
   }));

@@ -30,6 +30,7 @@ export declare function getPidPath(homeDir?: string): string;
  * distinct from version.ts, which resolves the `claude` CLI's version.
  */
 export declare function getPluginVersion(): string;
+export declare function getBuildId(): string;
 /**
  * Newline-delimited JSON framing. JSON.stringify escapes literal newlines
  * inside string values, so a serialized message can never contain a raw

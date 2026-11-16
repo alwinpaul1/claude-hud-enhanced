@@ -3,7 +3,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createDebug } from './debug.js';
-import { IPC_PROTOCOL_VERSION, createLineDecoder, encodeMessage, getIpcPath, getPidPath, getPluginVersion, } from './daemon-ipc.js';
+import { IPC_PROTOCOL_VERSION, createLineDecoder, encodeMessage, getIpcPath, getPidPath, getBuildId, } from './daemon-ipc.js';
 import { main } from './index.js';
 import { render } from './render/index.js';
 import { ensurePrivateDir } from './utils/cache-file.js';
@@ -116,7 +116,7 @@ export function runDaemon(options = {}) {
     const idleTimeoutMs = options.idleTimeoutMs ?? DAEMON_IDLE_EXIT_MS;
     const handlerTimeoutMs = options.handlerTimeoutMs ?? HANDLER_TIMEOUT_MS;
     const socketCheckMs = options.socketCheckMs ?? SOCKET_CHECK_MS;
-    const pluginVersion = options.pluginVersion ?? getPluginVersion();
+    const pluginVersion = options.pluginVersion ?? getBuildId();
     const handleRequest = options.handleRequest ?? defaultHandleRequest;
     const exit = options.exit ?? ((code) => process.exit(code));
     const pidPath = options.socketPath ? null : getPidPath(homeDir); // advisory only

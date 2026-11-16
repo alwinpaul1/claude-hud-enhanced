@@ -11,7 +11,7 @@ import {
   encodeMessage,
   getIpcDir,
   getIpcPath,
-  getPluginVersion,
+  getBuildId,
   getSpawnLockPath,
 } from './daemon-ipc.js';
 import type { StdinData } from './types.js';
@@ -36,6 +36,7 @@ export interface DaemonClientDeps {
   /** Injected for tests; default spawns the real detached daemon. */
   spawnDaemon?: (entryPath: string, homeDir: string) => void;
   now?: () => number;
+  pluginVersion?: string;
 }
 
 function requestOnce(
@@ -103,6 +104,8 @@ function requestOnce(
         if (
           res != null &&
           res.v === IPC_PROTOCOL_VERSION &&
+          res.pluginVersion === request.pluginVersion &&
+          res.willExit !== true &&
           typeof res.output === 'string'
         ) {
           finish({ kind: 'ok', output: res.output }, socket);
@@ -235,7 +238,7 @@ export async function tryDaemonRender(
 
   const request: DaemonRequest = {
     v: IPC_PROTOCOL_VERSION,
-    pluginVersion: getPluginVersion(),
+    pluginVersion: deps.pluginVersion ?? getBuildId(),
     stdin,
     cwd: stdin.cwd ?? process.cwd(),
     env: snapshotClientEnv(),

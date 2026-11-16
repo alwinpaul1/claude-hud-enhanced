@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { getAdaptiveBarWidth, getTerminalWidth } from '../dist/utils/terminal.js';

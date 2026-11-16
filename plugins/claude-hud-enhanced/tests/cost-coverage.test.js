@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { estimateSessionCost, resolveSessionCost, formatUsd } from '../dist/cost.js';

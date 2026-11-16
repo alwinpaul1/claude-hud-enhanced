@@ -109,6 +109,16 @@ export function getPluginVersion(): string {
   }
 }
 
+export function getBuildId(): string {
+  const version = getPluginVersion();
+  try {
+    const stat = fs.statSync(fileURLToPath(import.meta.url));
+    return `${version}+${Math.floor(stat.mtimeMs)}.${stat.size}`;
+  } catch {
+    return version;
+  }
+}
+
 /**
  * Newline-delimited JSON framing. JSON.stringify escapes literal newlines
  * inside string values, so a serialized message can never contain a raw

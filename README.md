@@ -198,7 +198,11 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `lineLayout` | string | `expanded` | `compact` (single session line) or `expanded` (multi-element) |
+| `lineLayout` | string | `pills` | `pills` (one row of coloured pills, the default), `compact` (single session line) or `expanded` (multi-element) |
+| `display.pillTheme` | string | `auto` | Pill palette: `auto` (light when Claude Code's `theme` setting starts with `light`, dark otherwise), `dark` or `light` |
+| `display.pillCaps` | boolean | true | Rounded pill ends (Powerline glyphs U+E0B6/U+E0B4, needs a Nerd Font); `false` draws square pills |
+| `display.pillPr` | boolean | true | Look up the branch's pull request, its checks and its base with `gh` in a detached background refresher |
+| `display.pillMaxRows` | number \| null | null | Most rows the main pill band may take. When the pills would wrap past it they share one row without their bars; `null` lets them wrap freely |
 | `showSeparators` | boolean | true | Separator between session and activity lines |
 | `pathLevels` | 1-3 | 1 | Directory levels to show in project path |
 | `gitStatus.enabled` | boolean | true | Show git branch in HUD |
@@ -210,7 +214,7 @@ You can also edit the config file directly at `~/.claude/plugins/claude-hud-enha
 | `display.showAuth` | boolean | true | Show plan/auth label from Claude Code login |
 | `display.showDuration` | boolean | true | Show session duration |
 | `display.showUsage` | boolean | true | Show 5h/7d usage from stdin `rate_limits` |
-| `display.idleUsageReset` | boolean | false | While idle, show a window as reset (~0%) once its reset time passes (local-only) |
+| `display.idleUsageReset` | boolean | true | Show a window as reset (0%) once its reset time passes, and ask the usage API for the new window at once |
 | `display.oauthUsagePoll` | boolean | true | Hybrid usage sync (required for the Fable weekly meter): idle terminals pick up usage from active ones via a shared per-profile snapshot (local), and a detached OAuth refresher keeps usage live across devices — while idle **and** during long conversations (reads your Claude Code OAuth token read-only, calls Anthropic's `oauth/usage` endpoint; 60s idle gate, 120s live-read gate, single-flight, backoff) |
 | `daemon.enabled` | boolean | false | **Experimental, macOS/Linux only.** Warm daemon: a long-lived per-profile process serves renders over a local socket so each repaint skips the per-process work (transcript parse, config load, git). Any daemon failure falls back to the normal inline render — it can only make repaints faster, never break them. See `docs/daemon-mode-design.md` |
 | `display.sevenDayThreshold` | number | 0 | Min 7d % before weekly shows (0 = always) |
@@ -250,9 +254,9 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 - **Usage** — native Claude Code stdin `rate_limits` (5h / 7d), not a separate Anthropic usage API call
 - **Plan / auth** — `auth.ts` reads the Claude Code oauth account profile in `{CLAUDE_CONFIG_DIR}.json` (e.g. `~/.claude.json`)
 
-**Idle usage refresh (`display.idleUsageReset`, opt-in):** Claude Code only refreshes `rate_limits` on stdin when you send a message, so between messages the numbers are frozen. With this on, once a window's reset time has passed while you're idle the HUD shows that window as reset (~0%) and rolls its reset forward — the true value, since your own usage on this machine can't rise without a message. It stays **local-only** (no network, no API calls). Scope: it only zeroes on rollover — it does not reflect usage burned on *other* devices while this machine is idle, and the percentage between resets is the last stdin snapshot.
+**Idle usage refresh (`display.idleUsageReset`, on by default):** Claude Code only refreshes `rate_limits` on stdin when you send a message, so between messages the numbers are frozen. With this on, once a window's reset time has passed while you're idle the HUD shows that window as reset (~0%) and rolls its reset forward — the true value, since your own usage on this machine can't rise without a message. It stays **local-only** (no network, no API calls). Scope: it only zeroes on rollover — it does not reflect usage burned on *other* devices while this machine is idle, and the percentage between resets is the last stdin snapshot.
 
-**Hybrid usage sync (`display.oauthUsagePoll`, on by default since 0.8.3):** keeps a shared per-profile snapshot (`usage-snapshot.json` in the HUD data dir). When any active terminal's stdin advances the usage numbers, the snapshot is updated — and other, idle terminals on the same machine serve that fresher value instead of their frozen stdin. Fully local. Idle is detected as "stdin stopped advancing" (Claude Code re-sends frozen values while idle). Two gates then gate a detached OAuth refresher (`dist/refresh-usage.js`), which fetches the account-wide numbers so usage burned on **other devices** shows up too: an **idle gate** (snapshot unwritten for 60s) and a **live-read gate** (last OAuth read older than 120s). The second one matters because stdin carries only *this* session's view from response headers and re-stamps the snapshot on every message — with an idle gate alone, a long conversation never refreshes at all, and usage burned elsewhere stays invisible until the session falls quiet. Privacy/scope notes: it reads your Claude Code OAuth token **read-only** (macOS Keychain, else `.credentials.json`) and sends it only to its issuer — Anthropic's (undocumented) `api.anthropic.com/api/oauth/usage` endpoint, the same one ccstatusline uses; at most ~1 request per 60s per profile machine-wide (single-flight lock + gates + `Retry-After`-aware backoff), never on the render path, and `HTTPS_PROXY` is not honored. It is on by default because the Fable weekly meter depends on it: Claude Code does not send model-scoped windows on stdin, so without the poll Fable never shows. It is the one exception to the local-only rule; set `display.oauthUsagePoll: false` to stay fully local.
+**Hybrid usage sync (`display.oauthUsagePoll`, on by default since 0.8.3):** keeps a shared per-profile snapshot (`usage-snapshot.json` in the HUD data dir). When any active terminal's stdin advances the usage numbers, the snapshot is updated — and other, idle terminals on the same machine serve that fresher value instead of their frozen stdin. Fully local. Idle is detected as "stdin stopped advancing" (Claude Code re-sends frozen values while idle). Two gates then gate a detached OAuth refresher (`dist/refresh-usage.js`), which fetches the account-wide numbers so usage burned on **other devices** shows up too: an **idle gate** (snapshot unwritten for 60s) and a **live-read gate** (last OAuth read older than 60s); a window whose reset time has passed since the last read opens both at once. Inside one window the reading observed last wins, so an idle terminal never puts its old figure back. A window the API reports as absent (a plan with no 5h window) is not drawn; when the API has no personal windows at all (some Team and Enterprise accounts, or a 403) the bars fall back to stdin, and after a 403 polling pauses for an hour. Two profiles signed in to the same account share one request (`~/.cache/claude-hud-enhanced/accounts/`); different accounts never share. `429` waits exactly `Retry-After`, or 1 minute doubling to 15 with up to 25% jitter when there is none; a rejected token waits 5 minutes and a `403` an hour. API-key, Bedrock and Vertex sessions are never polled. In the pill row a figure nobody has confirmed for 150 seconds is dimmed and dated (`~16% · 4m ago`), a window past its reset reads `~0% · reset`, a plan with no such window shows `5h — no limit`, a model's weekly window gets its own pill (`Fable 7d 30%`), and while extra usage is being spent a gold `$ 12.40/$50` pill follows the weekly ones (the older layouts show `extra $12.40/$50`). No pill is ever hidden because its figure is old. The second one matters because stdin carries only *this* session's view from response headers and re-stamps the snapshot on every message — with an idle gate alone, a long conversation never refreshes at all, and usage burned elsewhere stays invisible until the session falls quiet. Privacy/scope notes: it reads your Claude Code OAuth token **read-only** (macOS Keychain, else `.credentials.json`) and sends it only to its issuer — Anthropic's (undocumented) `api.anthropic.com/api/oauth/usage` endpoint, the same one ccstatusline uses; at most ~1 request per 60s per profile machine-wide (single-flight lock + gates + `Retry-After`-aware backoff), never on the render path, and `HTTPS_PROXY` is not honored. It is on by default because the Fable weekly meter depends on it: Claude Code does not send model-scoped windows on stdin, so without the poll Fable never shows. It is the one exception to the local-only rule; set `display.oauthUsagePoll: false` to stay fully local.
 
 **Troubleshooting:** If usage doesn't appear:
 - Ensure you're logged in with a Pro/Max/Team account (not API-only)
@@ -262,12 +266,18 @@ To disable usage display, set `display.showUsage` to `false` in your config.
 
 ### Layout Options
 
+**Pills** (default, `lineLayout: "pills"`) — the usage-band row: model, effort and context, the 5h and 7d windows, then the worktree and branch. Each pill has its own background. On a narrow pane the git pill moves to its own row, then the bars drop, then the pills stack:
+```
+ Opus 5.5 medium │ ◔ ╸━━━━━━━ 7% 69.0k/1.0M    ◷ 5h ━━━╸━━━━ 42% │ 2:10 PM    ▦ 7d ╸━━━━━━━ 8% │ Sat 2:00 AM     claude-hud-enhanced │  main ~6 ?3
+```
+The folder and branch icons are Nerd Font glyphs. Git marks: `↑` ahead, `↓` behind, `+` staged, `~` modified, `?` untracked, `!` conflicts, `✓` clean. A running subagent gets a row of its own (`↳ type · model effort`).
+
 **Compact** (`lineLayout: "compact"`) — single session line:
 ```
 [Opus] ████░░░░░░ 42% (45k/200k) | my-project git:(main) | ⏱️ 5m
 ```
 
-**Expanded** (default, `lineLayout: "expanded"`) — multi-element layout with separators:
+**Expanded** (`lineLayout: "expanded"`) — multi-element layout with separators:
 ```
 [Opus] │ my-project
 Context ████░░░░░░ 42% (45k/200k)
@@ -320,7 +330,7 @@ Context ████░░░░░░ 42% (45k/200k)
 
 **Config not applying?**
 - Check for JSON syntax errors: invalid JSON silently falls back to defaults
-- Ensure valid values: `pathLevels` must be 1, 2, or 3; `lineLayout` must be `compact` or `expanded`
+- Ensure valid values: `pathLevels` must be 1, 2, or 3; `lineLayout` must be `pills`, `compact` or `expanded`
 - Delete config and run `/claude-hud-enhanced:configure` to regenerate
 
 **Git status missing?**

@@ -1,5 +1,6 @@
 import type { Language } from './i18n/types.js';
-export type LineLayoutType = 'compact' | 'expanded';
+export type LineLayoutType = 'compact' | 'expanded' | 'pills';
+export type PillThemeMode = 'auto' | 'dark' | 'light';
 export type AutocompactBufferMode = 'enabled' | 'disabled';
 export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
 export type UsageValueMode = 'percent' | 'remaining';
@@ -118,6 +119,10 @@ export interface HudConfig {
         usageBarEnabled: boolean;
         showResetLabel: boolean;
         usageCompact: boolean;
+        pillTheme: PillThemeMode;
+        pillCaps: boolean;
+        pillPr: boolean;
+        pillMaxRows: number | null;
         showTools: boolean;
         showSkills: boolean;
         showMcp: boolean;

@@ -1,4 +1,18 @@
 import * as fs from 'node:fs';
+export interface UsageSnapshotWindow {
+    used_percentage: number | null;
+    resets_at: string | null;
+    seen_at?: string | null;
+}
+export interface ExtraUsage {
+    enabled: boolean;
+    utilization: number | null;
+    used: number | null;
+    limit: number | null;
+    currency?: string;
+    decimals?: number;
+    reached?: boolean;
+}
 /**
  * Persisted usage snapshot shared by the hybrid resolver (writer on interaction)
  * and the detached OAuth refresher (writer while idle). Lives in the per-profile
@@ -17,14 +31,8 @@ export interface UsageSnapshot {
      */
     oauth_updated_at: string | null;
     source: 'stdin' | 'oauth';
-    five_hour: {
-        used_percentage: number | null;
-        resets_at: string | null;
-    };
-    seven_day: {
-        used_percentage: number | null;
-        resets_at: string | null;
-    };
+    five_hour: UsageSnapshotWindow;
+    seven_day: UsageSnapshotWindow;
     /**
      * Model-scoped weekly windows (e.g. Fable), in Claude Code's own stdin
      * `rate_limits.model_scoped` shape so both writers share one parser
@@ -40,6 +48,8 @@ export interface UsageSnapshot {
     status: 'ok' | 'rate_limited' | 'auth_expired' | 'error';
     /** Refresher-owned: earliest time the poller should try again (backoff), or null. */
     next_attempt_at: string | null;
+    failure_count?: number;
+    extra_usage?: ExtraUsage;
 }
 export declare const SNAPSHOT_FILENAME = "usage-snapshot.json";
 export declare const LOCK_FILENAME = ".usage-snapshot.lock";

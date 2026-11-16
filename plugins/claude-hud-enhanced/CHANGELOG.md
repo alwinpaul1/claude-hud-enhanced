@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.9.0] - 2026-11-16
+
+### Added
+
+- **Pill row is the new default layout** (`lineLayout: "pills"`): rounded pills
+  for model + effort + context, 5h and 7d usage with reset times, a model weekly
+  pill (`Fable 7d`), extra usage credits while they are being spent
+  (`$ 12.40/$50`), and folder + git (worktree, branch, `↑↓ +~?!`, PR number,
+  state and checks). Light and dark palettes (`display.pillTheme`), rounded caps
+  (`display.pillCaps`, needs a Nerd Font), PR lookup via `gh`
+  (`display.pillPr`), optional `display.pillMaxRows`.
+- Running subagents get their own row with type, model, effort and context.
+- The row reflows to the pane width: pills flow as many per row as fit, git
+  takes the last row, and anything still too wide is cut with `…` so no row
+  ever wraps.
+- `compact` and `expanded` stay available. A `lineLayout` (or legacy `layout`)
+  already in `config.json` is kept; only configs without one get pills.
+
+### Changed
+
+- **Usage is never shown stale or hidden.** The newest API reading wins; a
+  session's own stdin only moves a figure forward; a passed reset reads 0% and
+  triggers a refresh; a figure unconfirmed for 150 s is dimmed with its age
+  (`~16% · 4m ago`). A plan with no 5h window shows `5h — no limit` instead of
+  an invented 0%.
+- **One usage request per account per minute**, shared across sessions and
+  profiles on the same account (`~/.cache/claude-hud-enhanced/accounts/`).
+  `Retry-After` is honoured exactly; otherwise 1 min doubling to 15 min with
+  jitter. 401 waits 5 min, 403 an hour with stdin fallback. API-key, Bedrock
+  and Vertex sessions are never polled.
+- `display.idleUsageReset` defaults to `true`; the live-read gate is 60 s.
+
+### Fixed
+
+- An old warm daemon could paint the previous layout once after an update.
+- A refresher lock left by a dead process blocked refreshes for 60 s.
+- Git cache entries from an older build were trusted (cache version 2).
+- Tests no longer read or write the real `~/.claude*` directories and pass
+  with `CLAUDE_CONFIG_DIR` set.
+
 ## [0.8.3] - 2026-09-27
 
 ### Changed

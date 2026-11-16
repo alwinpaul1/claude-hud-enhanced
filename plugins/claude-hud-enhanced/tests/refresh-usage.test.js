@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -11,7 +12,18 @@ import {
   keychainAccountCandidates,
   readKeychainTokenForAccounts,
 } from '../dist/refresh-usage.js';
-import { USAGE_TTL_MS, BACKOFF_RATE_LIMIT_MS } from '../dist/usage-hybrid.js';
+import {
+  USAGE_TTL_MS,
+  BACKOFF_AUTH_MAX_MS,
+  BACKOFF_AUTH_MS,
+  BACKOFF_ERROR_MAX_MS,
+  BACKOFF_ERROR_MS,
+  BACKOFF_FORBIDDEN_MAX_MS,
+  BACKOFF_FORBIDDEN_MS,
+  BACKOFF_JITTER,
+  BACKOFF_RATE_LIMIT_MAX_MS,
+  BACKOFF_RATE_LIMIT_MS,
+} from '../dist/usage-hybrid.js';
 
 const NOW = Date.UTC(2026, 6, 19, 12, 0, 0);
 const ISO = (ms) => new Date(ms).toISOString();
@@ -62,10 +74,10 @@ test('parseUsageResponse maps five_hour/seven_day buckets', () => {
   });
 });
 
-test('parseUsageResponse treats a null bucket as 0% with no reset (Enterprise)', () => {
+test('parseUsageResponse leaves a null bucket absent instead of inventing 0%', () => {
   const body = JSON.stringify({ five_hour: null, seven_day: { utilization: 10, resets_at: null } });
   assert.deepEqual(parseUsageResponse(body), {
-    five_hour: { used_percentage: 0, resets_at: null },
+    five_hour: { used_percentage: null, resets_at: null },
     seven_day: { used_percentage: 10, resets_at: null },
   });
 });
@@ -78,11 +90,16 @@ test('parseUsageResponse fills a missing bucket with nulls when the other exists
   });
 });
 
-test('parseUsageResponse rejects bodies with no usable window', () => {
-  assert.equal(parseUsageResponse(JSON.stringify({})), null);
-  assert.equal(parseUsageResponse(JSON.stringify({ five_hour: 'nope' })), null);
+test('parseUsageResponse rejects what is not a usage body and reads an empty one as no windows', () => {
+  const none = { five_hour: { used_percentage: null, resets_at: null }, seven_day: { used_percentage: null, resets_at: null } };
   assert.equal(parseUsageResponse('not json'), null);
   assert.equal(parseUsageResponse(JSON.stringify(null)), null);
+  assert.equal(parseUsageResponse(JSON.stringify([])), null);
+  assert.equal(parseUsageResponse(JSON.stringify('text')), null);
+  assert.equal(parseUsageResponse(JSON.stringify({ error: { type: 'permission_error' } })), null);
+  assert.deepEqual(parseUsageResponse(JSON.stringify({})), none);
+  assert.deepEqual(parseUsageResponse(JSON.stringify({ five_hour: 'nope' })), none);
+  assert.deepEqual(parseUsageResponse(JSON.stringify({ five_hour: null, seven_day: null })), none);
 });
 
 test('parseUsageResponse nulls non-numeric utilization / non-string resets_at', () => {
@@ -123,9 +140,11 @@ test('successSnapshot stamps updated_at=now, source=oauth, clears backoff', () =
     updated_at: ISO(NOW),
     oauth_updated_at: ISO(NOW),
     source: 'oauth',
-    ...windows,
+    five_hour: { ...windows.five_hour, seen_at: ISO(NOW) },
+    seven_day: { ...windows.seven_day, seen_at: ISO(NOW) },
     status: 'ok',
     next_attempt_at: null,
+    failure_count: 0,
   });
 });
 
@@ -150,9 +169,11 @@ test('failureSnapshot preserves last-good values and does NOT bump updated_at', 
   assert.equal(snap.status, 'error');
 });
 
-test('failureSnapshot backoff: error and auth_expired both ~5min', () => {
-  assert.equal(failureSnapshot(PREV, 'error', NOW).next_attempt_at, ISO(NOW + 5 * 60_000));
-  assert.equal(failureSnapshot(PREV, 'auth_expired', NOW).next_attempt_at, ISO(NOW + 5 * 60_000));
+test('failureSnapshot backoff: a first error waits a minute, a rejected token five', () => {
+  assert.equal(failureSnapshot(PREV, 'error', NOW).next_attempt_at, ISO(NOW + BACKOFF_ERROR_MS));
+  assert.equal(failureSnapshot(PREV, 'auth_expired', NOW).next_attempt_at, ISO(NOW + BACKOFF_AUTH_MS));
+  assert.equal(BACKOFF_ERROR_MS, 60_000);
+  assert.equal(BACKOFF_AUTH_MS, 5 * 60_000);
 });
 
 test('failureSnapshot backoff: 429 honors Retry-After, else its own constant', () => {
@@ -164,10 +185,7 @@ test('failureSnapshot backoff: 429 honors Retry-After, else its own constant', (
     failureSnapshot(PREV, 'rate_limited', NOW, null).next_attempt_at,
     ISO(NOW + BACKOFF_RATE_LIMIT_MS),
   );
-  // Deriving this fallback from USAGE_TTL_MS meant every TTL cut silently
-  // shortened the 429 backoff too — the one backoff a server explicitly asked
-  // for. It is now its own constant.
-  assert.ok(BACKOFF_RATE_LIMIT_MS >= 2 * USAGE_TTL_MS, 'fallback must still clear the gate');
+  assert.ok(BACKOFF_RATE_LIMIT_MS >= USAGE_TTL_MS, 'the fallback is never shorter than the gate');
 });
 
 test('failureSnapshot with no previous snapshot writes null windows and epoch updated_at', () => {

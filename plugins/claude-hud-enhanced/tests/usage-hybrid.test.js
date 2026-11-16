@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
@@ -79,6 +80,15 @@ function snap(overrides = {}) {
     ...overrides,
   };
 }
+
+const windowsOf = (usage) => ({
+  fiveHour: usage.fiveHour,
+  sevenDay: usage.sevenDay,
+  fiveHourResetAt: usage.fiveHourResetAt,
+  sevenDayResetAt: usage.sevenDayResetAt,
+  scopedWindows: usage.scopedWindows,
+  balanceLabel: usage.balanceLabel,
+});
 
 function stdin(overrides = {}) {
   return {
@@ -203,7 +213,7 @@ test('resolveUsage active + newer stdin: persists snapshot, returns stdin', () =
   const fs = makeFs();
   const s = stdin({ fiveHour: 77 });
   const out = resolveUsage(s, true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => {} });
-  assert.equal(out, s);
+  assert.deepEqual(windowsOf(out), windowsOf(s));
   const written = readSnapshot(SNAP_PATH, fs);
   assert.equal(written.source, 'stdin');
   assert.equal(written.five_hour.used_percentage, 77);
@@ -303,7 +313,7 @@ test('resolveUsage frozen stdin: refresher fires once the snapshot goes stale', 
   const later = NOW + USAGE_TTL_MS + 30_000;
   const out = resolveUsage(s, true, deps(later));
   assert.equal(spawned, 1, 'stale snapshot + frozen stdin triggers the refresher');
-  assert.equal(out, s, 'equal stdin/snapshot still renders the stdin values');
+  assert.deepEqual(windowsOf(out), windowsOf(s), 'equal stdin/snapshot still renders the stdin values');
 
   // Next render 300ms later: the lock throttles — no second spawn.
   resolveUsage(s, true, deps(later + 300));
@@ -336,7 +346,7 @@ test('resolveUsage active stdin advance resets the idle clock', () => {
   const s = stdin({ fiveHour: 60 }); // stdin ADVANCED past the snapshot's 50
   const deps = { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ };
   const out = resolveUsage(s, true, deps);
-  assert.equal(out, s, 'advancing stdin is authoritative');
+  assert.deepEqual(windowsOf(out), windowsOf(s), 'advancing stdin is authoritative');
   assert.equal(spawned, 0, 'activity suppresses the refresher even with a stale snapshot');
   assert.equal(readSnapshot(SNAP_PATH, fs).updated_at, ISO(NOW), 'advance stamps updated_at');
 });
@@ -421,7 +431,7 @@ test('resolveUsage active + stale LIVE clock: spawns once and still renders stdi
   }));
   const s = stdin({ fiveHour: 60 }); // stdin ADVANCED past the snapshot's 50
   const out = resolveUsage(s, true, { now: () => NOW, homeDir: HOME, fs, spawnRefresher: () => spawned++ });
-  assert.equal(out, s, 'advancing stdin stays authoritative for THIS render');
+  assert.deepEqual(windowsOf(out), windowsOf(s), 'advancing stdin stays authoritative for THIS render');
   assert.equal(spawned, 1, 'a stale account-wide read refreshes even while active');
 });
 
@@ -496,15 +506,17 @@ test('readSnapshot: accepts an explicitly null oauth_updated_at', () => {
 // --- the invariant the constants must keep -------------------------------
 //
 // The refresher's backoffs exist to stop a FAILING poll from being respawned on
-// nearly every render. That only holds while each backoff comfortably exceeds the
-// gate that triggers a spawn. Lowering a TTL is a one-character edit, so the
+// nearly every render. That only holds while no backoff is shorter than the
+// gate that triggers a spawn: a failing poll is then retried no faster than a
+// working one is repeated. Lowering a TTL is a one-character edit, so the
 // invariant is asserted rather than left to a comment.
 
-test('every refresher backoff comfortably exceeds both spawn gates', async () => {
-  const { BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, BACKOFF_RATE_LIMIT_MS } = await import('../dist/usage-hybrid.js');
+test('no refresher backoff is ever shorter than a spawn gate', async () => {
+  const { BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, BACKOFF_RATE_LIMIT_MS, BACKOFF_NO_LOGIN_MS, BACKOFF_FORBIDDEN_MS } = await import('../dist/usage-hybrid.js');
   const widestGate = Math.max(USAGE_TTL_MS, OAUTH_MAX_AGE_MS);
-  for (const [name, ms] of Object.entries({ BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, BACKOFF_RATE_LIMIT_MS })) {
-    assert.ok(ms >= 2 * widestGate, `${name} (${ms}ms) must be >= 2x the widest gate (${widestGate}ms)`);
+  const floors = { BACKOFF_AUTH_MS, BACKOFF_ERROR_MS, BACKOFF_RATE_LIMIT_MS, BACKOFF_NO_LOGIN_MS, BACKOFF_FORBIDDEN_MS };
+  for (const [name, ms] of Object.entries(floors)) {
+    assert.ok(ms >= widestGate, `${name} (${ms}ms) must be >= the widest gate (${widestGate}ms)`);
   }
 });
 
@@ -536,10 +548,11 @@ test('a landed OAuth read closes the active gate (the loop terminates)', () => {
   resolveUsage(stdin({ fiveHour: 60 }), true, deps(NOW));
   assert.equal(spawned, 1, 'the stale LIVE read triggers exactly one poll');
 
-  // Keep chatting well past the lock's stale window: the landed read holds the
-  // gate shut, so the lock is no longer what is doing the throttling.
-  resolveUsage(stdin({ fiveHour: 61 }), true, deps(NOW + LOCK_STALE_MS + 1_000));
-  resolveUsage(stdin({ fiveHour: 62 }), true, deps(NOW + LOCK_STALE_MS + 2_000));
+  // Keep chatting with the lock gone, as the real child leaves it: the landed
+  // read holds the gate shut, so the lock is not what is doing the throttling.
+  fs.rmSync(LOCK_PATH);
+  resolveUsage(stdin({ fiveHour: 61 }), true, deps(NOW + 10_000));
+  resolveUsage(stdin({ fiveHour: 62 }), true, deps(NOW + OAUTH_MAX_AGE_MS - 1_000));
   assert.equal(spawned, 1, 'a fresh LIVE clock — not the lock — suppresses the next poll');
 });
 
@@ -594,7 +607,7 @@ test('resolveUsage newer snapshot over stdin + failing poll: tagged stale', () =
 test('resolveUsage advancing stdin + failing poll: fresh, returned untouched', () => {
   const s = stdin({ fiveHour: 77 });
   const out = resolveUsage(s, true, { now: () => NOW, homeDir: HOME, fs: makeFs(failingOld()), spawnRefresher: () => {} });
-  assert.equal(out, s, 'a live stdin reading is current whatever the poll says');
+  assert.deepEqual(windowsOf(out), windowsOf(s), 'a live stdin reading is current whatever the poll says');
   assert.equal(out.staleSince, undefined);
 });
 

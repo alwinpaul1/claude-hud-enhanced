@@ -19,6 +19,7 @@ export interface ConfigCounts {
   mcpCount: number;
   hooksCount: number;
   outputStyle?: string;
+  claudeTheme?: string | null;
 }
 
 interface SentinelState {
@@ -336,6 +337,7 @@ function isConfigCounts(value: unknown): value is ConfigCounts {
     && Number.isFinite(counts.hooksCount)
     && counts.hooksCount >= 0
     && (counts.outputStyle === undefined || typeof counts.outputStyle === 'string')
+    && (counts.claudeTheme === undefined || counts.claudeTheme === null || typeof counts.claudeTheme === 'string')
   );
 }
 
@@ -412,6 +414,7 @@ function computeConfigCountsFresh(cwd?: string): ConfigCounts {
 
   const userLocalSettings = path.join(claudeDir, 'settings.local.json');
   outputStyle = readStringSetting(userLocalSettings, 'outputStyle') ?? outputStyle;
+  const claudeTheme = readStringSetting(userLocalSettings, 'theme') ?? readStringSetting(userSettings, 'theme') ?? null;
 
   // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
   const userClaudeJson = getClaudeConfigJsonPath(homeDir);
@@ -499,7 +502,7 @@ function computeConfigCountsFresh(cwd?: string): ConfigCounts {
   // A server with the same name in both user and project scope counts as 2 (separate configs).
   const mcpCount = userMcpServers.size + projectMcpServers.size;
 
-  return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle };
+  return { claudeMdCount, rulesCount, mcpCount, hooksCount, outputStyle, claudeTheme };
 }
 
 export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
@@ -515,7 +518,7 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     : staticSentinelPaths;
   const currentSentinels = statSentinels(cacheValidationPaths);
 
-  if (cached && sentinelsMatch(cached.key.sentinels, currentSentinels)) {
+  if (cached && cached.data.claudeTheme !== undefined && sentinelsMatch(cached.key.sentinels, currentSentinels)) {
     return cached.data;
   }
 

@@ -4,20 +4,34 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { getClaudeConfigDir } from './claude-config-dir.js';
+import { getClaudeConfigDir, getClaudeConfigJsonCandidates } from './claude-config-dir.js';
 import {
+  BACKOFF_AUTH_MAX_MS,
   BACKOFF_AUTH_MS,
+  BACKOFF_ERROR_MAX_MS,
   BACKOFF_ERROR_MS,
+  BACKOFF_FORBIDDEN_MAX_MS,
+  BACKOFF_FORBIDDEN_MS,
+  BACKOFF_JITTER,
+  BACKOFF_NO_LOGIN_MS,
+  BACKOFF_RATE_LIMIT_MAX_MS,
   BACKOFF_RATE_LIMIT_MS,
+  USAGE_TTL_MS,
+  defaultSnapshotFs,
   shouldRefresh,
+  tryTakeLock,
 } from './usage-hybrid.js';
 import {
+  type ExtraUsage,
   type UsageSnapshot,
+  type UsageSnapshotWindow,
   getLockPath,
   getSnapshotPath,
   readSnapshot,
   writeSnapshotAtomic,
 } from './usage-snapshot.js';
+import { ensurePrivateDir, readJsonCache, writeJsonCacheAtomic } from './utils/cache-file.js';
+import { stripBom } from './utils/sanitize.js';
 import { getClaudeCodeVersion } from './version.js';
 
 /**
@@ -35,11 +49,12 @@ const KEYCHAIN_SERVICE = 'Claude Code-credentials';
 const FETCH_TIMEOUT_MS = 5_000;
 const WATCHDOG_MS = 15_000;
 
-type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day' | 'model_scoped'>;
+export type UsageWindows = Pick<UsageSnapshot, 'five_hour' | 'seven_day' | 'model_scoped' | 'extra_usage'>;
 
 type FetchOutcome =
   | { kind: 'ok'; windows: UsageWindows }
   | { kind: 'auth_expired' }
+  | { kind: 'forbidden' }
   | { kind: 'rate_limited'; retryAfterMs: number | null }
   | { kind: 'error' };
 
@@ -150,19 +165,28 @@ export function readOauthToken(configDir: string, homeDir: string = os.homedir()
   return readCredentialsFileToken(configDir);
 }
 
-/**
- * One API bucket → snapshot window. A `null` bucket (Enterprise accounts have
- * no rate-limit windows) parses to 0% with no reset, matching ccstatusline.
- */
-function parseWindow(v: unknown): UsageSnapshot['five_hour'] | undefined {
-  if (v === null) return { used_percentage: 0, resets_at: null };
-  if (typeof v !== 'object' || v === undefined) return undefined;
-  const w = v as { utilization?: unknown; resets_at?: unknown };
-  return {
-    used_percentage: typeof w.utilization === 'number' ? w.utilization : null,
-    resets_at: typeof w.resets_at === 'string' ? w.resets_at : null,
-  };
+const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+const resetIso = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
+
+const ABSENT: UsageSnapshotWindow = { used_percentage: null, resets_at: null };
+
+function parseWindow(v: unknown): UsageSnapshotWindow {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return { ...ABSENT };
+  const w = v as { utilization?: unknown; percent?: unknown; resets_at?: unknown };
+  return { used_percentage: finite(w.utilization) ?? finite(w.percent), resets_at: resetIso(w.resets_at) };
 }
+
+function limitOfKind(limits: unknown, kinds: string[]): UsageSnapshotWindow {
+  if (!Array.isArray(limits)) return { ...ABSENT };
+  for (const raw of limits) {
+    const limit = raw as { kind?: unknown; scope?: unknown } | null;
+    if (limit && typeof limit.kind === 'string' && kinds.includes(limit.kind) && limit.scope == null) return parseWindow(limit);
+  }
+  return { ...ABSENT };
+}
+
+const isAbsent = (w: UsageSnapshotWindow): boolean => w.used_percentage === null && w.resets_at === null;
 
 /**
  * Model-scoped weekly windows from the `limits` array. The API has no top-level
@@ -174,37 +198,93 @@ function parseWindow(v: unknown): UsageSnapshot['five_hour'] | undefined {
 function parseScopedLimits(limits: unknown): UsageSnapshot['model_scoped'] {
   if (!Array.isArray(limits)) return undefined;
   const windows: NonNullable<UsageSnapshot['model_scoped']> = [];
+  const active: NonNullable<UsageSnapshot['model_scoped']> = [];
+  let isFlagged = false;
   for (const raw of limits) {
     const limit = raw as {
       kind?: unknown;
       percent?: unknown;
       resets_at?: unknown;
+      is_active?: unknown;
       scope?: { model?: { display_name?: unknown } | null } | null;
     } | null;
     const name = limit?.scope?.model?.display_name;
     if (limit?.kind !== 'weekly_scoped' || typeof name !== 'string' || name.trim() === '') continue;
-    windows.push({
+    const window = {
       display_name: name,
       utilization: typeof limit.percent === 'number' ? limit.percent : null,
       resets_at: typeof limit.resets_at === 'string' ? limit.resets_at : null,
-    });
+    };
+    windows.push(window);
+    if (limit.is_active === true) active.push(window);
+    if (limit.is_active !== undefined) isFlagged = true;
+  }
+  if (!isFlagged) return windows;
+  if (active.length > 0) return active;
+  const fullest = [...windows].sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))[0];
+  return fullest ? [fullest] : [];
+}
+
+const NAMED_WEEKLIES: [string, string][] = [
+  ['seven_day_opus', 'Opus'],
+  ['seven_day_sonnet', 'Sonnet'],
+];
+
+function parseNamedWeeklies(body: Record<string, unknown>): NonNullable<UsageSnapshot['model_scoped']> {
+  const windows: NonNullable<UsageSnapshot['model_scoped']> = [];
+  for (const [key, label] of NAMED_WEEKLIES) {
+    const window = parseWindow(body[key]);
+    if (window.used_percentage === null) continue;
+    windows.push({ display_name: label, utilization: window.used_percentage, resets_at: window.resets_at });
   }
   return windows;
 }
 
-/** Parse the usage API body; null when it carries no usable window at all. */
+const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+
+function minorAmount(v: unknown): { amount: number | null; currency?: string; exponent: number | null } {
+  if (typeof v !== 'object' || v === null) return { amount: finite(v), exponent: null };
+  const money = v as { amount_minor?: unknown; currency?: unknown; exponent?: unknown };
+  return { amount: finite(money.amount_minor), currency: text(money.currency), exponent: finite(money.exponent) };
+}
+
+function parseExtraUsage(v: unknown): ExtraUsage | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined;
+  const extra = v as Record<string, unknown>;
+  const spend = (typeof extra.spend === 'object' && extra.spend !== null ? extra.spend : {}) as Record<string, unknown>;
+  const used = minorAmount(spend.used);
+  const limit = minorAmount(spend.limit ?? extra.cap);
+  const decimals = finite(extra.decimal_places) ?? used.exponent ?? limit.exponent;
+  const currency = text(extra.currency) ?? used.currency ?? limit.currency;
+  return {
+    enabled: extra.is_enabled === true || extra.enabled === true,
+    utilization: finite(extra.utilization) ?? finite(extra.percent),
+    used: finite(extra.used_credits) ?? used.amount,
+    limit: finite(extra.monthly_limit) ?? limit.amount,
+    ...(currency !== undefined && { currency }),
+    ...(decimals !== null && decimals >= 0 && decimals <= 6 && { decimals: Math.floor(decimals) }),
+    ...(extra.spend_limit_reached === true && { reached: true }),
+  };
+}
+
 export function parseUsageResponse(body: string): UsageWindows | null {
   try {
-    const parsed = JSON.parse(body) as { five_hour?: unknown; seven_day?: unknown; limits?: unknown };
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const five = parseWindow(parsed.five_hour);
-    const seven = parseWindow(parsed.seven_day);
-    if (five === undefined && seven === undefined) return null;
-    const scoped = parseScopedLimits(parsed.limits);
+    const parsed = JSON.parse(body) as Record<string, unknown> | null;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    const topFive = parseWindow(parsed.five_hour);
+    const topSeven = parseWindow(parsed.seven_day);
+    const five = isAbsent(topFive) ? limitOfKind(parsed.limits, ['session', 'five_hour']) : topFive;
+    const seven = isAbsent(topSeven) ? limitOfKind(parsed.limits, ['weekly_all', 'weekly', 'seven_day']) : topSeven;
+    if ('error' in parsed && isAbsent(five) && isAbsent(seven)) return null;
+    const limits = parseScopedLimits(parsed.limits);
+    const named = limits === undefined || limits.length === 0 ? parseNamedWeeklies(parsed) : [];
+    const scoped = limits === undefined && named.length === 0 ? undefined : [...(limits ?? []), ...named];
+    const extra = parseExtraUsage(parsed.extra_usage);
     return {
-      five_hour: five ?? { used_percentage: null, resets_at: null },
-      seven_day: seven ?? { used_percentage: null, resets_at: null },
+      five_hour: five,
+      seven_day: seven,
       ...(scoped !== undefined && { model_scoped: scoped }),
+      ...(extra !== undefined && { extra_usage: extra }),
     };
   } catch {
     return null;
@@ -225,50 +305,92 @@ export function parseRetryAfterMs(headerValue: string | null, nowMs: number): nu
   return ms > 0 ? ms : null;
 }
 
-export function successSnapshot(windows: UsageWindows, now: number): UsageSnapshot {
+function liveWindow(next: UsageSnapshotWindow, prev: UsageSnapshotWindow | undefined, at: string): UsageSnapshotWindow {
+  const sameWindow =
+    prev !== undefined
+    && prev.resets_at !== null
+    && next.resets_at !== null
+    && Math.abs(Date.parse(prev.resets_at) - Date.parse(next.resets_at)) < 60_000;
+  if (sameWindow && prev.used_percentage !== null && prev.used_percentage >= 100 && next.used_percentage === 0) {
+    return prev;
+  }
+  return { ...next, seen_at: at };
+}
+
+export function successSnapshot(windows: UsageWindows, now: number, prev: UsageSnapshot | null = null): UsageSnapshot {
   const at = new Date(now).toISOString();
   return {
     updated_at: at,
-    // A real LIVE read just landed — the one place this clock may move.
     oauth_updated_at: at,
     source: 'oauth',
-    ...windows,
+    five_hour: liveWindow(windows.five_hour, prev?.five_hour, at),
+    seven_day: liveWindow(windows.seven_day, prev?.seven_day, at),
+    ...(windows.model_scoped !== undefined && { model_scoped: windows.model_scoped }),
+    ...(windows.extra_usage !== undefined && { extra_usage: windows.extra_usage }),
     status: 'ok',
     next_attempt_at: null,
+    failure_count: 0,
   };
 }
 
-/**
- * Failed attempt → snapshot that PRESERVES the last-good values and moves neither
- * clock (`updated_at`, `oauth_updated_at`), only sets the retry backoff. A poll
- * that failed is not a read, and must not be recorded as one.
- */
+export type FailureKind = Exclude<UsageSnapshot['status'], 'ok'> | 'forbidden' | 'no_login';
+
+const BACKOFF: Record<FailureKind, { base: number; max: number }> = {
+  auth_expired: { base: BACKOFF_AUTH_MS, max: BACKOFF_AUTH_MAX_MS },
+  error: { base: BACKOFF_ERROR_MS, max: BACKOFF_ERROR_MAX_MS },
+  rate_limited: { base: BACKOFF_RATE_LIMIT_MS, max: BACKOFF_RATE_LIMIT_MAX_MS },
+  forbidden: { base: BACKOFF_FORBIDDEN_MS, max: BACKOFF_FORBIDDEN_MAX_MS },
+  no_login: { base: BACKOFF_NO_LOGIN_MS, max: BACKOFF_AUTH_MAX_MS },
+};
+
+export function backoffMs(
+  kind: FailureKind,
+  failures: number,
+  retryAfterMs: number | null = null,
+  random: () => number = () => 0,
+): number {
+  if (kind === 'rate_limited' && retryAfterMs !== null) return retryAfterMs;
+  const { base, max } = BACKOFF[kind];
+  const grown = Math.min(max, base * 2 ** Math.max(0, Math.min(failures, 16) - 1));
+  return Math.round(grown * (1 + BACKOFF_JITTER * Math.max(0, Math.min(1, random()))));
+}
+
 export function failureSnapshot(
   prev: UsageSnapshot | null,
-  status: Exclude<UsageSnapshot['status'], 'ok'>,
+  kind: FailureKind,
   now: number,
   retryAfterMs: number | null = null,
+  random: () => number = () => 0,
 ): UsageSnapshot {
-  const backoffMs =
-    status === 'auth_expired' ? BACKOFF_AUTH_MS
-    : status === 'rate_limited' ? (retryAfterMs ?? BACKOFF_RATE_LIMIT_MS)
-    : BACKOFF_ERROR_MS;
+  const failures = (prev?.failure_count ?? 0) + 1;
   return {
     updated_at: prev?.updated_at ?? new Date(0).toISOString(),
     oauth_updated_at: prev?.oauth_updated_at ?? null,
     source: prev?.source ?? 'oauth',
-    five_hour: prev?.five_hour ?? { used_percentage: null, resets_at: null },
-    seven_day: prev?.seven_day ?? { used_percentage: null, resets_at: null },
+    five_hour: prev?.five_hour ?? { ...ABSENT },
+    seven_day: prev?.seven_day ?? { ...ABSENT },
     ...(prev?.model_scoped !== undefined && { model_scoped: prev.model_scoped }),
-    status,
-    next_attempt_at: new Date(now + backoffMs).toISOString(),
+    ...(prev?.extra_usage !== undefined && { extra_usage: prev.extra_usage }),
+    status: kind === 'forbidden' ? (prev?.status ?? 'ok') : kind === 'no_login' ? 'auth_expired' : kind,
+    next_attempt_at: new Date(now + backoffMs(kind, failures, retryAfterMs, random)).toISOString(),
+    failure_count: failures,
   };
 }
 
-async function fetchUsage(token: string, userAgent: string, now: number): Promise<FetchOutcome> {
-  let res: Response;
+export type FetchUsage = (token: string, userAgent: string, now: number) => Promise<FetchOutcome>;
+
+export function classifyResponse(status: number, body: string, retryAfter: string | null, now: number): FetchOutcome {
+  if (status === 401) return { kind: 'auth_expired' };
+  if (status === 403) return { kind: 'forbidden' };
+  if (status === 429) return { kind: 'rate_limited', retryAfterMs: parseRetryAfterMs(retryAfter, now) };
+  if (status < 200 || status >= 300) return { kind: 'error' };
+  const windows = parseUsageResponse(body);
+  return windows ? { kind: 'ok', windows } : { kind: 'error' };
+}
+
+const fetchUsage: FetchUsage = async (token, userAgent, now) => {
   try {
-    res = await fetch(USAGE_URL, {
+    const res = await fetch(USAGE_URL, {
       headers: {
         Authorization: `Bearer ${token}`,
         'anthropic-beta': 'oauth-2025-04-20',
@@ -277,75 +399,192 @@ async function fetchUsage(token: string, userAgent: string, now: number): Promis
       },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
+    const body = res.ok ? await res.text().catch(() => '') : '';
+    return classifyResponse(res.status, body, res.headers.get('retry-after'), now);
   } catch {
     return { kind: 'error' };
   }
-  if (res.status === 401 || res.status === 403) return { kind: 'auth_expired' };
-  if (res.status === 429) {
-    return { kind: 'rate_limited', retryAfterMs: parseRetryAfterMs(res.headers.get('retry-after'), now) };
+};
+
+export interface AccountRecord {
+  version: 1;
+  fetched_at: string | null;
+  windows: UsageWindows | null;
+  failure: FailureKind | null;
+  next_attempt_at: string | null;
+  failure_count: number;
+}
+
+const isAccountRecord = (v: unknown): v is AccountRecord => {
+  const r = v as Partial<AccountRecord> | null;
+  return (
+    r != null
+    && typeof r === 'object'
+    && r.version === 1
+    && (r.fetched_at === null || typeof r.fetched_at === 'string')
+    && (r.next_attempt_at === null || typeof r.next_attempt_at === 'string')
+    && typeof r.failure_count === 'number'
+    && (r.windows === null || (typeof r.windows === 'object' && typeof r.windows.five_hour === 'object' && typeof r.windows.seven_day === 'object'))
+  );
+};
+
+export function accountsDir(homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): string {
+  const base =
+    process.platform === 'win32'
+      ? env.LOCALAPPDATA?.trim() || path.join(homeDir, 'AppData', 'Local')
+      : env.XDG_CACHE_HOME?.trim() || path.join(homeDir, '.cache');
+  return path.join(base, 'claude-hud-enhanced', 'accounts');
+}
+
+export function readAccountKey(homeDir: string = os.homedir()): string | null {
+  for (const candidate of getClaudeConfigJsonCandidates(homeDir)) {
+    try {
+      const account = (JSON.parse(stripBom(fs.readFileSync(candidate, 'utf8'))) as { oauthAccount?: Record<string, unknown> })
+        .oauthAccount;
+      const uuid = account?.accountUuid;
+      if (typeof uuid !== 'string' || uuid.trim() === '') continue;
+      const org = typeof account?.organizationUuid === 'string' ? account.organizationUuid : '';
+      return createHash('sha256').update(`${uuid}\n${org}`).digest('hex').slice(0, 24);
+    } catch {
+      continue;
+    }
   }
-  if (!res.ok) return { kind: 'error' };
-  const body = await res.text().catch(() => '');
-  const windows = parseUsageResponse(body);
-  return windows ? { kind: 'ok', windows } : { kind: 'error' };
+  return null;
+}
+
+export interface RefreshDeps {
+  now: () => number;
+  random: () => number;
+  snapshotPath: string;
+  readToken: () => string | null;
+  fetchUsage: FetchUsage;
+  userAgent: () => Promise<string>;
+  accountKey: string | null;
+  accountsDir: string;
+  isAlive?: (pid: number) => boolean;
+}
+
+export type RefreshResult = 'fresh' | 'no-token' | 'shared' | 'backing-off' | 'busy' | FetchOutcome['kind'];
+
+const ms = (iso: string | null | undefined): number | null => {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : null;
+};
+
+export async function refreshUsage(deps: RefreshDeps): Promise<RefreshResult> {
+  const prev = readSnapshot(deps.snapshotPath);
+  const now = deps.now();
+  if (prev && !shouldRefresh(prev, now)) return 'fresh';
+
+  const token = deps.readToken();
+  if (!token) {
+    writeSnapshotAtomic(deps.snapshotPath, failureSnapshot(prev, 'no_login', now, null, deps.random), now);
+    return 'no-token';
+  }
+
+  const recordPath = deps.accountKey ? path.join(deps.accountsDir, `${deps.accountKey}.json`) : null;
+  const lockPath = deps.accountKey ? path.join(deps.accountsDir, `.${deps.accountKey}.lock`) : null;
+  const record = recordPath ? readJsonCache(recordPath, isAccountRecord) : null;
+  const sharedAt = ms(record?.fetched_at);
+  const prevLiveAt = ms(prev?.oauth_updated_at);
+  if (record?.windows && sharedAt !== null && now - sharedAt <= USAGE_TTL_MS && sharedAt <= now && (prevLiveAt === null || sharedAt > prevLiveAt)) {
+    writeSnapshotAtomic(deps.snapshotPath, successSnapshot(record.windows, sharedAt, prev), now);
+    return 'shared';
+  }
+  const sharedRetryAt = ms(record?.next_attempt_at);
+  if (record?.failure && sharedRetryAt !== null && sharedRetryAt > now) {
+    writeSnapshotAtomic(
+      deps.snapshotPath,
+      { ...failureSnapshot(prev, record.failure, now), next_attempt_at: new Date(sharedRetryAt).toISOString(), failure_count: record.failure_count },
+      now,
+    );
+    return 'backing-off';
+  }
+  if (lockPath) {
+    try {
+      ensurePrivateDir(deps.accountsDir);
+    } catch {
+      return 'busy';
+    }
+    if (!tryTakeLock(lockPath, now, defaultSnapshotFs, { reclaimDead: true, isAlive: deps.isAlive })) return 'busy';
+  }
+
+  try {
+    const outcome = await deps.fetchUsage(token, await deps.userAgent(), now);
+    const done = deps.now();
+    const onDisk = readSnapshot(deps.snapshotPath) ?? prev;
+    if (outcome.kind === 'ok') {
+      writeSnapshotAtomic(deps.snapshotPath, successSnapshot(outcome.windows, done, onDisk), done);
+      if (recordPath) {
+        writeJsonCacheAtomic(recordPath, {
+          version: 1,
+          fetched_at: new Date(done).toISOString(),
+          windows: outcome.windows,
+          failure: null,
+          next_attempt_at: null,
+          failure_count: 0,
+        } satisfies AccountRecord);
+      }
+      return 'ok';
+    }
+    const failed = failureSnapshot(
+      onDisk ? { ...onDisk, failure_count: Math.max(onDisk.failure_count ?? 0, record?.failure_count ?? 0) } : null,
+      outcome.kind,
+      done,
+      outcome.kind === 'rate_limited' ? outcome.retryAfterMs : null,
+      deps.random,
+    );
+    writeSnapshotAtomic(deps.snapshotPath, failed, done);
+    if (recordPath) {
+      writeJsonCacheAtomic(recordPath, {
+        version: 1,
+        fetched_at: record?.fetched_at ?? null,
+        windows: record?.windows ?? null,
+        failure: outcome.kind,
+        next_attempt_at: failed.next_attempt_at,
+        failure_count: failed.failure_count ?? 1,
+      } satisfies AccountRecord);
+    }
+    return outcome.kind;
+  } finally {
+    if (lockPath) removeLock(lockPath);
+  }
 }
 
 async function main(): Promise<void> {
   const homeDir = os.homedir();
-  const snapshotPath = getSnapshotPath(homeDir);
-  const prev = readSnapshot(snapshotPath);
-  const now = Date.now();
-
-  // Double-check freshness: another writer (a second terminal's refresher, or
-  // an active session's stdin) may have refreshed between spawn and now. This is
-  // deliberately the SAME predicate the parent spawned on — a child that bailed on
-  // a condition the parent ignores would be respawned every render.
-  if (prev && !shouldRefresh(prev, now)) return;
-
-  const token = readOauthToken(getClaudeConfigDir(homeDir));
-  if (!token) {
-    writeSnapshotAtomic(snapshotPath, failureSnapshot(prev, 'auth_expired', now), now);
-    return;
-  }
-
-  const version = await getClaudeCodeVersion().catch(() => undefined);
-  const outcome = await fetchUsage(token, `claude-code/${version ?? 'unknown'}`, now);
-  const done = Date.now();
-  const snapshot =
-    outcome.kind === 'ok'
-      ? successSnapshot(outcome.windows, done)
-      : failureSnapshot(
-          prev,
-          outcome.kind,
-          done,
-          outcome.kind === 'rate_limited' ? outcome.retryAfterMs : null,
-        );
-  writeSnapshotAtomic(snapshotPath, snapshot, done);
+  await refreshUsage({
+    now: Date.now,
+    random: Math.random,
+    snapshotPath: getSnapshotPath(homeDir),
+    readToken: () => readOauthToken(getClaudeConfigDir(homeDir)),
+    fetchUsage,
+    userAgent: async () => `claude-code/${(await getClaudeCodeVersion().catch(() => undefined)) ?? 'unknown'}`,
+    accountKey: readAccountKey(homeDir),
+    accountsDir: accountsDir(homeDir),
+  });
 }
 
 function removeLock(lockPath: string): void {
   try {
     fs.rmSync(lockPath, { force: true });
   } catch {
-    /* best effort */
+    return;
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const lockPath = getLockPath(os.homedir());
-  // Watchdog: if anything wedges (keychain prompt, hung socket), release the
-  // lock and die rather than linger. unref'd so a clean run exits naturally.
   const watchdog = setTimeout(() => {
     removeLock(lockPath);
     process.exit(1);
   }, WATCHDOG_MS);
   watchdog.unref();
   void main()
-    .catch(() => {
-      /* silent — detached child has nowhere to report */
-    })
+    .catch(() => undefined)
     .finally(() => {
       clearTimeout(watchdog);
-      removeLock(lockPath); // always release the parent-taken single-flight lock
+      removeLock(lockPath);
     });
 }

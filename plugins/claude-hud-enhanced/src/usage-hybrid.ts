@@ -1,5 +1,10 @@
+import { createHash } from 'node:crypto';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { getHudPluginDir } from './claude-config-dir.js';
 import type { ScopedUsageWindow, UsageData } from './types.js';
 import { parseScopedWindows } from './stdin.js';
+import { CACHE_SWEEP_SAMPLE_RATE, readJsonCache, sweepCacheDir, writeJsonCacheAtomic } from './utils/cache-file.js';
 import {
   type SnapshotFsDeps,
   type UsageSnapshot,
@@ -13,9 +18,9 @@ import {
 /**
  * ccstatusline-style hybrid usage resolution.
  *
- *   - While CHATTING: Claude Code hands fresh `rate_limits` on stdin. stdin is
- *     authoritative; we persist it to the snapshot (which also resets the idle TTL
- *     clock, so the refresher never fires during active use).
+ *   - While CHATTING: Claude Code hands fresh `rate_limits` on stdin. A window
+ *     in which stdin is ahead of the snapshot is persisted to the snapshot (which
+ *     also resets the idle TTL clock; the LIVE-read gate still polls).
  *   - While IDLE: Claude Code keeps re-sending the last-known FROZEN rate_limits on
  *     every render (stdin usage is essentially never null mid-session). Idle is
  *     therefore detected as "stdin stopped advancing", not "stdin disappeared":
@@ -24,10 +29,13 @@ import {
  *     (refresh-usage.js) to pull the live account-wide number (e.g. usage burned on
  *     another device). Rendering never blocks on the network.
  *
- * Monotonic newer-detection: rate-limit data only moves one way within a window
- * (resets_at advances, utilization rises), so "is stdin newer than the snapshot?"
- * is decidable from the two values alone — a stale stdin from a second idle session
- * can never clobber a fresher OAuth snapshot.
+ * Newer-detection, per window: resets more than SAME_WINDOW_MS apart are
+ * different windows and the later one wins. Inside one window stdin only ever
+ * moves the figure forward: a higher stdin reading wins unless it was observed
+ * before the snapshot's (each session records when its own reading last changed,
+ * see observeStdinUsage), a lower one never does, since a session's stdin lags
+ * the account. Only an API reading may lower a figure (refresh-usage.ts). So a
+ * stale stdin from an idle session can never clobber a fresher reading.
  */
 /** Idle gate: how long the snapshot may sit unwritten before we refresh it. */
 export const USAGE_TTL_MS = 60_000;
@@ -37,27 +45,36 @@ export const USAGE_TTL_MS = 60_000;
  * fire mid-conversation — and usage burned in another terminal, on another
  * machine, or on claude.ai would stay invisible until the session went quiet.
  */
-export const OAUTH_MAX_AGE_MS = 120_000;
+export const OAUTH_MAX_AGE_MS = 60_000;
 export const LOCK_STALE_MS = 60_000; // a refresher lock older than this is abandoned
-// Refresher backoff policy lives HERE, next to the gates it must comfortably
-// exceed: if a backoff dropped below a spawn gate, a failing refresher would
-// be respawned on nearly every stale render — the retry-storm shape this
-// feature exists to prevent (ccstatusline #204). tests/usage-hybrid.test.js
-// asserts the margin so a future gate cut cannot quietly erase it.
+// Refresher backoff policy lives HERE, next to the gates it must never undercut:
+// if a backoff dropped below a spawn gate, a failing refresher would be
+// respawned on nearly every stale render — the retry-storm shape this feature
+// exists to prevent (ccstatusline #204). tests/usage-hybrid.test.js asserts the
+// floor so a future gate cut cannot quietly erase it.
 /**
- * Auth failures retry on the error cadence, not a long one: the usual cure is
- * the user signing in again, and a 30-minute wait kept the HUD stale for up to
- * half an hour after a successful /login. A failed read costs one local Keychain
- * lookup (plus one 401 when a token was found), which is cheap at this rate.
+ * A rejected token (401) waits five minutes: the cure is Claude Code refreshing
+ * it or the user signing in again. A profile with no login at all makes no
+ * request, so it is rechecked sooner (BACKOFF_NO_LOGIN_MS, a local Keychain
+ * lookup) and a fresh /login shows within five minutes.
  */
 export const BACKOFF_AUTH_MS = 5 * 60_000;
-export const BACKOFF_ERROR_MS = 5 * 60_000;
+export const BACKOFF_ERROR_MS = 60_000;
 /**
- * 429 fallback when the server sent no Retry-After. Its own constant rather than
- * a multiple of USAGE_TTL_MS, so cutting the TTL cannot silently shorten the one
- * backoff a server explicitly asked for.
+ * 429 fallback when the server sent no Retry-After, and the wait after any other
+ * failed request: one minute, doubling per consecutive failure up to the cap, plus
+ * up to BACKOFF_JITTER on top. A Retry-After the server did send is used as is.
  */
-export const BACKOFF_RATE_LIMIT_MS = 6 * 60_000;
+export const BACKOFF_RATE_LIMIT_MS = 60_000;
+export const BACKOFF_RATE_LIMIT_MAX_MS = 15 * 60_000;
+export const BACKOFF_ERROR_MAX_MS = 15 * 60_000;
+export const BACKOFF_AUTH_MAX_MS = 5 * 60_000;
+export const BACKOFF_NO_LOGIN_MS = 2 * 60_000;
+export const BACKOFF_FORBIDDEN_MS = 60 * 60_000;
+export const BACKOFF_FORBIDDEN_MAX_MS = 60 * 60_000;
+export const BACKOFF_JITTER = 0.25;
+export const SAME_WINDOW_MS = 60_000;
+const LIMIT_AT = 100;
 /**
  * How long a snapshot may go unconfirmed, while its OAuth poll is failing, before
  * the HUD flags the numbers as stale. Without this a poll that broke (an expired
@@ -84,30 +101,48 @@ function isoOrNull(d: Date | null | undefined): string | null {
 
 /**
  * Compare one window (A vs B). Returns >0 if A is newer, <0 if B is newer, 0 if
- * equal or undecidable. Later reset = newer window; within the same window a higher
- * utilization is newer.
+ * equal or undecidable. Later reset = newer window; within the same window A is
+ * newer only when it is higher and was not observed before B; otherwise B stands.
  */
 function windowCompare(
   aReset: number | null,
   aPct: number | null,
   bReset: number | null,
   bPct: number | null,
+  aSeen: number | null = null,
+  bSeen: number | null = null,
 ): number {
-  if (aReset != null && bReset != null) {
-    if (aReset !== bReset) return aReset - bReset;
-    if (aPct != null && bPct != null && aPct !== bPct) return aPct - bPct;
-    return 0;
-  }
-  return 0;
+  if (aReset == null || bReset == null) return 0;
+  if (Math.abs(aReset - bReset) >= SAME_WINDOW_MS) return aReset - bReset;
+  if (aPct == null || bPct == null || aPct === bPct) return 0;
+  if (aPct >= LIMIT_AT && bPct === 0) return 1;
+  if (aPct < bPct) return -1;
+  return aSeen != null && bSeen != null && aSeen < bSeen ? -1 : 1;
 }
 
-/** +1 if stdin is newer than the snapshot, -1 if the snapshot is newer, 0 if equal. */
-export function compareStdinSnapshot(stdin: UsageData, snap: UsageSnapshot): number {
+export interface StdinSeenAt {
+  fiveHour: number | null;
+  sevenDay: number | null;
+}
+
+const seenFor = (seen: StdinSeenAt | number | null | undefined): StdinSeenAt =>
+  typeof seen === 'number' ? { fiveHour: seen, sevenDay: seen } : (seen ?? { fiveHour: null, sevenDay: null });
+
+export function compareStdinSnapshot(
+  stdin: UsageData,
+  snap: UsageSnapshot,
+  stdinSeenAt: StdinSeenAt | number | null = null,
+): number {
+  const written = parseMs(snap.updated_at);
+  const stdinSeen = seenFor(stdinSeenAt);
+  const seenOf = (window: UsageSnapshot['five_hour']): number | null => parseMs(window.seen_at) ?? written;
   const five = windowCompare(
     toMs(stdin.fiveHourResetAt),
     stdin.fiveHour,
     parseMs(snap.five_hour.resets_at),
     snap.five_hour.used_percentage,
+    stdinSeen.fiveHour,
+    seenOf(snap.five_hour),
   );
   if (five !== 0) return Math.sign(five);
   const seven = windowCompare(
@@ -115,8 +150,65 @@ export function compareStdinSnapshot(stdin: UsageData, snap: UsageSnapshot): num
     stdin.sevenDay,
     parseMs(snap.seven_day.resets_at),
     snap.seven_day.used_percentage,
+    stdinSeen.sevenDay,
+    seenOf(snap.seven_day),
   );
   return Math.sign(seven);
+}
+
+interface WindowSeen {
+  key: string;
+  at: number;
+}
+
+interface StdinSeen {
+  five: WindowSeen;
+  seven: WindowSeen;
+}
+
+const isWindowSeen = (v: unknown): v is WindowSeen => {
+  const seen = v as Partial<WindowSeen> | null;
+  return seen != null && typeof seen === 'object' && typeof seen.key === 'string' && typeof seen.at === 'number';
+};
+
+const isStdinSeen = (v: unknown): v is StdinSeen => {
+  const seen = v as Partial<StdinSeen> | null;
+  return seen != null && typeof seen === 'object' && isWindowSeen(seen.five) && isWindowSeen(seen.seven);
+};
+
+const windowKey = (percent: number | null, resetAt: Date | null): string => {
+  const reset = toMs(resetAt);
+  return percent == null && reset == null ? '' : `${percent}@${reset === null ? '' : Math.round(reset / SAME_WINDOW_MS)}`;
+};
+
+function observeWindow(known: WindowSeen | undefined, key: string, now: number): WindowSeen {
+  if (key === '') return { key, at: 0 };
+  if (known === undefined) return { key, at: 0 };
+  if (known.key === key) return known.at <= now ? known : { key, at: 0 };
+  return { key, at: now };
+}
+
+export function observeStdinUsage(
+  session: string | undefined,
+  usage: UsageData | null,
+  now: number,
+  homeDir: string = os.homedir(),
+): StdinSeenAt | null {
+  if (!session || usage == null) return null;
+  try {
+    const dir = path.join(getHudPluginDir(homeDir), 'usage-seen');
+    const file = path.join(dir, `${createHash('sha256').update(session).digest('hex').slice(0, 16)}.json`);
+    const known = readJsonCache(file, isStdinSeen);
+    const five = observeWindow(known?.five, windowKey(usage.fiveHour, usage.fiveHourResetAt), now);
+    const seven = observeWindow(known?.seven, windowKey(usage.sevenDay, usage.sevenDayResetAt), now);
+    if (known === null || known.five !== five || known.seven !== seven) {
+      writeJsonCacheAtomic(file, { five, seven } satisfies StdinSeen);
+      if (Math.random() < CACHE_SWEEP_SAMPLE_RATE) sweepCacheDir(dir, now);
+    }
+    return { fiveHour: five.at > 0 ? five.at : null, sevenDay: seven.at > 0 ? seven.at : null };
+  } catch {
+    return null;
+  }
 }
 
 /** True when stdin is strictly newer than the snapshot (write-back decision). */
@@ -141,6 +233,7 @@ export function snapshotToUsage(snap: UsageSnapshot): UsageData {
     fiveHourResetAt: fiveReset != null ? new Date(fiveReset) : null,
     sevenDayResetAt: sevenReset != null ? new Date(sevenReset) : null,
     ...(scoped != null && { scopedWindows: scoped }),
+    ...(snap.extra_usage !== undefined && { extraUsage: snap.extra_usage }),
   };
 }
 
@@ -165,9 +258,28 @@ export function snapshotOverStdin(snap: UsageSnapshot, stdinUsage: UsageData): U
  * disappear the moment a live stdin reading won the comparison.
  */
 function withSnapshotScoped(usage: UsageData, snap: UsageSnapshot): UsageData {
-  if (usage.scopedWindows != null) return usage;
-  const scoped = snapshotScopedWindows(snap);
-  return scoped != null ? { ...usage, scopedWindows: scoped } : usage;
+  const scoped = usage.scopedWindows != null ? null : snapshotScopedWindows(snap);
+  const extra = usage.extraUsage !== undefined ? undefined : snap.extra_usage;
+  if (scoped == null && extra === undefined) return usage;
+  return {
+    ...usage,
+    ...(scoped != null && { scopedWindows: scoped }),
+    ...(extra !== undefined && { extraUsage: extra }),
+  };
+}
+
+function stdinWindow(
+  percent: number | null,
+  resetAt: Date | null,
+  prev: UsageSnapshot | null,
+  known: UsageSnapshot['five_hour'] | undefined,
+  now: number,
+): UsageSnapshot['five_hour'] {
+  if (percent == null && resetAt == null && known !== undefined) {
+    const isAbsent = known.used_percentage == null && known.resets_at == null;
+    return isAbsent || known.seen_at != null || prev == null ? known : { ...known, seen_at: prev.updated_at };
+  }
+  return { used_percentage: percent, resets_at: isoOrNull(resetAt), seen_at: new Date(now).toISOString() };
 }
 
 /**
@@ -197,15 +309,11 @@ export function usageToSnapshot(
     // it here would make every active render look never-polled and spawn again.
     oauth_updated_at: prev?.oauth_updated_at ?? null,
     source,
-    five_hour: {
-      used_percentage: usage.fiveHour,
-      resets_at: isoOrNull(usage.fiveHourResetAt),
-    },
-    seven_day: {
-      used_percentage: usage.sevenDay,
-      resets_at: isoOrNull(usage.sevenDayResetAt),
-    },
+    five_hour: stdinWindow(usage.fiveHour, usage.fiveHourResetAt, prev, prev?.five_hour, now),
+    seven_day: stdinWindow(usage.sevenDay, usage.sevenDayResetAt, prev, prev?.seven_day, now),
     ...(modelScoped !== undefined && { model_scoped: modelScoped }),
+    ...(prev?.extra_usage !== undefined && { extra_usage: prev.extra_usage }),
+    ...(prev?.failure_count !== undefined && { failure_count: prev.failure_count }),
     status: prev?.status ?? 'ok',
     next_attempt_at: prev?.next_attempt_at ?? null,
   };
@@ -240,6 +348,12 @@ export function shouldRefresh(snap: UsageSnapshot, now: number): boolean {
   const nextAttempt = parseMs(snap.next_attempt_at);
   if (nextAttempt != null && nextAttempt > now) return false;
 
+  const liveAt = parseMs(snap.oauth_updated_at);
+  for (const window of [snap.five_hour, snap.seven_day]) {
+    const reset = parseMs(window.resets_at);
+    if (reset != null && reset <= now && (liveAt == null || liveAt < reset)) return true;
+  }
+
   const age = now - (parseMs(snap.updated_at) ?? 0);
   if (age > USAGE_TTL_MS) return true; // idle: nobody has written in a while
 
@@ -247,17 +361,49 @@ export function shouldRefresh(snap: UsageSnapshot, now: number): boolean {
   return oauthAt == null || now - oauthAt > OAUTH_MAX_AGE_MS; // active: stale LIVE read
 }
 
+export interface LockOptions {
+  reclaimDead?: boolean;
+  isAlive?: (pid: number) => boolean;
+}
+
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+function holderIsDead(lockPath: string, deps: SnapshotFsDeps, options: LockOptions): boolean {
+  if (!options.reclaimDead) return false;
+  try {
+    const text = String(deps.readFileSync(lockPath, 'utf8')).trim();
+    if (!/^\d+$/.test(text)) return false;
+    const pid = Number(text);
+    return pid > 1 && pid !== process.pid && !(options.isAlive ?? isProcessAlive)(pid);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Try to claim the single-flight refresher lock. Cleans up a stale lock (older than
- * LOCK_STALE_MS) left by a crashed refresher, then creates the lock with `wx` so only
+ * LOCK_STALE_MS, or with `reclaimDead` one whose recorded holder pid is gone) left
+ * by a crashed refresher, then creates the lock with `wx` so only
  * one caller wins the race. Returns true iff this caller now holds the lock.
  */
-export function tryTakeLock(lockPath: string, now: number, deps: SnapshotFsDeps): boolean {
+export function tryTakeLock(
+  lockPath: string,
+  now: number,
+  deps: SnapshotFsDeps,
+  options: LockOptions = {},
+): boolean {
   try {
     if (deps.existsSync(lockPath)) {
       try {
         const st = deps.statSync(lockPath);
-        if (now - st.mtimeMs < LOCK_STALE_MS) return false; // a fresh lock is held
+        if (now - st.mtimeMs < LOCK_STALE_MS && !holderIsDead(lockPath, deps, options)) return false; // a fresh lock is held
       } catch {
         /* stat failed — fall through and try to re-take */
       }
@@ -301,6 +447,8 @@ export interface HybridDeps {
    * lock files for a spawn that would no-op. Absent = assume it can.
    */
   canRefresh?: () => boolean;
+  stdinSeenAt?: StdinSeenAt | number | null;
+  isAlive?: (pid: number) => boolean;
 }
 
 /**
@@ -324,7 +472,10 @@ export function resolveUsage(
   // snapshot at all to judge. Throttled by the single-flight lock; never blocks or throws.
   const maybeRefresh = (s: UsageSnapshot | null): void => {
     if (deps.canRefresh?.() === false) return; // refresher not installed — no lock churn
-    if ((s == null || shouldRefresh(s, now)) && tryTakeLock(lockPath, now, deps.fs)) {
+    if (
+      (s == null || shouldRefresh(s, now))
+      && tryTakeLock(lockPath, now, deps.fs, { reclaimDead: true, isAlive: deps.isAlive })
+    ) {
       try {
         deps.spawnRefresher(deps.homeDir);
       } catch {
@@ -334,37 +485,110 @@ export function resolveUsage(
   };
 
   if (stdinUsage != null) {
-    // stdin present (fresh OR frozen — Claude Code re-sends the last values while
-    // idle). Serve the snapshot only if it is strictly newer than stdin (OAuth
-    // caught other-device usage stdin hasn't seen yet); otherwise stdin wins.
-    const cmp = snap ? compareStdinSnapshot(stdinUsage, snap) : 1;
-    if (snap == null || cmp > 0) {
-      // stdin advanced → user is active. Persist it, which stamps updated_at and
-      // resets the idle gate. The LIVE clock is carried through untouched, so a
-      // long conversation still refreshes account-wide usage on its own cadence
-      // instead of going blind to every other terminal until it falls quiet.
-      const written = usageToSnapshot(stdinUsage, 'stdin', now, snap);
+    const seenAt = seenFor(deps.stdinSeenAt);
+    const five = pickWindow(stdinUsage.fiveHour, stdinUsage.fiveHourResetAt, snap?.five_hour, snap, seenAt.fiveHour);
+    const seven = pickWindow(stdinUsage.sevenDay, stdinUsage.sevenDayResetAt, snap?.seven_day, snap, seenAt.sevenDay);
+    const known = snap ? snapshotToUsage(snap) : null;
+    const merged: UsageData = {
+      ...stdinUsage,
+      ...(five === 'snapshot' && known && { fiveHour: known.fiveHour, fiveHourResetAt: known.fiveHourResetAt }),
+      ...(seven === 'snapshot' && known && { sevenDay: known.sevenDay, sevenDayResetAt: known.sevenDayResetAt }),
+    };
+    if (snap == null || five === 'newer' || seven === 'newer') {
+      const written = usageToSnapshot(
+        {
+          ...stdinUsage,
+          ...(five !== 'newer' && snap && { fiveHour: null, fiveHourResetAt: null }),
+          ...(seven !== 'newer' && snap && { sevenDay: null, sevenDayResetAt: null }),
+        },
+        'stdin',
+        now,
+        snap,
+      );
       writeSnapshotAtomic(snapshotPath, written, now, deps.fs);
       maybeRefresh(written);
-      return withSnapshotScoped(stdinUsage, written);
+      return withObservations(withSnapshotScoped(merged, written), written, { five, seven }, seenAt);
     }
-    // stdin did NOT advance (cmp <= 0) → frozen stdin, i.e. idle. The snapshot's
-    // updated_at keeps aging, so refresh when it goes stale. When the snapshot is
-    // strictly newer (another terminal/device advanced it), serve its windows while
-    // keeping stdin-only extras (scoped windows, balance label). Either way nothing
-    // newer than the snapshot has been seen, so its age is the age of these numbers.
     maybeRefresh(snap);
-    const served = cmp < 0 ? snapshotOverStdin(snap, stdinUsage) : withSnapshotScoped(stdinUsage, snap);
-    return withStaleness(served, snap, now);
+    return withObservations(
+      withStaleness(withSnapshotScoped(merged, snap), snap, now),
+      snap,
+      { five, seven },
+      seenAt,
+    );
   }
 
-  // No stdin usage at all this render (e.g. rate_limits absent). Serve the
-  // snapshot and refresh it when stale. With no snapshot either, the poll is the
-  // only way a number can ever appear, so start it: returning early here left an
-  // account whose stdin never carries rate_limits without usage forever.
   maybeRefresh(snap);
   if (snap == null) return null;
-  return withStaleness(snapshotToUsage(snap), snap, now);
+  return withObservations(
+    withStaleness(snapshotToUsage(snap), snap, now),
+    snap,
+    { five: 'snapshot', seven: 'snapshot' },
+    seenFor(null),
+  );
+}
+
+function observedAt(
+  window: UsageSnapshot['five_hour'],
+  snap: UsageSnapshot,
+  choice: WindowChoice,
+  stdinSeen: number | null,
+  shown: number | null,
+): Date | null {
+  const stamped = parseMs(window.seen_at) ?? (choice === 'snapshot' ? parseMs(snap.updated_at) : null);
+  const isSameFigure = window.used_percentage != null && window.used_percentage === shown;
+  const at =
+    choice === 'snapshot' ? stamped : isSameFigure ? Math.max(stamped ?? 0, stdinSeen ?? 0) || null : stdinSeen;
+  return at === null ? null : new Date(at);
+}
+
+const isUnlimited = (window: UsageSnapshot['five_hour'], shown: number | null, resetAt: Date | null): boolean =>
+  shown == null && resetAt == null && window.used_percentage == null && window.resets_at == null && parseMs(window.seen_at) != null;
+
+function withObservations(
+  usage: UsageData,
+  snap: UsageSnapshot,
+  choice: { five: WindowChoice; seven: WindowChoice },
+  stdinSeen: StdinSeenAt,
+): UsageData {
+  return {
+    ...usage,
+    fiveHourSeenAt: observedAt(snap.five_hour, snap, choice.five, stdinSeen.fiveHour, usage.fiveHour),
+    sevenDaySeenAt: observedAt(snap.seven_day, snap, choice.seven, stdinSeen.sevenDay, usage.sevenDay),
+    ...(isUnlimited(snap.five_hour, usage.fiveHour, usage.fiveHourResetAt) && { fiveHourUnlimited: true }),
+    ...(isUnlimited(snap.seven_day, usage.sevenDay, usage.sevenDayResetAt) && { sevenDayUnlimited: true }),
+  };
+}
+
+type WindowChoice = 'newer' | 'stdin' | 'snapshot';
+
+function pickWindow(
+  percent: number | null,
+  resetAt: Date | null,
+  known: UsageSnapshot['five_hour'] | undefined,
+  snap: UsageSnapshot | null,
+  stdinSeenAt: number | null,
+): WindowChoice {
+  const reset = toMs(resetAt);
+  if (percent == null && reset == null) return 'snapshot';
+  if (known === undefined || snap == null) return 'newer';
+  const knownReset = parseMs(known.resets_at);
+  if (known.used_percentage == null && knownReset == null) {
+    const absentAt = parseMs(known.seen_at);
+    if (absentAt == null) return 'newer';
+    return reset != null && reset <= absentAt ? 'snapshot' : 'stdin';
+  }
+  const order = windowCompare(
+    reset,
+    percent,
+    knownReset,
+    known.used_percentage,
+    stdinSeenAt,
+    parseMs(known.seen_at) ?? parseMs(snap.updated_at),
+  );
+  if (order > 0) return 'newer';
+  if (order < 0) return 'snapshot';
+  return reset != null && knownReset != null ? 'stdin' : knownReset == null ? 'stdin' : 'snapshot';
 }
 
 /** Tag `usage` with the snapshot's staleness; returns it unchanged while fresh. */

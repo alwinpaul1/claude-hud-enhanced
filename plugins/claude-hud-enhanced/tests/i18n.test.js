@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLanguage, getLanguage, getCanonicalLanguage, isCjkLanguage, t } from "../dist/i18n/index.js";

@@ -13,6 +13,9 @@ export interface FileStats {
     added: number;
     deleted: number;
     untracked: number;
+    staged?: number;
+    unstaged?: number;
+    conflicts?: number;
     trackedFiles: TrackedFile[];
 }
 export interface GitStatus {
@@ -27,6 +30,8 @@ export interface GitStatus {
     vcs?: 'git' | 'jj';
     /** jj-native: true when the working-copy commit has an unresolved conflict. */
     conflict?: boolean;
+    worktree?: string;
+    isLinked?: boolean;
 }
 export declare function getGitBranch(cwd?: string): Promise<string | null>;
 export declare function getGitStatus(cwd?: string): Promise<GitStatus | null>;

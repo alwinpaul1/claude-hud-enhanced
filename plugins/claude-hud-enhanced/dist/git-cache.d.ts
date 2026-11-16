@@ -22,6 +22,7 @@ import { type GitStatus } from './git.js';
  */
 export declare const GIT_CACHE_TTL_MS = 5000;
 export declare const NULL_CACHE_TTL_MS = 1000;
+export declare const GIT_CACHE_VERSION = 2;
 export interface GitCacheDeps {
     homeDir?: string;
     now?: () => number;

@@ -8,6 +8,7 @@ export interface DaemonClientDeps {
     /** Injected for tests; default spawns the real detached daemon. */
     spawnDaemon?: (entryPath: string, homeDir: string) => void;
     now?: () => number;
+    pluginVersion?: string;
 }
 /**
  * Try to render via the warm per-profile daemon. Returns the full output

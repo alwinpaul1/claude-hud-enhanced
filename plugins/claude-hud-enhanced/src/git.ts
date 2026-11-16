@@ -20,6 +20,9 @@ export interface FileStats {
   added: number;
   deleted: number;
   untracked: number;
+  staged?: number;
+  unstaged?: number;
+  conflicts?: number;
   trackedFiles: TrackedFile[];
 }
 
@@ -35,6 +38,8 @@ export interface GitStatus {
   vcs?: 'git' | 'jj';
   /** jj-native: true when the working-copy commit has an unresolved conflict. */
   conflict?: boolean;
+  worktree?: string;
+  isLinked?: boolean;
 }
 
 export async function getGitBranch(cwd?: string): Promise<string | null> {
@@ -74,7 +79,7 @@ export async function getGitStatus(cwd?: string): Promise<GitStatus | null> {
       const trimmed = statusOut.trim();
       isDirty = trimmed.length > 0;
       if (isDirty) {
-        fileStats = parseFileStats(trimmed);
+        fileStats = parseFileStats(statusOut.trimEnd());
       }
     } catch (err) {
       debug('Failed to get git status:', err instanceof Error ? err.message : err);
@@ -134,7 +139,23 @@ export async function getGitStatus(cwd?: string): Promise<GitStatus | null> {
       debug('Failed to get remote URL:', err instanceof Error ? err.message : err);
     }
 
-    return { branch, isDirty, ahead, behind, fileStats, lineDiff, branchUrl };
+    let worktree: string | undefined;
+    let isLinked: boolean | undefined;
+    try {
+      const { stdout: whereOut } = await runner.run(
+        ['rev-parse', '--path-format=absolute', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'],
+        1000,
+      );
+      const [toplevel = '', gitDir = '', commonDir = ''] = whereOut.trim().split('\n').map((line) => line.trim());
+      if (toplevel) {
+        worktree = toplevel.split(/[/\\]/).filter(Boolean).pop() ?? toplevel;
+        isLinked = gitDir !== commonDir;
+      }
+    } catch (err) {
+      debug('Failed to get worktree:', err instanceof Error ? err.message : err);
+    }
+
+    return { branch, isDirty, ahead, behind, fileStats, lineDiff, branchUrl, worktree, isLinked };
   } catch (err) {
     debug('getGitStatus failed:', err instanceof Error ? err.message : err);
     return null;
@@ -190,7 +211,7 @@ function buildGitHubRefUrl(httpsBase: string, ref: string): string {
  * Status codes: M=modified, A=added, D=deleted, ??=untracked
  */
 function parseFileStats(porcelainOutput: string): FileStats {
-  const stats: FileStats = { modified: 0, added: 0, deleted: 0, untracked: 0, trackedFiles: [] };
+  const stats: FileStats = { modified: 0, added: 0, deleted: 0, untracked: 0, staged: 0, unstaged: 0, conflicts: 0, trackedFiles: [] };
   const lines = porcelainOutput.split('\n').filter(Boolean);
 
   for (const line of lines) {
@@ -198,6 +219,16 @@ function parseFileStats(porcelainOutput: string): FileStats {
 
     const index = line[0];    // staged status
     const worktree = line[1]; // unstaged status
+
+    if (!line.startsWith('??') && !line.startsWith('!!')) {
+      const isUnmerged = index === 'U' || worktree === 'U' || (index === worktree && (index === 'A' || index === 'D'));
+      if (isUnmerged) {
+        stats.conflicts = (stats.conflicts ?? 0) + 1;
+      } else {
+        if (index !== ' ') stats.staged = (stats.staged ?? 0) + 1;
+        if (worktree !== ' ') stats.unstaged = (stats.unstaged ?? 0) + 1;
+      }
+    }
 
     if (line.startsWith('??')) {
       stats.untracked++;

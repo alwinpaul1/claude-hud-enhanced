@@ -8,13 +8,14 @@ import { createDebug } from './debug.js';
 import { sanitizeDisplayText } from './utils/sanitize.js';
 import { CACHE_SWEEP_SAMPLE_RATE, sweepCacheDir, writeJsonCacheAtomic } from './utils/cache-file.js';
 import { sanitizeTranscriptModel } from './model-source.js';
+import { isGhPrCommand, pickPr, prFromCommand, prFromResult } from './pr-status.js';
 import { isDetectedPromptCacheTtl, PROMPT_CACHE_TTL_1H_SECONDS, PROMPT_CACHE_TTL_5M_SECONDS, } from './constants.js';
 const debug = createDebug('transcript');
 // Bumped to 16: upstream's completed-record token accounting
 // (accumulateMessageUsage), its bounded MCP error set and the prompt-cache TTL
 // fields, on top of our incremental-resume accumulator. An older cache lacks one
 // or more of these and safely falls back to a full parse.
-const TRANSCRIPT_CACHE_VERSION = 16;
+const TRANSCRIPT_CACHE_VERSION = 17;
 const MCP_TOOL_NAME_PATTERN = /^mcp__(.+?)__(.+)$/;
 const ACTIVITY_NAME_MAX_LEN = 64;
 const MESSAGE_ID_MAX_LEN = 128;
@@ -33,6 +34,7 @@ const TRANSCRIPT_WRITE_TTL_MS = 3000;
 // Cap the max length of an untrusted tool target / agent description persisted
 // in the resume accumulator (the display truncates well below this anyway).
 const RESUME_TEXT_MAX_LEN = 256;
+const PR_COMMAND_MAX_LEN = 2048;
 const MCP_ERROR_SERVERS_MAX = 64;
 // Hard cap on the advisor model ID captured from the transcript. Real Claude
 // model IDs (e.g. "claude-haiku-4-5-20251001") fit comfortably under this; the
@@ -202,6 +204,7 @@ function serializeTranscriptData(data) {
         advisorModel: data.advisorModel,
         ultracodeActive: data.ultracodeActive,
         lastAssistantModel: sanitizeTranscriptModel(data.lastAssistantModel),
+        sessionPr: normalizeSessionPr(data.sessionPr),
     };
 }
 function deserializeTranscriptData(data) {
@@ -242,7 +245,27 @@ function deserializeTranscriptData(data) {
             : undefined,
         ultracodeActive: typeof data.ultracodeActive === 'boolean' ? data.ultracodeActive : undefined,
         lastAssistantModel: sanitizeTranscriptModel(data.lastAssistantModel),
+        sessionPr: normalizeSessionPr(data.sessionPr),
     };
+}
+function normalizeSessionPr(value) {
+    const ref = value;
+    if (!ref || typeof ref.number !== 'number' || !Number.isSafeInteger(ref.number) || ref.number <= 0) {
+        return undefined;
+    }
+    const url = typeof ref.url === 'string' && /^https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+$/.test(ref.url) ? ref.url : '';
+    return { number: ref.number, url, owned: ref.owned === true };
+}
+function toolResultText(content) {
+    if (typeof content === 'string')
+        return content;
+    if (!Array.isArray(content))
+        return '';
+    return content
+        .map((part) => (part && typeof part === 'object' && typeof part.text === 'string'
+        ? part.text
+        : ''))
+        .join('\n');
 }
 function reviveToolEntry(s) {
     return { ...s, startTime: new Date(s.startTime), endTime: s.endTime ? new Date(s.endTime) : undefined };
@@ -435,6 +458,7 @@ export async function parseTranscript(transcriptPath) {
         result.sessionStart = undefined;
         result.lastAssistantResponseAt = undefined;
         result.lastAssistantModel = undefined;
+        result.sessionPr = undefined;
     };
     if (cacheRaw?.acc != null
         && typeof cacheRaw.resumeSkip === 'number'
@@ -484,6 +508,7 @@ export async function parseTranscript(transcriptPath) {
             result.sessionStart = a.sessionStart ? new Date(a.sessionStart) : undefined;
             result.lastAssistantResponseAt = a.lastAssistantResponseAt ? new Date(a.lastAssistantResponseAt) : undefined;
             result.lastAssistantModel = a.lastAssistantModel;
+            result.sessionPr = normalizeSessionPr(a.sessionPr);
             resuming = true;
             skipCount = Math.max(0, cacheRaw.resumeSkip);
         }
@@ -778,6 +803,7 @@ export async function parseTranscript(transcriptPath) {
             sessionStart: result.sessionStart?.toISOString(),
             lastAssistantResponseAt: result.lastAssistantResponseAt?.toISOString(),
             lastAssistantModel: result.lastAssistantModel,
+            sessionPr: result.sessionPr,
         };
         writeTranscriptCache(canonicalTranscriptPath, transcriptState, result, {
             acc,
@@ -821,6 +847,10 @@ function processEntry(entry, toolMap, skillSet, mcpServerSet, mcpErrorSet, agent
                 status: 'running',
                 startTime: timestamp,
             };
+            const bashCommand = block.name === 'Bash' && typeof block.input?.command === 'string' ? block.input.command : '';
+            if (bashCommand && isGhPrCommand(bashCommand)) {
+                toolEntry.prCommand = bashCommand.slice(0, PR_COMMAND_MAX_LEN);
+            }
             if (block.name === 'Task' || block.name === 'Agent') {
                 const input = block.input;
                 const agentEntry = {
@@ -926,6 +956,15 @@ function processEntry(entry, toolMap, skillSet, mcpServerSet, mcpErrorSet, agent
             if (tool) {
                 tool.status = block.is_error ? 'error' : 'completed';
                 tool.endTime = timestamp;
+                if (tool.name === 'Bash') {
+                    const stdout = entry.toolUseResult?.stdout;
+                    const seen = prFromResult(entry.toolUseResult)
+                        ?? (tool.prCommand
+                            ? prFromCommand(tool.prCommand, typeof stdout === 'string' ? stdout : toolResultText(block.content))
+                            : null);
+                    result.sessionPr = normalizeSessionPr(pickPr(result.sessionPr ?? null, seen));
+                    tool.prCommand = undefined;
+                }
                 // Track each server's latest observed result. Tool names are untrusted
                 // transcript data, so reuse the bounded terminal-safe extractor.
                 const mcpServerName = extractMcpServerName(tool.name);

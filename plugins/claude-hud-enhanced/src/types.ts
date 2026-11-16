@@ -1,9 +1,14 @@
 import type { HudConfig } from './config.js';
 import type { GitStatus } from './git.js';
 import type { AuthInfo } from './auth.js';
+import type { PrSnapshot, SessionPrRef } from './pr-status.js';
+import type { SubagentSeen } from './subagents.js';
+import type { ExtraUsage } from './usage-snapshot.js';
 
 export interface StdinData {
   transcript_path?: string;
+  session_id?: string;
+  session_name?: string;
   cwd?: string;
   workspace?: {
     current_dir?: string;
@@ -68,6 +73,7 @@ export interface ToolEntry {
   id: string;
   name: string;
   target?: string;
+  prCommand?: string;
   status: 'running' | 'completed' | 'error';
   startTime: Date;
   endTime?: Date;
@@ -103,6 +109,13 @@ export interface UsageData {
    * when the values are current.
    */
   staleSince?: Date;
+  extraUsage?: ExtraUsage;
+  fiveHourSeenAt?: Date | null;
+  sevenDaySeenAt?: Date | null;
+  fiveHourUnlimited?: boolean;
+  sevenDayUnlimited?: boolean;
+  fiveHourRolled?: boolean;
+  sevenDayRolled?: boolean;
 }
 
 /** One model-scoped weekly quota window (e.g. label "Fable", used percent 0-100). */
@@ -200,6 +213,7 @@ export interface TranscriptData {
   // when a proxy (e.g. cc-switch) routes to a different model. Transcript
   // parsing sanitizes terminal controls and caps the retained value at 80 chars.
   lastAssistantModel?: string;
+  sessionPr?: SessionPrRef;
 }
 
 export interface RenderContext {
@@ -216,6 +230,9 @@ export interface RenderContext {
   config: HudConfig;
   extraLabel: string | null;
   outputStyle?: string;
+  claudeTheme?: string | null;
+  prStatus?: PrSnapshot | null;
+  pillAgents?: SubagentSeen[];
   claudeCodeVersion?: string;
   effortLevel?: string;
   effortSymbol?: string;

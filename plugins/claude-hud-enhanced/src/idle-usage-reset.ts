@@ -49,12 +49,14 @@ export function applyIdleUsageReset(
   if (usage.fiveHourResetAt && usage.fiveHourResetAt.getTime() <= now) {
     next.fiveHour = usage.fiveHour === null ? null : 0;
     next.fiveHourResetAt = rollForward(usage.fiveHourResetAt, now, FIVE_HOUR_MS);
+    next.fiveHourRolled = true;
     changed = true;
   }
 
   if (usage.sevenDayResetAt && usage.sevenDayResetAt.getTime() <= now) {
     next.sevenDay = usage.sevenDay === null ? null : 0;
     next.sevenDayResetAt = rollForward(usage.sevenDayResetAt, now, SEVEN_DAY_MS);
+    next.sevenDayRolled = true;
     changed = true;
   }
 

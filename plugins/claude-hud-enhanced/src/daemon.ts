@@ -11,7 +11,7 @@ import {
   encodeMessage,
   getIpcPath,
   getPidPath,
-  getPluginVersion,
+  getBuildId,
 } from './daemon-ipc.js';
 import { main } from './index.js';
 import { render } from './render/index.js';
@@ -137,7 +137,7 @@ export function runDaemon(options: DaemonOptions = {}): void {
   const idleTimeoutMs = options.idleTimeoutMs ?? DAEMON_IDLE_EXIT_MS;
   const handlerTimeoutMs = options.handlerTimeoutMs ?? HANDLER_TIMEOUT_MS;
   const socketCheckMs = options.socketCheckMs ?? SOCKET_CHECK_MS;
-  const pluginVersion = options.pluginVersion ?? getPluginVersion();
+  const pluginVersion = options.pluginVersion ?? getBuildId();
   const handleRequest = options.handleRequest ?? defaultHandleRequest;
   const exit = options.exit ?? ((code: number) => process.exit(code));
   const pidPath = options.socketPath ? null : getPidPath(homeDir); // advisory only

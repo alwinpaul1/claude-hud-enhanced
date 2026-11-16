@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -478,6 +479,46 @@ test('getGitStatus does not build branchUrl for non-GitHub SSH remotes', async (
     const result = await getGitStatus(dir);
     assert.equal(result?.branchUrl, undefined);
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('getGitStatus counts staged, unstaged and conflicted files and names the worktree', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'claude-hud-git-'));
+  const linked = `${dir}-wt-a`;
+  const git = (args, cwd = dir) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  try {
+    git(['init']);
+    git(['config', 'user.email', 'test@test.com']);
+    git(['config', 'user.name', 'Test']);
+    await writeFile(path.join(dir, 'a.txt'), 'one');
+    await writeFile(path.join(dir, 'b.txt'), 'one');
+    git(['add', '.']);
+    git(['commit', '-m', 'init']);
+
+    await writeFile(path.join(dir, 'a.txt'), 'two');
+    await writeFile(path.join(dir, 'b.txt'), 'two');
+    git(['add', 'b.txt']);
+    await writeFile(path.join(dir, 'c.txt'), 'new');
+    await writeFile(path.join(dir, 'd.txt'), 'new');
+
+    const result = await getGitStatus(dir);
+    assert.equal(result?.fileStats?.unstaged, 1);
+    assert.equal(result?.fileStats?.staged, 1);
+    assert.equal(result?.fileStats?.untracked, 2);
+    assert.equal(result?.fileStats?.conflicts, 0);
+    assert.equal(result?.fileStats?.modified, 2);
+    assert.equal(result?.worktree, path.basename(dir));
+    assert.equal(result?.isLinked, false);
+
+    git(['worktree', 'add', '-b', 'feat/a', linked]);
+    const other = await getGitStatus(linked);
+    assert.equal(other?.branch, 'feat/a');
+    assert.equal(other?.worktree, path.basename(linked));
+    assert.equal(other?.isLinked, true);
+    assert.equal(other?.fileStats, undefined);
+  } finally {
+    await rm(linked, { recursive: true, force: true });
     await rm(dir, { recursive: true, force: true });
   }
 });

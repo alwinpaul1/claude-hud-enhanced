@@ -6,6 +6,7 @@ import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
 import { renderIdentityLine, renderProjectLine, renderAddedDirsLine, renderGitFilesLine, renderEnvironmentLine, renderPromptCacheLine, renderUsageLine, renderMemoryLine, renderSessionTokensLine, renderCompactionsLine, renderSessionTimeLine, } from './lines/index.js';
 import { dim, RESET } from './colors.js';
+import { renderPillLines } from './pills.js';
 import { getTerminalWidth, UNKNOWN_TERMINAL_WIDTH } from '../utils/terminal.js';
 import { codePointCellWidth, isCjkAmbiguousWide } from './width.js';
 // eslint-disable-next-line no-control-regex
@@ -305,7 +306,7 @@ function alignGroupRight(entries, rightAlign, terminalWidth) {
     }
     return `${leftText}${' '.repeat(gap)}${rightText}`;
 }
-function collectActivityLines(ctx) {
+function collectActivityLines(ctx, skipAgents = false) {
     const activityLines = [];
     const display = ctx.config?.display;
     if (display?.showTools !== false) {
@@ -326,7 +327,7 @@ function collectActivityLines(ctx) {
             activityLines.push(mcpLine);
         }
     }
-    if (display?.showAgents !== false) {
+    if (display?.showAgents !== false && !skipAgents) {
         const agentsLine = renderAgentsLine(ctx);
         if (agentsLine) {
             activityLines.push(agentsLine);
@@ -517,6 +518,13 @@ write = (line) => console.log(line)) {
                 lines.splice(firstActivityIndex, 0, makeSeparator(separatorWidth));
             }
         }
+    }
+    else if (lineLayout === 'pills') {
+        const pillWidth = terminalWidth !== UNKNOWN_TERMINAL_WIDTH ? (terminalWidth ?? 0) : 0;
+        lines = [
+            ...renderPillLines(ctx, pillWidth > 0 ? pillWidth : null),
+            ...collectActivityLines(ctx, (ctx.pillAgents?.length ?? 0) > 0),
+        ];
     }
     else {
         // With `display.compactSingleRow`, keep the header a tight session + usage

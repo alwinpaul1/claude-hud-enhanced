@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
@@ -2447,6 +2448,23 @@ test('countConfigs returns outputStyle with project local precedence', async () 
     restoreEnvVar('HOME', originalHome);
     await rm(homeDir, { recursive: true, force: true });
     await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test('countConfigs returns the Claude Code theme from the user settings', async () => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-home-'));
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeDir;
+
+  try {
+    await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+    assert.equal((await countConfigs()).claudeTheme, null);
+    await writeFile(path.join(homeDir, '.claude', 'settings.json'), JSON.stringify({ theme: 'light-ansi' }), 'utf8');
+    assert.equal((await countConfigs()).claudeTheme, 'light-ansi');
+    assert.equal((await countConfigs()).claudeTheme, 'light-ansi');
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    await rm(homeDir, { recursive: true, force: true });
   }
 });
 

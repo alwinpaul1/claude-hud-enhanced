@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -5,9 +6,9 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { runDaemon, safeColumns, applyRequestEnv, restoreEnv } from '../dist/daemon.js';
-import { encodeMessage, createLineDecoder, getPluginVersion } from '../dist/daemon-ipc.js';
+import { encodeMessage, createLineDecoder, getBuildId } from '../dist/daemon-ipc.js';
 
-const VERSION = getPluginVersion();
+const VERSION = getBuildId();
 
 function tmpSocketPath() {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hud-d-')), 'hud.sock');

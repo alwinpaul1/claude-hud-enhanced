@@ -61,8 +61,10 @@ idle and the HUD freezes at its last render. Each invocation:
 - Plan / org tier label (e.g. Claude Max 20x) when `display.showAuth` is on
 - Optional account user segment when `display.showAuthUser` is on
 
-**From stdin `rate_limits`** (native Claude Code usage, not a separate OAuth usage API):
+**From stdin `rate_limits`** (native Claude Code usage, as of that session's last request):
 - 5-hour and 7-day usage percentages + reset timestamps
+- Merged with the usage API reading in `usage-snapshot.json` (`display.oauthUsagePoll`, on by default): the API is the source of truth for which windows exist, stdin keeps the figure moving between polls
+- Tests never reach the network or the real config dirs: every test file imports `tests/helpers/isolate-env.mjs` first (temp HOME, no CLAUDE_CONFIG_DIR, stub `gh`/`security`, fs + fetch guard)
 - Optional external usage snapshot (`external-usage.ts`) for fallback paths
 
 **HUD data directory** (config + caches + statusline launcher):
@@ -82,18 +84,23 @@ src/
 ├── auth.ts               # Plan/auth segment from Claude Code oauth account
 ├── external-usage.ts     # Optional external usage snapshot
 ├── usage-snapshot.ts     # Shared per-profile usage snapshot + refresher lock (atomic writes)
-├── usage-hybrid.ts       # resolveUsage: stdin while active, snapshot while idle, spawns refresher
-├── refresh-usage.ts      # Detached OAuth usage refresher (token read-only → oauth/usage; TTL/backoff)
+├── usage-hybrid.ts       # resolveUsage: merges stdin and the snapshot per window (newest reading wins, stdin only moves a figure forward), spawns refresher
+├── refresh-usage.ts      # Detached OAuth usage refresher (token read-only → oauth/usage; one request per account, Retry-After, backoff)
+├── extra-usage.ts        # Extra-usage spend from the API's extra_usage (minor units → amount, shown only while in use)
 ├── idle-usage-reset.ts   # Local window-rollover reset while idle (no network)
 ├── effort.ts             # Effort level (when Claude Code exposes it)
 ├── git.ts                # Git status (branch, dirty, ahead/behind)
 ├── git-cache.ts          # TTL+mtime persistent cache around git.ts (spawn-storm fix)
+├── pr-status.ts          # PR snapshot + parsers for the pill row (gh output, checks, base)
+├── refresh-pr.ts         # Detached gh/git refresher that writes the PR snapshot
+├── subagents.ts          # Running subagents' model/effort/tokens from their own transcripts
 ├── daemon.ts             # Warm daemon server (opt-in; serves renders over a local socket)
 ├── daemon-client.ts      # Daemon client: connect-with-timeout, inline fallback, spawn lock
 ├── daemon-ipc.ts         # Shared IPC: per-profile socket path, NDJSON framing, version
 ├── types.ts              # TypeScript interfaces
 └── render/
     ├── index.ts          # Main render coordinator
+    ├── pills.ts          # Default pill row (ported from the usage-band mod): palettes, layout, ANSI
     ├── session-line.ts   # Compact session line
     ├── lines/            # Expanded element renderers (usage, project, …)
     ├── tools-line.ts     # Tool activity
@@ -103,6 +110,14 @@ src/
 ```
 
 ### Output Format
+
+Default (`lineLayout: "pills"`): one row of pills, in a light and a dark palette (`display.pillTheme`), reflowed to the pane width by `layout()` in `render/pills.ts`. Any UI change there must be checked in both palettes.
+
+```
+ Opus 5.5 medium │ ◔ ╸━━━━━━━ 7% 69.0k/1.0M    ◷ 5h ━━━╸━━━━ 42% │ 2:10 PM    ▦ 7d ╸━━━━━━━ 8% │ Sat 2:00 AM     my-project │  main ~6 ?3
+```
+
+`lineLayout: "compact"`:
 
 ```
 [Opus | Pro] █████░░░░░ 45% | my-project git:(main) | 2 CLAUDE.md | 5h: 25% | ⏱️ 5m

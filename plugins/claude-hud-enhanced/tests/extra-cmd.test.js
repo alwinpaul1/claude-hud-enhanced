@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sanitize, parseExtraCmdArg, runExtraCmd, isExtraCmdAllowed } from '../dist/extra-cmd.js';

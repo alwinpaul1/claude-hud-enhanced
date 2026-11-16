@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import { createDebug } from './debug.js';
-import { IPC_PROTOCOL_VERSION, createLineDecoder, encodeMessage, getIpcDir, getIpcPath, getPluginVersion, getSpawnLockPath, } from './daemon-ipc.js';
+import { IPC_PROTOCOL_VERSION, createLineDecoder, encodeMessage, getIpcDir, getIpcPath, getBuildId, getSpawnLockPath, } from './daemon-ipc.js';
 import { tryTakeLock } from './usage-hybrid.js';
 import { defaultSnapshotFs } from './usage-snapshot.js';
 import { ensurePrivateDir } from './utils/cache-file.js';
@@ -64,6 +64,8 @@ function requestOnce(socketPath, request, connectTimeoutMs, responseTimeoutMs) {
             const res = message;
             if (res != null &&
                 res.v === IPC_PROTOCOL_VERSION &&
+                res.pluginVersion === request.pluginVersion &&
+                res.willExit !== true &&
                 typeof res.output === 'string') {
                 finish({ kind: 'ok', output: res.output }, socket);
             }
@@ -185,7 +187,7 @@ export async function tryDaemonRender(stdin, entryPath, deps = {}) {
     const socketPath = getIpcPath(homeDir);
     const request = {
         v: IPC_PROTOCOL_VERSION,
-        pluginVersion: getPluginVersion(),
+        pluginVersion: deps.pluginVersion ?? getBuildId(),
         stdin,
         cwd: stdin.cwd ?? process.cwd(),
         env: snapshotClientEnv(),

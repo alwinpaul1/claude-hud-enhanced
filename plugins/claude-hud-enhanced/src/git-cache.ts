@@ -37,9 +37,10 @@ const debug = createDebug('git-cache');
  */
 export const GIT_CACHE_TTL_MS = 5_000;
 export const NULL_CACHE_TTL_MS = 1_000;
+export const GIT_CACHE_VERSION = 2;
 
 interface GitCacheEntry {
-  version: 1;
+  version: typeof GIT_CACHE_VERSION;
   createdAt: number;
   headMtimeMs: number | null;
   indexMtimeMs: number | null;
@@ -97,9 +98,27 @@ function cachePathFor(gitDir: string, homeDir: string): string {
   return path.join(cacheDirFor(homeDir), `git-${key}.json`);
 }
 
+function isGitStatusShape(v: unknown): v is GitStatus | null {
+  if (v === null) return true;
+  const status = v as Partial<GitStatus>;
+  return (
+    typeof status === 'object'
+    && typeof status.branch === 'string'
+    && typeof status.isDirty === 'boolean'
+    && typeof status.ahead === 'number'
+    && typeof status.behind === 'number'
+  );
+}
+
 function isGitCacheEntry(v: unknown): v is GitCacheEntry {
   const e = v as Partial<GitCacheEntry> | null;
-  return e != null && e.version === 1 && typeof e.createdAt === 'number';
+  return (
+    e != null
+    && typeof e === 'object'
+    && e.version === GIT_CACHE_VERSION
+    && typeof e.createdAt === 'number'
+    && isGitStatusShape(e.status)
+  );
 }
 
 function readEntry(cachePath: string): GitCacheEntry | null {
@@ -144,7 +163,7 @@ export async function getGitStatusCached(
   }
 
   const status = await fetch(cwd);
-  writeEntry(cachePath, { version: 1, createdAt: now(), headMtimeMs, indexMtimeMs, status });
+  writeEntry(cachePath, { version: GIT_CACHE_VERSION, createdAt: now(), headMtimeMs, indexMtimeMs, status });
   if (random() < CACHE_SWEEP_SAMPLE_RATE) {
     sweepCacheDir(cacheDirFor(homeDir), now(), (err) =>
       debug('cache sweep failed:', err instanceof Error ? err.message : err),

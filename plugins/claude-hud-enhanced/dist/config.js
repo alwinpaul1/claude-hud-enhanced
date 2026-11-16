@@ -47,7 +47,7 @@ const KNOWN_ELEMENTS = new Set(DEFAULT_ELEMENT_ORDER);
 const KNOWN_FIRST_LINE_SEGMENTS = new Set(PROJECT_LINE_SEGMENTS);
 export const DEFAULT_CONFIG = {
     language: 'en',
-    lineLayout: 'compact',
+    lineLayout: 'pills',
     showSeparators: true,
     pathLevels: 1,
     maxWidth: null,
@@ -89,6 +89,10 @@ export const DEFAULT_CONFIG = {
         usageBarEnabled: true,
         showResetLabel: true,
         usageCompact: false,
+        pillTheme: 'auto',
+        pillCaps: true,
+        pillPr: true,
+        pillMaxRows: null,
         showTools: true,
         showSkills: false,
         showMcp: false,
@@ -134,7 +138,7 @@ export const DEFAULT_CONFIG = {
         // out-of-the-box look on every platform (overflow drops at a segment
         // boundary instead of wrapping to a third row).
         compactSingleRow: true,
-        idleUsageReset: false,
+        idleUsageReset: true,
         oauthUsagePoll: true,
         customLine: '',
         customLinePosition: 'last',
@@ -182,7 +186,10 @@ function validatePathLevels(value) {
     return value === 1 || value === 2 || value === 3 || value === 'full';
 }
 function validateLineLayout(value) {
-    return value === 'compact' || value === 'expanded';
+    return value === 'compact' || value === 'expanded' || value === 'pills';
+}
+function validatePillTheme(value) {
+    return value === 'auto' || value === 'dark' || value === 'light';
 }
 function validateAutocompactBuffer(value) {
     return value === 'enabled' || value === 'disabled';
@@ -536,6 +543,20 @@ export function mergeConfig(userConfig) {
         usageCompact: typeof migrated.display?.usageCompact === 'boolean'
             ? migrated.display.usageCompact
             : DEFAULT_CONFIG.display.usageCompact,
+        pillTheme: validatePillTheme(migrated.display?.pillTheme)
+            ? migrated.display.pillTheme
+            : DEFAULT_CONFIG.display.pillTheme,
+        pillCaps: typeof migrated.display?.pillCaps === 'boolean'
+            ? migrated.display.pillCaps
+            : DEFAULT_CONFIG.display.pillCaps,
+        pillPr: typeof migrated.display?.pillPr === 'boolean'
+            ? migrated.display.pillPr
+            : DEFAULT_CONFIG.display.pillPr,
+        pillMaxRows: typeof migrated.display?.pillMaxRows === 'number'
+            && Number.isInteger(migrated.display.pillMaxRows)
+            && migrated.display.pillMaxRows >= 1
+            ? migrated.display.pillMaxRows
+            : DEFAULT_CONFIG.display.pillMaxRows,
         showTools: typeof migrated.display?.showTools === 'boolean'
             ? migrated.display.showTools
             : DEFAULT_CONFIG.display.showTools,

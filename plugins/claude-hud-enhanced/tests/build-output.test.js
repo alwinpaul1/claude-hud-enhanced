@@ -1,3 +1,4 @@
+import './helpers/isolate-env.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
