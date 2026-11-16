@@ -40,5 +40,9 @@
     "type": "git",
     "url": "https://github.com/alwinpaul1/claude-hud-enhanced.git"
   },
-  "homepage": "https://github.com/alwinpaul1/claude-hud-enhanced"
+  "homepage": "https://github.com/alwinpaul1/claude-hud-enhanced",
+  "overrides": {
+    "minimatch": "^11.0.1",
+    "brace-expansion": "^5.0.12"
+  }
 }

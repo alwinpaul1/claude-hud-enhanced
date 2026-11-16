@@ -110,7 +110,7 @@ test('applyContextWindowFallback applies cached context for suspicious zero fram
     });
     assert.equal(stdin.context_window.context_window_size, 200000);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -125,7 +125,7 @@ test('applyContextWindowFallback keeps suspicious frame unchanged when cache is 
     assert.equal(stdin.context_window.used_percentage, 0);
     assert.equal(stdin.context_window.remaining_percentage, 100);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -151,7 +151,7 @@ test('applyContextWindowFallback writes cache for good context frames', async ()
       assert.equal((await stat(cachePath)).mode & 0o777, 0o600);
     }
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -172,7 +172,7 @@ test('applyContextWindowFallback ignores corrupted cache without throwing', asyn
     });
     assert.equal(stdin.context_window.used_percentage, 0);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -209,7 +209,7 @@ test('applyContextWindowFallback keeps live usage when zero-percent frame alread
       cache_read_input_tokens: 100,
     });
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -245,7 +245,7 @@ test('applyContextWindowFallback does not restore cache when compact_boundary is
     assert.equal(stdin.context_window.used_percentage, 0);
     assert.equal(stdin.context_window.remaining_percentage, 100);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -276,7 +276,7 @@ test('applyContextWindowFallback uses compactMetadata.postTokens when present', 
     assert.equal(stdin.context_window.used_percentage, 4);
     assert.equal(stdin.context_window.remaining_percentage, 96);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -320,7 +320,7 @@ test('applyContextWindowFallback refreshes cache after post-compact transition p
     assert.equal(nextPostCompactTick.context_window.used_percentage, 4);
     assert.equal(nextPostCompactTick.context_window.remaining_percentage, 96);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -343,7 +343,7 @@ test('applyContextWindowFallback still restores cache for glitch frames when no 
     assert.equal(stdin.context_window.used_percentage, 58);
     assert.equal(stdin.context_window.remaining_percentage, 42);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -372,7 +372,7 @@ test('applyContextWindowFallback still restores cache when compact_boundary is o
     assert.equal(stdin.context_window.used_percentage, 58);
     assert.equal(stdin.context_window.remaining_percentage, 42);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -388,7 +388,7 @@ test('applyContextWindowFallback is a no-op when transcript_path is missing', as
     assert.equal(existsSync(getCacheDir(tempHome)), false);
     assert.equal(stdin.context_window.used_percentage, 58);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -425,7 +425,7 @@ test('applyContextWindowFallback isolates cache between concurrent sessions', as
     assert.equal(suspiciousB.context_window.used_percentage, 17);
     assert.equal(suspiciousB.context_window.remaining_percentage, 83);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -444,7 +444,7 @@ test('applyContextWindowFallback skips write when cache is fresh within TTL', as
     const second = JSON.parse(await readFile(getCachePath(tempHome, transcriptPath), 'utf8'));
     assert.equal(second.saved_at, 1_000_000, 'saved_at must not advance within TTL when value is unchanged');
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -459,7 +459,7 @@ test('applyContextWindowFallback rewrites cache after TTL elapses even with unch
     const refreshed = JSON.parse(await readFile(getCachePath(tempHome, transcriptPath), 'utf8'));
     assert.equal(refreshed.saved_at, 1_015_000);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -480,7 +480,7 @@ test('applyContextWindowFallback keeps the earlier snapshot when usage changes w
     assert.equal(refreshed.used_percentage, 58);
     assert.equal(refreshed.saved_at, 1_000_000);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -507,7 +507,7 @@ test('applyContextWindowFallback triggers sweep when random sample falls under t
     assert.equal(existsSync(stalePath), false, 'stale file should be removed by sweep');
     assert.equal(existsSync(getCachePath(tempHome, transcriptPath)), true, 'current session cache must survive');
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -534,7 +534,7 @@ test('_sweepCacheForTests removes entries older than the max age', async () => {
     assert.equal(existsSync(stalePath), false);
     assert.equal(existsSync(freshPath), true);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -564,7 +564,7 @@ test('_sweepCacheForTests evicts oldest entries when over the entry cap', async 
       assert.equal(existsSync(path.join(cacheDir, `entry-${i}.json`)), true, `entry-${i} should survive`);
     }
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -586,7 +586,7 @@ test('applyContextWindowFallback restores cache for zero-percent frames with non
     assert.equal(stdin.context_window.used_percentage, 58);
     assert.equal(stdin.context_window.remaining_percentage, 42);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -608,7 +608,7 @@ test('applyContextWindowFallback restores cache for zero-percent frames with non
     assert.equal(stdin.context_window.used_percentage, 58);
     assert.equal(stdin.context_window.remaining_percentage, 42);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -642,7 +642,7 @@ test('applyContextWindowFallback restores cache for zero-percent streaming frame
       assert.equal(stdin.context_window.remaining_percentage, 42);
     }
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -675,6 +675,6 @@ test('applyContextWindowFallback keeps post-compact zero/reset frames unchanged'
       cache_read_input_tokens: 0,
     });
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

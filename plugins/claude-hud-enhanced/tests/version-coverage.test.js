@@ -60,7 +60,7 @@ test('getClaudeCodeVersion returns undefined when execFile throws', async () => 
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -96,7 +96,7 @@ test('getClaudeCodeVersion uses in-memory cache on repeated calls without reset'
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -171,6 +171,6 @@ test('getClaudeCodeVersion handles disk cache with null version', async () => {
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

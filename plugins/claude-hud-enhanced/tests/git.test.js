@@ -18,7 +18,7 @@ test('getGitBranch returns null for non-git directory', async () => {
     const result = await getGitBranch(dir);
     assert.equal(result, null);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -33,7 +33,7 @@ test('getGitBranch returns branch name for git directory', async () => {
     const result = await getGitBranch(dir);
     assert.ok(result === 'main' || result === 'master', `Expected main or master, got ${result}`);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -49,7 +49,7 @@ test('getGitBranch returns custom branch name', async () => {
     const result = await getGitBranch(dir);
     assert.equal(result, 'feature/test-branch');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -66,7 +66,7 @@ test('getGitBranch returns an exact tag name for detached tagged HEAD', async ()
     const result = await getGitBranch(dir);
     assert.equal(result, 'v1.2.3');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -83,7 +83,7 @@ test('getGitBranch returns a detached short sha label for untagged detached HEAD
     const result = await getGitBranch(dir);
     assert.match(result ?? '', /^detached:[0-9a-f]{7,}$/);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -99,7 +99,7 @@ test('getGitStatus returns null for non-git directory', async () => {
     const result = await getGitStatus(dir);
     assert.equal(result, null);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -117,7 +117,7 @@ test('getGitStatus returns clean state for clean repo', async () => {
     assert.equal(result?.ahead, 0);
     assert.equal(result?.behind, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -135,7 +135,7 @@ test('getGitStatus detects dirty state', async () => {
     const result = await getGitStatus(dir);
     assert.equal(result?.isDirty, true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -151,7 +151,7 @@ test('getGitStatus returns undefined fileStats for clean repo', async () => {
     const result = await getGitStatus(dir);
     assert.equal(result?.fileStats, undefined);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -173,7 +173,7 @@ test('getGitStatus counts untracked files', async () => {
     assert.equal(result?.fileStats?.added, 0);
     assert.equal(result?.fileStats?.deleted, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -196,7 +196,7 @@ test('getGitStatus counts modified files', async () => {
     assert.equal(result?.fileStats?.modified, 1);
     assert.equal(result?.fileStats?.untracked, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -227,7 +227,7 @@ test('getGitStatus returns UTF-8 filenames when core.quotePath is true', async (
       [{ basename: fileName, fullPath: fileName, lineDiff: { added: 1, deleted: 1 } }]
     );
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -247,7 +247,7 @@ test('getGitStatus counts staged added files', async () => {
     assert.equal(result?.fileStats?.added, 1);
     assert.equal(result?.fileStats?.untracked, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -267,7 +267,7 @@ test('getGitStatus counts deleted files', async () => {
     const result = await getGitStatus(dir);
     assert.equal(result?.fileStats?.deleted, 1);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -288,7 +288,7 @@ test('getGitStatus includes total and per-file line diffs for modified files', a
     assert.deepEqual(result?.lineDiff, { added: 1, deleted: 1 });
     assert.deepEqual(result?.fileStats?.trackedFiles[0]?.lineDiff, { added: 1, deleted: 1 });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -320,7 +320,7 @@ test('getGitStatus attaches line diffs to renamed files', async () => {
     assert.equal(renamed?.lineDiff?.added, 2);
     assert.equal(renamed?.lineDiff?.deleted, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -359,7 +359,7 @@ test('getGitStatus attaches line diffs to renamed files with shared directory pr
       `expected lineDiff on renamed file, got ${JSON.stringify(renamed)}`
     );
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -391,7 +391,7 @@ test('getGitStatus keeps line diffs for literal filenames containing arrow text'
       `expected lineDiff on literal arrow filename, got ${JSON.stringify(modified)}`
     );
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -408,7 +408,7 @@ test('getGitStatus builds branchUrl from HTTPS origin remotes', async () => {
     const result = await getGitStatus(dir);
     assert.equal(result?.branchUrl, 'https://github.com/example/claude-hud/tree/feature/test-branch');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -425,7 +425,7 @@ test('getGitStatus builds branchUrl from SSH origin remotes', async () => {
     const result = await getGitStatus(dir);
     assert.equal(result?.branchUrl, 'https://github.com/example/claude-hud/tree/feature/test-branch');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -445,7 +445,7 @@ test('getGitStatus links an untagged detached HEAD to its commit', async () => {
     assert.equal(result?.branch, `detached:${shortSha}`);
     assert.equal(result?.branchUrl, `https://github.com/example/claude-hud/commit/${shortSha}`);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -462,7 +462,7 @@ test('getGitStatus does not build branchUrl for non-GitHub HTTPS remotes', async
     const result = await getGitStatus(dir);
     assert.equal(result?.branchUrl, undefined);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -479,7 +479,7 @@ test('getGitStatus does not build branchUrl for non-GitHub SSH remotes', async (
     const result = await getGitStatus(dir);
     assert.equal(result?.branchUrl, undefined);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -518,7 +518,7 @@ test('getGitStatus counts staged, unstaged and conflicted files and names the wo
     assert.equal(other?.isLinked, true);
     assert.equal(other?.fileStats, undefined);
   } finally {
-    await rm(linked, { recursive: true, force: true });
-    await rm(dir, { recursive: true, force: true });
+    await rm(linked, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

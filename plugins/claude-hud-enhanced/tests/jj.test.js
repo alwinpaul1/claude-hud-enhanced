@@ -27,7 +27,7 @@ test('isJjRepo returns false for a non-jj directory', async () => {
   try {
     assert.equal(isJjRepo(dir), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -42,7 +42,7 @@ test('getJjStatus returns null for a non-jj directory', async () => {
     const result = await getJjStatus(dir);
     assert.equal(result, null);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -74,7 +74,7 @@ test('getJjStatus uses a fixed read-only bounded invocation', async () => {
     assert.equal(invocation?.options.shell, false);
     assert.equal(invocation?.options.windowsHide, true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -94,7 +94,7 @@ test('getJjStatus strictly validates field count and boolean flags', async () =>
       assert.equal(result, null, `expected malformed output to be rejected: ${JSON.stringify(stdout)}`);
     }
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -108,7 +108,7 @@ test('getJjStatus preserves commas and separates local bookmarks safely', async 
     assert.equal(result?.branch, 'feature,one');
     assert.equal(result?.isDirty, true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -126,7 +126,7 @@ test('getJjStatus sanitizes terminal controls and caps the chosen label', async 
     assert.equal(result.branch.includes('\u202E'), false);
     assert.equal(result.conflict, true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -138,8 +138,8 @@ test('isJjRepo resolves the cwd before walking', async () => {
     await symlink(dir, link, 'dir');
     assert.equal(isJjRepo(link), true);
   } finally {
-    await rm(link, { recursive: true, force: true });
-    await rm(dir, { recursive: true, force: true });
+    await rm(link, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -150,8 +150,8 @@ test('isJjRepo rejects a symlinked .jj marker', async () => {
     await symlink(markerTarget, path.join(dir, '.jj'), 'dir');
     assert.equal(isJjRepo(dir), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
-    await rm(markerTarget, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(markerTarget, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -165,7 +165,7 @@ test('isJjRepo stops at a nearer .git marker', async () => {
     await writeFile(path.join(nested, '.git'), 'gitdir: elsewhere\n');
     assert.equal(isJjRepo(deep), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -176,7 +176,7 @@ test('isJjRepo prefers a same-directory .jj marker over .git', async () => {
     await mkdir(path.join(dir, '.git'));
     assert.equal(isJjRepo(dir), true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -193,7 +193,7 @@ test('isJjRepo and getJjStatus detect a real jj repo', { skip: skipReason }, asy
     assert.equal(result?.isDirty, false);
     assert.ok(result?.branch, `expected an anonymous change id, got ${JSON.stringify(result)}`);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -206,7 +206,7 @@ test('getJjStatus reports isDirty after an uncommitted change', { skip: skipReas
     const result = await getJjStatus(dir);
     assert.equal(result?.isDirty, true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -219,7 +219,7 @@ test('getJjStatus reports the bookmark name at @ when one exists', { skip: skipR
     const result = await getJjStatus(dir);
     assert.equal(result?.branch, 'mybookmark');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -232,7 +232,7 @@ test('isJjRepo detects a jj repo from a nested subdirectory', { skip: skipReason
 
     assert.equal(isJjRepo(nested), true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -263,6 +263,6 @@ test('getJjStatus detects a genuine conflict', { skip: skipReason }, async () =>
     const result = await getJjStatus(dir);
     assert.equal(result?.conflict, true);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

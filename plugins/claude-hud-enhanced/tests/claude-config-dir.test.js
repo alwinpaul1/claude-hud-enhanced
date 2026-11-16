@@ -34,7 +34,7 @@ test('getHudPluginDir returns plugins/claude-hud-enhanced under CLAUDE_CONFIG_DI
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = prev;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -51,7 +51,7 @@ test('getClaudeConfigJsonCandidates lists the inside file before the sibling', a
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = prev;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -69,7 +69,7 @@ test('getClaudeConfigJsonPath prefers the inside .claude.json for a custom CLAUD
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = prev;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -85,7 +85,7 @@ test('migrate renames legacy claude-hud dir to claude-hud-enhanced', async () =>
   assert.equal(await exists(legacy), false);
   assert.equal(await exists(next), true);
   assert.equal(await readFile(path.join(next, 'config.json'), 'utf8'), '{"lineLayout":"compact"}');
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test('migrate copies missing config.json when both dirs exist', async () => {
@@ -100,7 +100,7 @@ test('migrate copies missing config.json when both dirs exist', async () => {
 
   assert.equal(await exists(legacy), true); // left in place when both exist
   assert.equal(await readFile(path.join(next, 'config.json'), 'utf8'), '{"showSeparators":true}');
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test('migrate falls back to copy+remove when rename fails (EXDEV)', async () => {
@@ -127,7 +127,7 @@ test('migrate falls back to copy+remove when rename fails (EXDEV)', async () => 
   assert.equal(await exists(legacy), false); // legacy removed after copy
   assert.equal(await exists(next), true);
   assert.equal(await readFile(path.join(next, 'config.json'), 'utf8'), '{"from":"legacy"}');
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test('migrate does not copy legacy statusline.mjs into enhanced dir', async () => {
@@ -145,7 +145,7 @@ test('migrate does not copy legacy statusline.mjs into enhanced dir', async () =
 
   assert.equal(await exists(path.join(next, 'statusline.mjs')), false);
   assert.equal(await readFile(path.join(next, 'config.json'), 'utf8'), '{"from":"legacy"}');
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test('migrate does not overwrite existing enhanced config.json', async () => {
@@ -160,7 +160,7 @@ test('migrate does not overwrite existing enhanced config.json', async () => {
   migrateLegacyHudPluginDir(legacy, next);
 
   assert.equal(await readFile(path.join(next, 'config.json'), 'utf8'), '{"from":"enhanced"}');
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test('getHudPluginDir auto-migrates legacy dir on access', async () => {
@@ -178,6 +178,6 @@ test('getHudPluginDir auto-migrates legacy dir on access', async () => {
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = prev;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

@@ -165,7 +165,7 @@ async function withDeterministicSpeedCache(fn) {
     } else {
       process.env.CLAUDE_CONFIG_DIR = originalConfigDir;
     }
-    await rm(tempConfigDir, { recursive: true, force: true });
+    await rm(tempConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
 
@@ -2330,7 +2330,7 @@ test('parseTranscript sanitizes and caps active skill and MCP names', async () =
     assert.equal(result.skills[0], `${longSkill.slice(0, 63)}…`);
     assert.deepEqual(result.mcpServers, ['badserver']);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

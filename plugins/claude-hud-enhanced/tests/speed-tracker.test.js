@@ -60,7 +60,7 @@ test('getOutputSpeed estimates speed from transcript growth when output tokens a
     assert.ok(second !== null);
     assert.ok(Math.abs(second - 20) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -85,7 +85,7 @@ test('getOutputSpeed accumulates short transcript-growth windows until the fallb
     assert.ok(matured !== null);
     assert.ok(Math.abs(matured - 50) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -106,7 +106,7 @@ test('getOutputSpeed ignores fallback samples without transcript growth', async 
     assert.ok(afterIdle !== null);
     assert.ok(Math.abs(afterIdle - 20) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -129,7 +129,7 @@ test('getOutputSpeed ignores stale fallback windows', async () => {
     assert.ok(fresh !== null);
     assert.ok(Math.abs(fresh - 20) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -162,7 +162,7 @@ test('getOutputSpeed creates fallback cache under CLAUDE_CONFIG_DIR by default',
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -179,7 +179,7 @@ test('getOutputSpeed ignores fallback tracking for non-file transcript paths', a
     const cacheDir = path.join(tempHome, '.claude', 'plugins', 'claude-hud-enhanced', 'speed-cache');
     assert.equal(existsSync(cacheDir), false);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -194,7 +194,7 @@ test('getOutputSpeed returns null when transcript_path is missing', async () => 
     );
     assert.equal(speed, null);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -211,7 +211,7 @@ test('getOutputSpeed computes tokens per second within window', async () => {
     assert.ok(second !== null);
     assert.ok(Math.abs(second - 20) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -228,7 +228,7 @@ test('getOutputSpeed ignores sub-window bursts to avoid inflated rates', async (
     const speed = getOutputSpeed(stdinWith(transcriptPath, 70), { ...base, now: () => 1050 });
     assert.equal(speed, null);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -250,7 +250,7 @@ test('getOutputSpeed accumulates repeated short windows until the sample matures
     assert.ok(matured !== null);
     assert.ok(Math.abs(matured - 150) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -265,7 +265,7 @@ test('getOutputSpeed ignores stale windows', async () => {
     const speed = getOutputSpeed(stdinWith(transcriptPath, 30), { ...base, now: () => 8000 });
     assert.equal(speed, null);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -294,7 +294,7 @@ test('getOutputSpeed isolates cache across concurrent sessions', async () => {
     assert.ok(aContinued !== null);
     assert.ok(Math.abs(aContinued - 200) < 0.01);
   } finally {
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -327,6 +327,6 @@ test('getOutputSpeed writes cache under CLAUDE_CONFIG_DIR by default', async () 
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

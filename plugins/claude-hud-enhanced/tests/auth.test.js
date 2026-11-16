@@ -99,7 +99,7 @@ test('readAuthInfo honors CLAUDE_CONFIG_DIR and handles unreadable profiles', as
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     restoreEnvVar('ANTHROPIC_API_KEY', originalApiKey);
-    await rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -115,7 +115,7 @@ test('readAuthInfo reports an API key without requiring an oauth profile', async
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     restoreEnvVar('ANTHROPIC_API_KEY', originalApiKey);
-    await rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -175,7 +175,7 @@ test('readAuthInfo caches derived auth and serves it on an unchanged file', asyn
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -204,7 +204,7 @@ test('readAuthInfo re-parses when claude.json actually changes', async () => {
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -241,7 +241,7 @@ test('readAuthInfo busts the cache when the source identity changes', async () =
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -280,7 +280,7 @@ test('readAuthInfo rejects a stale v1 cache entry', async () => {
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -311,7 +311,7 @@ test('readAuthInfo rejects a poisoned cache even when source identity matches', 
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -341,7 +341,7 @@ test('readAuthInfo skips an empty inside stub and resolves the account from the 
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -367,7 +367,7 @@ test('readAuthInfo prefers the inside account over a sibling for a custom profil
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -424,7 +424,7 @@ test('readAuthInfo rejects symlink cache files without touching their target', a
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -454,6 +454,6 @@ test('readAuthInfo detects same-size rewrites with a restored mtime', async () =
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', original);
     restoreEnvVar('ANTHROPIC_API_KEY', originalKey);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

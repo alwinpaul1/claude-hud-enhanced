@@ -15,7 +15,7 @@ async function withTempFile(content) {
   await writeFile(filePath, content, 'utf8');
   return {
     filePath,
-    cleanup: async () => rm(dir, { recursive: true, force: true }),
+    cleanup: async () => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
   };
 }
 
@@ -121,7 +121,7 @@ test('writeExternalUsageSnapshot writes stdin rate limits to the configured path
       },
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -139,7 +139,7 @@ test('writeExternalUsageSnapshot skips identical snapshots within the throttle w
 
     assert.equal(secondStat.mtimeMs, firstStat.mtimeMs);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -153,7 +153,7 @@ test('writeExternalUsageSnapshot is a no-op without a configured write path', as
     assert.equal(wrote, false);
     assert.equal(await pathExists(filePath), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -231,7 +231,7 @@ test('writeExternalUsageSnapshot does not create missing parent directories', as
     assert.equal(await pathExists(missingDir), false);
     assert.equal(await pathExists(filePath), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -249,7 +249,7 @@ test('writeExternalUsageSnapshot is a no-op without parsed stdin rate limits', a
     assert.equal(wrote, false);
     assert.equal(await pathExists(filePath), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -273,7 +273,7 @@ test('writeExternalUsageSnapshot does not replace shared limits with scoped-only
     assert.equal(wrote, false);
     assert.equal(fs.existsSync(filePath), false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -300,7 +300,7 @@ test('writeExternalUsageSnapshot removes temp files when atomic rename fails', a
     assert.equal(await pathExists(filePath), false);
     assert.deepEqual(files, []);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -323,7 +323,7 @@ test('writeExternalUsageSnapshot emits only supported snapshot keys', async () =
     assert.deepEqual(Object.keys(snapshot.five_hour).sort(), ['resets_at', 'used_percentage']);
     assert.deepEqual(Object.keys(snapshot.seven_day).sort(), ['resets_at', 'used_percentage']);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -338,7 +338,7 @@ test('writeExternalUsageSnapshot output can be read by getUsageFromExternalSnaps
 
     assert.deepEqual(usage, makeUsage());
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

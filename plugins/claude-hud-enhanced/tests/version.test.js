@@ -130,7 +130,7 @@ test('getClaudeCodeVersion persists cache across process resets under CLAUDE_CON
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -172,7 +172,7 @@ test('getClaudeCodeVersion refreshes when the resolved Claude binary path change
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -211,7 +211,7 @@ test('getClaudeCodeVersion refreshes when the Claude binary mtime changes', asyn
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -243,7 +243,7 @@ test('getClaudeCodeVersion executes the resolved binary path', async () => {
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -283,6 +283,6 @@ test('getClaudeCodeVersion uses the Windows wrapper invocation for .cmd binaries
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
     restoreEnvVar('COMSPEC', originalComspec);
-    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

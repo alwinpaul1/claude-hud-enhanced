@@ -96,7 +96,7 @@ async function createTempConfigDir(config = {}) {
   );
   return {
     dir,
-    cleanup: async () => rm(dir, { recursive: true, force: true }),
+    cleanup: async () => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
   };
 }
 

@@ -247,6 +247,6 @@ test('Windows Git runner reuses one guardian for sequential bounded commands', {
     assert.equal(status.stdout, '');
   } finally {
     await runner.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

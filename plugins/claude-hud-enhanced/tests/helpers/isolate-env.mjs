@@ -97,7 +97,7 @@ if (env.owned) {
       process.exitCode = 1;
     }
     try {
-      rmSync(env.root, { recursive: true, force: true });
+      rmSync(env.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     } catch {
       process.exitCode = process.exitCode || 0;
     }

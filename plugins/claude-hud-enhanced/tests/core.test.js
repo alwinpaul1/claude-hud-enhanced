@@ -37,7 +37,7 @@ async function parseTempTranscript(name, entries) {
   try {
     return await parseTranscript(filePath);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
 
@@ -686,7 +686,7 @@ test('parseTranscript accumulates session token usage from assistant messages', 
       cacheReadTokens: 2000,
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -938,7 +938,7 @@ test('parseTranscript records the most recent compact_boundary and postTokens', 
     assert.equal(result.lastCompactPostTokens, 12345);
     assert.equal(result.compactionCount, 2);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -968,7 +968,7 @@ test('parseTranscript ignores compact_boundary entries without a valid timestamp
     assert.equal(result.lastCompactPostTokens, undefined);
     assert.equal(result.compactionCount, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -988,7 +988,7 @@ test('parseTranscript captures the last assistant response timestamp', async () 
     const result = await parseTranscript(filePath);
     assert.equal(result.lastAssistantResponseAt?.toISOString(), '2024-01-01T00:00:10.000Z');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1191,7 +1191,7 @@ test('parseTranscript drops a cached TTL that is not a real tier', async () => {
       'the anchor must still survive the cache round-trip');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1318,7 +1318,7 @@ test('parseTranscript ignores malformed session token values', async () => {
       cacheReadTokens: 1,
     });
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1353,7 +1353,7 @@ test('TaskCreate taskId is preserved across TodoWrite and usable by TaskUpdate',
     assert.equal(result.todos[1].content, 'Write tests');
     assert.equal(result.todos[1].status, 'pending');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1395,7 +1395,7 @@ test('TaskCreate taskIds survive TodoWrite when two todos share the same content
     assert.equal(result.todos[1].status, 'completed',
       'second occurrence must be reachable by its own taskId after TodoWrite');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1429,7 +1429,7 @@ test('TodoWrite without prior TaskCreate works as before (no regression)', async
     assert.equal(result.todos[1].content, 'Task C');
     assert.equal(result.todos[1].status, 'pending');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1448,7 +1448,7 @@ test('parseTranscript prefers custom title over slug for session name', async ()
     const result = await parseTranscript(filePath);
     assert.equal(result.sessionName, 'My Renamed Session');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1466,7 +1466,7 @@ test('parseTranscript falls back to latest slug when custom title is missing', a
     const result = await parseTranscript(filePath);
     assert.equal(result.sessionName, 'auto-slug-2');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1494,7 +1494,7 @@ test('parseTranscript tolerates malformed lines', async () => {
     assert.equal(result.tools.length, 1);
     assert.equal(result.tools[0].status, 'completed');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1522,7 +1522,7 @@ test('parseTranscript extracts tool targets for common tools', async () => {
     assert.equal(targets.get('Glob'), '**/*.ts');
     assert.equal(targets.get('Grep'), 'render');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1558,7 +1558,7 @@ test('parseTranscript collapses multiline Bash targets before truncating', async
     assert.equal(result.tools[0].target, 'ID=foo ccusage session --json...');
     assert.equal(result.tools[1].target, undefined);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1583,7 +1583,7 @@ test('parseTranscript extracts Skill tool target from non-empty input.skill', as
     assert.equal(result.tools[0].name, 'Skill');
     assert.equal(result.tools[0].target, 'prd-development');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1609,7 +1609,7 @@ test('parseTranscript leaves Skill target empty when input.skill is missing or i
     assert.equal(result.tools.length, 3);
     assert.deepEqual(result.tools.map((tool) => tool.target), [undefined, undefined, undefined]);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1632,7 +1632,7 @@ test('parseTranscript truncates long bash commands in targets', async () => {
     assert.equal(result.tools.length, 1);
     assert.ok(result.tools[0].target?.endsWith('...'));
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1731,7 +1731,7 @@ test('parseTranscript handles edge-case lines and error statuses', async () => {
     assert.equal(errorTool?.target, '/tmp/fallback.txt');
     assert.equal(result.agents[0]?.type, 'agent');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1767,7 +1767,7 @@ test('parseTranscript detects agents recorded with the Agent tool name', async (
     assert.equal(result.agents[0]?.model, 'haiku');
     assert.equal(result.agents[0]?.status, 'completed');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1928,7 +1928,7 @@ test('parseTranscript returns undefined targets for unknown tools', async () => 
     assert.equal(result.tools.length, 1);
     assert.equal(result.tools[0].target, undefined);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1941,7 +1941,7 @@ test('parseTranscript returns partial results when stream creation fails', async
     const result = await parseTranscript(transcriptDir);
     assert.equal(result.tools.length, 0);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1965,7 +1965,7 @@ test('parseTranscript does not cache partial results when stream creation fails 
   } finally {
     _setCreateReadStreamForTests(null);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1988,7 +1988,7 @@ async function fullParseFresh(lines) {
     return normalizeForCompare(await parseTranscript(transcriptPath));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
 
@@ -2035,7 +2035,7 @@ test('parseTranscript incremental resume === full parse (byte-identical output)'
       assert.deepEqual(resumed, full, `incremental (split=${split}) must equal full parse`);
     } finally {
       restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
-      await rm(dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   }
 });
@@ -2076,7 +2076,7 @@ test('parseTranscript resume actually reuses cached state (skipped prefix line i
     );
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2110,7 +2110,7 @@ test('parseTranscript resume: a TaskUpdate across the resume boundary still appl
     assert.deepEqual(resumed.todos, full.todos, 'TaskUpdate across the resume boundary must match a full parse');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2141,7 +2141,7 @@ test('parseTranscript does NOT resume on a same-size in-place rewrite (full re-p
     assert.equal(second.tools[0].target, '/BBBB.txt', 'full re-parse picked up the rewrite');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', origCfg);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2181,7 +2181,7 @@ test('parseTranscript reuses cached data when transcript state is unchanged', as
     assert.equal(second.compactionCount, 1);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2225,7 +2225,7 @@ test('parseTranscript round-trips mcpErrors through the transcript cache', async
       'mcpErrors must survive the cache round-trip, not just the first parse');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2258,7 +2258,7 @@ test('parseTranscript sanitizes and caps a poisoned cached model ID', async () =
     assert.doesNotMatch(second.lastAssistantModel ?? '', /[\x1b\u202E]/u);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2293,7 +2293,7 @@ test('parseTranscript invalidates cached data when transcript state changes', as
     assert.equal(second.tools[0].target, '/tmp/updated.txt');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2322,7 +2322,7 @@ test('parseTranscript falls back to a fresh parse when the transcript cache is c
     assert.equal(second.tools[0].target, '/tmp/original.txt');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2368,7 +2368,7 @@ test('parseTranscript invalidates transcript cache entries from older cache vers
     assert.equal(result.lastAssistantResponseAt?.toISOString(), '2024-01-01T00:00:00.000Z');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2411,8 +2411,8 @@ test('countConfigs honors project and global config locations', async () => {
     assert.equal(counts.hooksCount, 2);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2446,8 +2446,8 @@ test('countConfigs returns outputStyle with project local precedence', async () 
     assert.equal(counts.outputStyle, 'tech-leader');
   } finally {
     restoreEnvVar('HOME', originalHome);
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2464,7 +2464,7 @@ test('countConfigs returns the Claude Code theme from the user settings', async 
     assert.equal((await countConfigs()).claudeTheme, 'light-ansi');
   } finally {
     restoreEnvVar('HOME', originalHome);
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2513,7 +2513,7 @@ test('countConfigs uses CLAUDE_CONFIG_DIR and matching .json sidecar for user sc
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2554,7 +2554,7 @@ test('countConfigs still counts project .claude when cwd is home and CLAUDE_CONF
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2587,7 +2587,7 @@ test('countConfigs avoids home cwd double-counting across counters and keeps CLA
     assert.equal(trailingSlashCounts.hooksCount, 1);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2615,7 +2615,7 @@ test('countConfigs excludes disabled user-scope MCPs', async () => {
     assert.equal(counts.mcpCount, 2); // 3 - 1 disabled = 2
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2646,8 +2646,8 @@ test('countConfigs excludes disabled project .mcp.json servers', async () => {
     assert.equal(counts.mcpCount, 2); // 4 - 2 disabled = 2
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2675,7 +2675,7 @@ test('countConfigs handles all MCPs disabled', async () => {
     assert.equal(counts.mcpCount, 0); // All disabled
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2694,7 +2694,7 @@ test('countConfigs tolerates rule directory read errors', async () => {
   } finally {
     fs.chmodSync(rulesDir, 0o755);
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2723,9 +2723,9 @@ test('countConfigs follows symlinked rule files and directories safely', async (
     assert.equal(updated.rulesCount, 3, 'cache should invalidate when a symlink target changes');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
-    await rm(sharedDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(sharedDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2749,9 +2749,9 @@ test('countConfigs skips dangling links, cycles, and duplicate symlink targets',
     assert.equal(counts.rulesCount, 1);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
-    await rm(sharedDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(sharedDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2779,7 +2779,7 @@ test('countConfigs ignores non-string values in disabledMcpServers', async () =>
     assert.equal(counts.mcpCount, 2); // Only 'server2' disabled, server1 and server3 remain
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2812,8 +2812,8 @@ test('countConfigs counts same-named servers in different scopes separately', as
     assert.equal(counts.mcpCount, 4);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2842,7 +2842,7 @@ test('countConfigs uses case-sensitive matching for disabled servers', async () 
     assert.equal(counts.mcpCount, 2);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2916,7 +2916,7 @@ test('Issue #3: MCP count updates correctly when servers are disabled', async ()
     assert.equal(counts.mcpCount, 0, 'Should show 0 MCPs when all are disabled');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2963,7 +2963,7 @@ test('countConfigs cache: second call uses cache (mtime unchanged)', async () =>
     assert.equal(second.mcpCount, 1);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2998,7 +2998,7 @@ test('countConfigs cache: miss on file modification (mtime changes)', async () =
     assert.equal(second.mcpCount, 3, 'Should detect updated settings.json');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3020,7 +3020,7 @@ test('countConfigs cache: miss on file creation (CLAUDE.md appears)', async () =
     assert.equal(second.claudeMdCount, 1, 'Should detect newly created CLAUDE.md');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3043,7 +3043,7 @@ test('countConfigs cache: miss on file deletion (CLAUDE.md removed)', async () =
     assert.equal(second.claudeMdCount, 0, 'Should detect deleted CLAUDE.md');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3067,8 +3067,8 @@ test('countConfigs cache: miss on nested rules additions', async () => {
     assert.equal(second.rulesCount, 2, 'Should detect nested rules added after the cache was written');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3096,9 +3096,9 @@ test('countConfigs cache: isolation between different cwds', async () => {
     assert.ok(cacheFiles.length >= 2, 'Should have separate cache files for different cwds');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
-    await rm(projectA, { recursive: true, force: true });
-    await rm(projectB, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectA, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(projectB, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3127,7 +3127,7 @@ test('countConfigs cache: isolation between different CLAUDE_CONFIG_DIRs', async
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3156,7 +3156,7 @@ test('countConfigs cache: corrupted cache file handled gracefully', async () => 
     assert.equal(second.claudeMdCount, 1, 'Should recompute correctly after cache corruption');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3204,7 +3204,7 @@ test('countConfigs cache: malformed cache payload falls back to fresh recompute'
     assert.equal(second.hooksCount, 0);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3235,7 +3235,7 @@ test('countConfigs cache: first invocation without cache dir', async () => {
     assert.ok(fs.existsSync(cacheDir), 'config-cache should be created after first call');
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3268,7 +3268,7 @@ test('countConfigs cache: works without cwd (user scope only)', async () => {
     assert.equal(second.mcpCount, 2);
   } finally {
     process.env.HOME = originalHome;
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

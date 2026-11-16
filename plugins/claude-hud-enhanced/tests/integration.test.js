@@ -88,7 +88,7 @@ test("CLI renders expected output for a basic transcript", async (t) => {
       "\uE0B6 Opus \u2502 \u25D4 \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 23% 45.0k/200.0k \uE0B4 \uE0B6 \uF07B my-project \uE0B4",
     );
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -142,7 +142,7 @@ test("CLI renders added_dirs basenames on the project line", async (t) => {
       "added dirs should come after the project name",
     );
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -180,7 +180,7 @@ test("CLI omits added dirs section when array is empty", async (t) => {
     const firstLine = stripAnsi(result.stdout).split("\n")[0];
     assert.doesNotMatch(firstLine, /\+/);
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -220,7 +220,7 @@ test("CLI tolerates added_dirs: null without crashing", async (t) => {
     assert.doesNotMatch(firstLine, /\+/);
     assert.doesNotMatch(stripAnsi(result.stdout), /Added dirs:/);
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -272,7 +272,7 @@ test("CLI ignores non-string and post-sanitize-empty added_dirs entries", async 
     assert.equal(plusCount, 2, "only the two valid basenames should render");
     assert.doesNotMatch(firstLine, /\+ /, "no bare '+' from control-char-only basename");
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -322,7 +322,7 @@ test("CLI caps inline added_dirs at 5 with overflow indicator", async (t) => {
     assert.doesNotMatch(firstLine, /\+dir-7\b/);
     assert.match(firstLine, /\+2 more/);
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -369,7 +369,7 @@ test("CLI truncates long inline added_dirs basenames", async (t) => {
     const m = firstLine.match(/\+(a+…)/);
     assert.ok(m && m[1].length <= 24, `truncated name should be ≤24 chars, got ${m && m[1].length}`);
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -427,7 +427,7 @@ test("CLI renders line layout 'Added dirs:' on a separate line", async (t) => {
     assert.match(dirsLine, /shared-utils,\s*mobile-app/);
     assert.doesNotMatch(dirsLine, /\bmore\b/, "two dirs should not trigger overflow");
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -472,7 +472,7 @@ test("CLI renders inline added_dirs even when showProject is false", async (t) =
     assert.doesNotMatch(firstLine, /my-project/, "project name should be hidden");
     assert.match(firstLine, /\+lib-foo/, "added dirs should still render");
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -545,7 +545,7 @@ test("CLI applies caps in line layout (overflow + truncation)", async (t) => {
     assert.match(dirsLine, /b+…/);
     assert.doesNotMatch(dirsLine, new RegExp(longName));
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -572,6 +572,6 @@ test("CLI prints initializing message on empty stdin", async (t) => {
       `unexpected output: ${normalized}`,
     );
   } finally {
-    await rm(homeDir, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

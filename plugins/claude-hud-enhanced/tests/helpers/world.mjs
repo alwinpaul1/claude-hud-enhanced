@@ -30,7 +30,7 @@ export const CAP_RIGHT = '';
 
 const shortTmpDirs = [];
 process.on('exit', () => {
-  for (const dir of shortTmpDirs) rmSync(dir, { recursive: true, force: true });
+  for (const dir of shortTmpDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const writeJson = (file, value) => {
@@ -64,8 +64,8 @@ export function createWorld(label = 'world') {
     tmp,
     profiles: { default: profile('default', '.claude', false), work: profile('work', '.claude-work', true) },
     cleanup: () => {
-      rmSync(root, { recursive: true, force: true });
-      rmSync(tmp, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }

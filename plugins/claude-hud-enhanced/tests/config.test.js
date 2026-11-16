@@ -497,7 +497,7 @@ test('getConfigPath respects CLAUDE_CONFIG_DIR', async () => {
     assert.equal(configPath, path.join(customConfigDir, 'plugins', 'claude-hud-enhanced', 'config.json'));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -525,7 +525,7 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
     assert.equal(config.display.showSpeed, true);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -547,7 +547,7 @@ test('loadConfig reads a config.json saved with a UTF-8 BOM (Windows editors)', 
     assert.equal(config.display.showSpeed, true);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -563,7 +563,7 @@ test('getConfigOverridePath sits outside the symlink-prone plugins directory', a
     assert.equal(getConfigOverridePath(), path.join(os.homedir(), '.claude', 'claude-hud.json'));
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -603,7 +603,7 @@ test('loadConfig layers claude-hud.json over the shared config', async () => {
     assert.deepEqual(config.elementOrder, ['project']);
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -623,7 +623,7 @@ test('loadConfig applies claude-hud.json when there is no shared config', async 
     assert.equal(config.display.customLine, 'Work Team');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -650,7 +650,7 @@ test('loadConfig ignores malformed or non-object claude-hud.json and keeps the s
     assert.equal((await loadConfig()).display.customLine, 'shared');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -680,7 +680,7 @@ test('loadConfig rejects unsafe keys and excessive nesting in claude-hud.json', 
     assert.equal((await loadConfig()).display.customLine, 'shared');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -717,7 +717,7 @@ test('loadConfig rejects oversized and symlinked claude-hud.json files', async (
     assert.equal((await loadConfig()).display.customLine, 'shared');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(customConfigDir, { recursive: true, force: true });
+    await rm(customConfigDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -772,7 +772,7 @@ test('loadConfig keeps overrides isolated when config directories share plugins'
     assert.equal(personalConfig.lineLayout, 'compact');
   } finally {
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

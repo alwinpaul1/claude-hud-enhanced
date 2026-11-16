@@ -708,7 +708,7 @@ test('a fresh PR snapshot is served and a stale or foreign one asks for a refres
     assert.equal(spawned.length, 3);
   } finally {
     if (previous !== undefined) process.env.CLAUDE_CONFIG_DIR = previous;
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -771,7 +771,7 @@ test('a window is learned from any session feed in the config dir, never from on
     assert.deepEqual([...knownWindows], [['claude-sonnet-5', 1_000_000]]);
   } finally {
     knownWindows.clear();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -824,7 +824,7 @@ test('running subagents read their type, model, effort and tokens from their own
     assert.ok(texts(rows).includes('feat/a '));
     assert.ok(texts(rows).includes('wt-a'));
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -865,7 +865,7 @@ test('the transcript yields the PR the session worked on', async () => {
   } finally {
     if (previousHome !== undefined) process.env.HOME = previousHome;
     if (previousConfig !== undefined) process.env.CLAUDE_CONFIG_DIR = previousConfig;
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
